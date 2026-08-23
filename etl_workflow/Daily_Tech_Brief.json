@@ -154,7 +154,8 @@
   "active": true,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "errorWorkflow": "ahdbY4O8e1clI4yf"
   },
   "versionId": "facef052-8eb7-4b65-95f4-8350c3877029",
   "meta": {

@@ -1166,7 +1166,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"event_type\": \"CONTENT_FETCH_FAILED\",\n    \"source\": \"Jina_Reader\",\n    \"source_key\": $('Loop Over Items').item.json.source_key || null,\n    \"source_name\": $('Loop Over Items').item.json.source_name || null,\n    \"source_platform\": $('Loop Over Items').item.json.source_platform || null,\n    \"signal_origin\": $('Loop Over Items').item.json.signal_origin || null,\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"Content fetch failed: empty content or blocked response\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"event_type\": \"CONTENT_FETCH_FAILED\",\n    \"source\": \"Jina_Reader\",\n    \"source_key\": $('Loop Over Items').item.json.source_key || null,\n    \"source_name\": $('Loop Over Items').item.json.source_name || null,\n    \"source_platform\": $('Loop Over Items').item.json.source_platform || null,\n    \"signal_origin\": $('Loop Over Items').item.json.signal_origin || null,\n    \"url\": $('Loop Over Items').item.json.url,\n    \"title\": $('Loop Over Items').item.json.title || null,\n    \"error\": \"Content fetch failed: empty content or blocked response\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1181,7 +1181,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"event_type\": \"AI_ANALYSIS_FAILED\",\n    \"source\": \"AI_Response\",\n    \"source_key\": $('Loop Over Items').item.json.source_key || null,\n    \"source_name\": $('Loop Over Items').item.json.source_name || null,\n    \"source_platform\": $('Loop Over Items').item.json.source_platform || null,\n    \"signal_origin\": $('Loop Over Items').item.json.signal_origin || null,\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"AI node analysis failed\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"event_type\": \"AI_ANALYSIS_FAILED\",\n    \"source\": \"AI_Response\",\n    \"source_key\": $('Loop Over Items').item.json.source_key || null,\n    \"source_name\": $('Loop Over Items').item.json.source_name || null,\n    \"source_platform\": $('Loop Over Items').item.json.source_platform || null,\n    \"signal_origin\": $('Loop Over Items').item.json.signal_origin || null,\n    \"url\": $('Loop Over Items').item.json.url,\n    \"title\": $json.title || null,\n    \"title_cn\": $json.title_cn || null,\n    \"error\": \"AI node analysis failed\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1223,14 +1223,14 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "original_title": "={{ $('Loop Over Items').item.json.title }}",
-            "url": "={{ $('Loop Over Items').item.json.url }}",
+            "original_title": "={{ $json.title }}",
+            "url": "={{ $json.url }}",
             "error_reason": "Content Fetch Failed",
-            "source_type": "={{ $('Loop Over Items').item.json.source_name || 'Other' }}",
-            "source_key": "={{ $('Loop Over Items').item.json.source_key || null }}",
-            "source_name": "={{ $('Loop Over Items').item.json.source_name || null }}",
-            "source_platform": "={{ $('Loop Over Items').item.json.source_platform || null }}",
-            "signal_origin": "={{ $('Loop Over Items').item.json.signal_origin || null }}",
+            "source_type": "={{ $json.source_name || 'Other' }}",
+            "source_key": "={{ $json.source_key || null }}",
+            "source_name": "={{ $json.source_name || null }}",
+            "source_platform": "={{ $json.source_platform || null }}",
+            "signal_origin": "={{ $json.signal_origin || null }}",
             "created_at": "={{ $now.toISO() }}",
             "title_cn": "={{ null }}"
           },
@@ -1349,8 +1349,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        4720,
-        7440
+        5456,
+        7392
       ],
       "id": "01c1f9b6-7963-4e55-a702-016fc9e3aa64",
       "name": "Insert rows in failed (Jina)",
@@ -1378,15 +1378,15 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "original_title": "={{ $('Loop Over Items').item.json.title }}",
-            "title_cn": "={{ $('Edit Fields').item.json.title_cn || null }}",
-            "url": "={{ $('Edit Fields').item.json.url }}",
+            "original_title": "={{ $json.title }}",
+            "title_cn": "={{ $json.title_cn || null }}",
+            "url": "={{ $json.url }}",
             "error_reason": "AI Analysis Failed",
-            "source_type": "={{ $('Loop Over Items').item.json.source_name || 'Other' }}",
-            "source_key": "={{ $('Loop Over Items').item.json.source_key || null }}",
-            "source_name": "={{ $('Loop Over Items').item.json.source_name || null }}",
-            "source_platform": "={{ $('Loop Over Items').item.json.source_platform || null }}",
-            "signal_origin": "={{ $('Loop Over Items').item.json.signal_origin || null }}",
+            "source_type": "={{ $json.source_name || 'Other' }}",
+            "source_key": "={{ $json.source_key || null }}",
+            "source_name": "={{ $json.source_name || null }}",
+            "source_platform": "={{ $json.source_platform || null }}",
+            "signal_origin": "={{ $json.signal_origin || null }}",
             "created_at": "={{ $now.toISO() }}"
           },
           "matchingColumns": [
@@ -1503,8 +1503,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        5696,
-        7920
+        5952,
+        7776
       ],
       "id": "f0bd3e2b-be94-48d6-82eb-9ee4dbed4dab",
       "name": "Insert rows in failed (AI)",
@@ -2237,11 +2237,6 @@
             "node": "Prepare_Jina_Error_Data",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Insert rows in failed (Jina)",
-            "type": "main",
-            "index": 0
           }
         ],
         [
@@ -2276,11 +2271,6 @@
             "node": "Prepare_AI_Error_Data",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Insert rows in failed (AI)",
-            "type": "main",
-            "index": 0
           }
         ],
         [
@@ -2296,6 +2286,11 @@
       "main": [
         [
           {
+            "node": "Insert rows in failed (Jina)",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Call 'System_Alert_Service'",
             "type": "main",
             "index": 0
@@ -2306,6 +2301,11 @@
     "Prepare_AI_Error_Data": {
       "main": [
         [
+          {
+            "node": "Insert rows in failed (AI)",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Call 'System_Alert_Service'",
             "type": "main",
@@ -2536,7 +2536,8 @@
   "active": true,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "errorWorkflow": "ahdbY4O8e1clI4yf"
   },
   "versionId": "2edca88b-7796-4052-9d15-b8f441d97a23",
   "meta": {

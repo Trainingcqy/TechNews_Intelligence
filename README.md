@@ -14,12 +14,13 @@ TechNews Intelligence 是面向科技新闻的自动化情报系统。系统通�
 
 ## 核心能力
 
-- 新闻采集：n8n 工作流定时采集多种官方来源新闻，写入 PostgreSQL。
+- 新闻采集：n8n 工作流按 `source_registry` 配置定时采集多来源新闻，写入 PostgreSQL，新增来源只需插入一行配置。
 - 文本处理：Jina Reader 提取正文，模型生成摘要、分类和情绪标签。
 - 混合检索：词法、pgvector 语义、实体别名精确三路召回 + RRF 融合，叠加时间衰减，可选 Jina Reranker。
 - Agent分析：基于 LangGraph StateGraph 编排上下文准备、意图路由、工具选择/规划/执行、证据归一、循环决策、澄清/证据不足分支和最终综合；图后执行输出 URL 守卫与来源装饰。
 - 上下文记忆：Context Pack 整理当前问题相关历史；Thread Memory 保存线程摘要和历史证据索引。
 - 可观测性：`agent_runs`、`agent_trace_spans`、`agent_model_io` 记录请求摘要、执行链路和完整模型输入输出。
+- 采集监控：工作流未捕获异常触发告警工作流发信；每日统计输出契约违规率、失败率和产量，超出滚动基线时告警。
 - 多入口交互：Web API、Telegram Bot、本地 CLI、MCP stdio 共用同一套 Agent 运行时。
 - 评测闭环：G1-G6 分层评测覆盖错误分析、检索、生成、意图、工具选择和负样本拒答，并支持 Trace 回溯。
 
@@ -35,7 +36,7 @@ TechNews Intelligence 是面向科技新闻的自动化情报系统。系统通�
 | `eval/` | G1-G6 分层评测、Trace 查询、编码守卫和实体别名工具。 |
 | `sql/` | 数据库 schema、视图、seed、分析 SQL。 |
 | `deployment/` | Docker Compose、环境变量模板、数据库运维脚本。 |
-| `etl_workflow/` | n8n 工作流导出文件。 |
+| `etl_workflow/` | n8n 工作流导出文件：采集、分析、日报、告警、质量监控、回归评测。 |
 | `docs/` | 架构、部署、开发和评测文档。 |
 
 ## 快速启动

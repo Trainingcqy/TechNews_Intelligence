@@ -33,7 +33,7 @@ Optional:
   --fetch-type <value>        Default: rss
   --priority <int>            Default: 100 (smaller means earlier)
   --is-active <bool>          true/false, default true
-  --extra-config <json>       JSON string, default {}
+  --extra-config <json>       JSON merged into existing extra_config (top-level keys), default {}
   --skip-schema               Do not run apply_schema.sh first
   -h, --help                  Show help
 EOF
@@ -180,7 +180,7 @@ SET
     endpoint = EXCLUDED.endpoint,
     is_active = EXCLUDED.is_active,
     priority = EXCLUDED.priority,
-    extra_config = EXCLUDED.extra_config;
+    extra_config = source_registry.extra_config || EXCLUDED.extra_config;
 " \
   -v source_key="${SOURCE_KEY}" \
   -v source_name="${SOURCE_NAME}" \

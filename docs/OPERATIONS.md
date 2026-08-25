@@ -96,10 +96,10 @@ bash deployment/scripts/db/apply_seed.sh
 执行指定 seed：
 
 ```bash
-bash deployment/scripts/db/apply_seed.sh --seed-file sql/infrastructure/seeds/seed_source_official.sql
+bash deployment/scripts/db/apply_seed.sh --seed-file sql/infrastructure/seeds/seed_entity_core.sql
 ```
 
-`apply_schema.sh` 用于自动部署，`apply_seed.sh` 用于手动维护来源、实体和别名基础数据。
+`apply_schema.sh` 用于自动部署，`apply_seed.sh` 用于手动维护实体和别名基础数据。来源不走 seed，见「Source 与 Entity 维护」。
 
 ## 自动部署
 

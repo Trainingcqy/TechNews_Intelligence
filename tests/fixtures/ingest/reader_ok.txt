@@ -1,0 +1,54 @@
+Title: How genome mapping can help researchers better understand disease
+
+URL Source: https://blog.google/innovation-and-ai/models-and-research/google-deepmind/alphagenome-disease-research/
+
+Published Time: 2026-11-17T22:00:00+00:00
+
+Markdown Content:
+Nov 17, 2026
+
+|
+
+5 min read
+
+In our latest installment of the Ask a Scientist series, a Google DeepMind research scientist explains the potential behind our AlphaGenome and AlphaGenome Atlas tools.
+
+* * *
+
+Lindsey Lanquist
+
+Contributor
+
+* * *
+
+Illustrative
+
+Your genome is your body’s instruction manual: the blueprint that informs how your body functions. It contains 3 billion base pairs of DNA. Because this DNA is responsible in part for switching genes on and off, it could be the difference between developing a disease and avoiding one. Determining which DNA changes cause diseases (and other outcomes) is like finding a needle in a haystack.
+
+_Illustrative. Your genome, one point at a time._
+
+Decoding the DNA sequence is the goal behind AlphaGenome, a model from Google DeepMind. AlphaGenome can take a partial DNA sequence of 1 million base pairs in length, and make thousands of predictions. By comparing these predictions for DNA changes, scientists can find that needle faster.
+
+We talked to Google DeepMind research scientist Žiga Avsec to learn more.
+
+**What do you do at Google?**
+
+ŽA: I’m a research scientist overseeing our genomics initiative. Basically, I lead a team that builds models to help us better understand the genome.
+
+**How is your team making it easier for scientists to predict and understand diseases?**
+
+It really all comes down to how the genome works. It contains 3 billion DNA base pairs. And each pair contains two bases, which we call “letters.” These letters — A (adenine), T (thymine), C (cytosine), G (guanine) — act like a biological alphabet, spelling out the genetic instruction manual that makes someone who they are.
+
+Since you can replace any of those letters with three other letters, there are 9 billion possible single-letter changes. Many genetic diseases are caused by just one of these letters changing. But scientists don’t have time to run billions of studies to figure out which changes make a difference.
+
+So we used AlphaGenome to predict the outcomes of all 9 billion single-letter changes, and we created a massive dataset — AlphaGenome Atlas — so scientists can decide what to research faster.
+
+_Illustrative. The letters are invented for this example._
+
+**What’s holding scientists back from better understanding the genome?**
+
+While science can read all 3 billion base pairs of human DNA, we still haven’t fully deciphered the semantics of the genetic code — particularly the non-coding "dark matter" that regulates gene expression and disease risk. Experimental research, or as it’s also called, wet-lab research is the best way to help us reach breakthroughs in our understanding, but it’s expensive and time-consuming. A single breakthrough could take years.
+
+Let’s say you sequence DNA from a patient with a rare disease. You might end up with 4 million variants — 4 million ways their DNA differs from the standard reference human genome. But the question is: Which variant is causing their condition? Maybe you narrow the list to only include rare variants. But even then, you could be left with hundreds or thousands of options.
+
+When scientists use AlphaGenome Atlas, they get a single, easy-to-read score — the AVI (AlphaGenome Variant Impact) score — which instantly indic

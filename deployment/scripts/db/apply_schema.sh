@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 COMMON_LIB="${SCRIPT_DIR}/common.sh"
 SCHEMA_SQL="${REPO_ROOT}/sql/infrastructure/schema/schema_ddl.sql"
+NEWS_SQL="${REPO_ROOT}/sql/infrastructure/schema/news_schema.sql"
 VIEW_SQL="${REPO_ROOT}/sql/infrastructure/views/view_dashboard_news.sql"
 
 usage() {
@@ -43,6 +44,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 db_require_file "${SCHEMA_SQL}" "schema DDL SQL"
+db_require_file "${NEWS_SQL}" "news schema DDL SQL"
 db_require_file "${VIEW_SQL}" "view SQL"
 
 db_init_runtime "${REPO_ROOT}"
@@ -50,6 +52,9 @@ db_ensure_postgres_running
 
 echo "Applying schema DDL..."
 db_psql_file "${SCHEMA_SQL}"
+
+echo "Applying news schema DDL..."
+db_psql_file "${NEWS_SQL}"
 
 echo "Refreshing dashboard view logic..."
 db_psql_file "${VIEW_SQL}"

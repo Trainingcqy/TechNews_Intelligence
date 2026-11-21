@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir uv && uv tool install mcp-server-fetch
 COPY agent/ ./agent/
 COPY app/ ./app/
 COPY services/ ./services/
+COPY ingest/ ./ingest/
 COPY eval/ ./eval/
 
 CMD ["python", "-m", "app.bot"]

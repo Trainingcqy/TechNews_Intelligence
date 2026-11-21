@@ -141,6 +141,40 @@ services:
     networks:
       - app_network
 
+  ingest:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: python-runtime
+    container_name: tech_news_ingest
+    restart: always
+    command: [ "python", "-m", "ingest", "loop" ]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASS: ${POSTGRES_PASSWORD}
+      JINA_API_KEY: ${JINA_API_KEY}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_TIMEOUT_SEC: ${DEEPSEEK_TIMEOUT_SEC:-120}
+      INGEST_ANALYZE_PROVIDER: ${INGEST_ANALYZE_PROVIDER:-deepseek}
+      INGEST_ANALYZE_MODEL: ${INGEST_ANALYZE_MODEL:-deepseek-v4-flash}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      HTTP_PROXY: ${HTTP_PROXY}
+      HTTPS_PROXY: ${HTTPS_PROXY}
+      NO_PROXY: localhost,127.0.0.1,postgres
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   bot:
     build:
       context: ..

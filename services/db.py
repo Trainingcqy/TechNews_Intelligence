@@ -14,14 +14,14 @@ from psycopg2 import extensions
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 
-def init_db_pool():
+def init_db_pool(maxconn: int = 5):
     """根据环境变量初始化连接池。"""
     global _pool
     if _pool is not None:
         return
     _pool = psycopg2.pool.ThreadedConnectionPool(
         minconn=1,
-        maxconn=5,
+        maxconn=maxconn,
         host=os.getenv("DB_HOST", "127.0.0.1"),
         port=int(os.getenv("DB_PORT", "5555")),
         dbname=os.getenv("DB_NAME", "DB"),

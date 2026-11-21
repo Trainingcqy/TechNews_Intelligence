@@ -1,0 +1,560 @@
+# Official publishers with channels
+
+[[publisher]]
+name = "OpenAI"
+kind = "official"
+hosts = ["openai.com", "github.com/openai"]
+
+[[publisher]]
+name = "Anthropic"
+kind = "official"
+hosts = ["anthropic.com", "github.com/anthropics"]
+
+[[publisher]]
+name = "Google"
+kind = "official"
+hosts = [
+    "google.com",
+    "googleblog.com",
+    "blog.google",
+    "research.google",
+    "deepmind.google",
+    "github.com/google",
+    "github.com/google-gemini",
+    "github.com/google-research",
+    "github.com/google-deepmind",
+]
+
+[[publisher]]
+name = "Meta"
+kind = "official"
+hosts = ["meta.com", "about.fb.com", "engineering.fb.com", "github.com/facebookresearch"]
+
+[[publisher]]
+name = "Microsoft"
+kind = "official"
+hosts = ["microsoft.com", "news.xbox.com", "github.com/microsoft"]
+
+[[publisher]]
+name = "NVIDIA"
+kind = "official"
+hosts = [
+    "nvidianews.nvidia.com",
+    "blogs.nvidia.com",
+    "developer.nvidia.com",
+    "github.com/nvidia",
+    "huggingface.co/nvidia",
+]
+
+[[publisher]]
+name = "Apple"
+kind = "official"
+hosts = ["apple.com", "github.com/apple", "huggingface.co/apple"]
+
+[[publisher]]
+name = "AWS"
+kind = "official"
+hosts = ["aws.amazon.com", "github.com/aws"]
+
+[[publisher]]
+name = "Hugging Face"
+kind = "official"
+hosts = ["huggingface.co/blog", "github.com/huggingface"]
+
+[[publisher]]
+name = "GitHub"
+kind = "official"
+hosts = ["github.blog"]
+
+# Official publishers without channels
+
+[[publisher]]
+name = "阿里巴巴"
+kind = "official"
+hosts = ["qwen.ai", "qwencloud.com", "huggingface.co/Qwen", "github.com/alibaba"]
+
+[[publisher]]
+name = "DeepSeek"
+kind = "official"
+hosts = ["deepseek.com", "huggingface.co/deepseek-ai", "github.com/deepseek-ai"]
+
+[[publisher]]
+name = "智谱"
+kind = "official"
+hosts = ["z.ai", "huggingface.co/zai-org", "github.com/zai-org"]
+
+[[publisher]]
+name = "月之暗面"
+kind = "official"
+hosts = ["kimi.com", "kimi.ai", "huggingface.co/moonshotai"]
+
+[[publisher]]
+name = "小米"
+kind = "official"
+hosts = ["xiaomi.com", "xiaomimimo.com"]
+
+[[publisher]]
+name = "MiniMax"
+kind = "official"
+hosts = ["minimax.io"]
+
+[[publisher]]
+name = "阶跃星辰"
+kind = "official"
+hosts = ["stepfun.com"]
+
+[[publisher]]
+name = "百度"
+kind = "official"
+hosts = ["ernie.baidu.com", "github.com/baidu"]
+
+[[publisher]]
+name = "字节跳动"
+kind = "official"
+hosts = ["bytedance.com"]
+
+[[publisher]]
+name = "腾讯"
+kind = "official"
+hosts = ["tencent-hunyuan.github.io"]
+
+# Media
+
+[[publisher]]
+name = "TechCrunch"
+kind = "media"
+hosts = ["techcrunch.com"]
+
+[[publisher]]
+name = "The Verge"
+kind = "media"
+hosts = ["theverge.com"]
+
+[[publisher]]
+name = "Ars Technica"
+kind = "media"
+hosts = ["arstechnica.com"]
+
+[[publisher]]
+name = "Wired"
+kind = "media"
+hosts = ["wired.com"]
+
+[[publisher]]
+name = "MIT Technology Review"
+kind = "media"
+hosts = ["technologyreview.com"]
+
+[[publisher]]
+name = "404 Media"
+kind = "media"
+hosts = ["404media.co"]
+
+[[publisher]]
+name = "The Hacker News"
+kind = "media"
+hosts = ["thehackernews.com"]
+
+[[publisher]]
+name = "Tom's Hardware"
+kind = "media"
+hosts = ["tomshardware.com"]
+
+[[publisher]]
+name = "InfoQ"
+kind = "media"
+hosts = ["infoq.com"]
+
+[[publisher]]
+name = "The Decoder"
+kind = "media"
+hosts = ["the-decoder.com"]
+
+[[publisher]]
+name = "36氪"
+kind = "media"
+hosts = ["36kr.com"]
+
+[[publisher]]
+name = "钛媒体"
+kind = "media"
+hosts = ["tmtpost.com"]
+
+[[publisher]]
+name = "雷峰网"
+kind = "media"
+hosts = ["leiphone.com"]
+
+[[publisher]]
+name = "量子位"
+kind = "media"
+hosts = ["qbitai.com"]
+
+[[publisher]]
+name = "InfoQ 中国"
+kind = "media"
+hosts = ["infoq.cn"]
+
+[[publisher]]
+name = "Solidot"
+kind = "media"
+hosts = ["solidot.org"]
+
+[[publisher]]
+name = "虎嗅"
+kind = "media"
+hosts = ["huxiu.com"]
+
+# Community, hosting and social platforms
+
+[[publisher]]
+name = "HackerNews"
+kind = "community"
+hosts = ["news.ycombinator.com"]
+
+[[publisher]]
+name = "GitHub Repositories"
+kind = "code_host"
+hosts = ["github.com"]
+
+[[publisher]]
+name = "GitLab"
+kind = "code_host"
+hosts = ["gitlab.com"]
+
+[[publisher]]
+name = "Hugging Face Hub"
+kind = "code_host"
+hosts = ["huggingface.co"]
+
+[[publisher]]
+name = "arXiv"
+kind = "paper_host"
+hosts = ["arxiv.org"]
+
+[[publisher]]
+name = "X"
+kind = "social"
+hosts = ["x.com", "twitter.com"]
+
+[[publisher]]
+name = "YouTube"
+kind = "social"
+hosts = ["youtube.com"]
+
+[[publisher]]
+name = "Reddit"
+kind = "social"
+hosts = ["reddit.com"]
+
+# Official channels
+
+[[channel]]
+key = "openai_news"
+name = "OpenAI News"
+fetch_kind = "feed"
+endpoint = "https://openai.com/news/rss.xml"
+publisher = "OpenAI"
+lang = "en"
+
+[[channel]]
+key = "anthropic_news"
+name = "Anthropic News"
+fetch_kind = "sitemap"
+endpoint = "https://www.anthropic.com/sitemap.xml"
+publisher = "Anthropic"
+lang = "en"
+config = { url_pattern = "/news/" }
+
+[[channel]]
+key = "google_ai"
+name = "Google AI Blog"
+fetch_kind = "feed"
+endpoint = "https://blog.google/technology/ai/rss/"
+publisher = "Google"
+lang = "en"
+
+[[channel]]
+key = "google_deepmind"
+name = "Google DeepMind Blog"
+fetch_kind = "feed"
+endpoint = "https://deepmind.google/blog/rss.xml"
+publisher = "Google"
+lang = "en"
+
+[[channel]]
+key = "google_research"
+name = "Google Research Blog"
+fetch_kind = "feed"
+endpoint = "https://research.google/blog/rss/"
+publisher = "Google"
+lang = "en"
+
+[[channel]]
+key = "meta_newsroom"
+name = "Meta Newsroom"
+fetch_kind = "feed"
+endpoint = "https://about.fb.com/news/feed/"
+publisher = "Meta"
+lang = "en"
+
+[[channel]]
+key = "meta_engineering"
+name = "Engineering at Meta"
+fetch_kind = "feed"
+endpoint = "https://engineering.fb.com/feed/"
+publisher = "Meta"
+lang = "en"
+config = { body_from_feed = true }
+
+[[channel]]
+key = "microsoft_blog"
+name = "Official Microsoft Blog"
+fetch_kind = "feed"
+endpoint = "https://blogs.microsoft.com/?feed=rss2"
+publisher = "Microsoft"
+lang = "en"
+config = { body_from_feed = true }
+
+[[channel]]
+key = "microsoft_source"
+name = "Microsoft Source"
+fetch_kind = "feed"
+endpoint = "https://news.microsoft.com/source/feed/"
+publisher = "Microsoft"
+lang = "en"
+
+[[channel]]
+key = "nvidia_newsroom"
+name = "NVIDIA Newsroom"
+fetch_kind = "feed"
+endpoint = "https://nvidianews.nvidia.com/releases.xml"
+publisher = "NVIDIA"
+lang = "en"
+
+[[channel]]
+key = "apple_newsroom"
+name = "Apple Newsroom"
+fetch_kind = "feed"
+endpoint = "https://www.apple.com/newsroom/rss-feed.rss"
+publisher = "Apple"
+lang = "en"
+
+[[channel]]
+key = "aws_news"
+name = "AWS News Blog"
+fetch_kind = "feed"
+endpoint = "https://aws.amazon.com/blogs/aws/feed/"
+publisher = "AWS"
+lang = "en"
+config = { body_from_feed = true }
+
+[[channel]]
+key = "huggingface_blog"
+name = "Hugging Face Blog"
+fetch_kind = "feed"
+endpoint = "https://huggingface.co/blog/feed.xml"
+publisher = "Hugging Face"
+lang = "en"
+config = { max_path_segments = 2 }
+
+[[channel]]
+key = "github_blog"
+name = "The GitHub Blog"
+fetch_kind = "feed"
+endpoint = "https://github.blog/feed/"
+publisher = "GitHub"
+lang = "en"
+config = { body_from_feed = true }
+
+# English media channels
+
+[[channel]]
+key = "techcrunch"
+name = "TechCrunch"
+fetch_kind = "feed"
+endpoint = "https://techcrunch.com/feed/"
+publisher = "TechCrunch"
+lang = "en"
+
+[[channel]]
+key = "theverge"
+name = "The Verge"
+fetch_kind = "feed"
+endpoint = "https://www.theverge.com/rss/index.xml"
+publisher = "The Verge"
+lang = "en"
+
+[[channel]]
+key = "arstechnica"
+name = "Ars Technica"
+fetch_kind = "feed"
+endpoint = "https://feeds.arstechnica.com/arstechnica/index"
+publisher = "Ars Technica"
+lang = "en"
+
+[[channel]]
+key = "wired"
+name = "Wired"
+fetch_kind = "feed"
+endpoint = "https://www.wired.com/feed/rss"
+publisher = "Wired"
+lang = "en"
+
+[[channel]]
+key = "mit_tech_review"
+name = "MIT Technology Review"
+fetch_kind = "feed"
+endpoint = "https://www.technologyreview.com/feed/"
+publisher = "MIT Technology Review"
+lang = "en"
+config = { body_from_feed = true }
+
+[[channel]]
+key = "404media"
+name = "404 Media"
+fetch_kind = "feed"
+endpoint = "https://www.404media.co/rss/"
+publisher = "404 Media"
+lang = "en"
+
+[[channel]]
+key = "thehackernews"
+name = "The Hacker News"
+fetch_kind = "feed"
+endpoint = "https://feeds.feedburner.com/TheHackersNews"
+publisher = "The Hacker News"
+lang = "en"
+
+[[channel]]
+key = "tomshardware"
+name = "Tom's Hardware"
+fetch_kind = "feed"
+endpoint = "https://www.tomshardware.com/feeds/all"
+publisher = "Tom's Hardware"
+lang = "en"
+config = { body_from_feed = true }
+
+[[channel]]
+key = "infoq_en"
+name = "InfoQ"
+fetch_kind = "feed"
+endpoint = "https://feed.infoq.com/"
+publisher = "InfoQ"
+lang = "en"
+
+[[channel]]
+key = "the_decoder"
+name = "The Decoder"
+fetch_kind = "feed"
+endpoint = "https://the-decoder.com/feed/"
+publisher = "The Decoder"
+lang = "en"
+
+# Chinese media channels
+
+[[channel]]
+key = "36kr"
+name = "36氪"
+fetch_kind = "feed"
+endpoint = "https://www.36kr.com/feed"
+publisher = "36氪"
+lang = "zh"
+
+[[channel]]
+key = "tmtpost"
+name = "钛媒体"
+fetch_kind = "feed"
+endpoint = "https://www.tmtpost.com/rss.xml"
+publisher = "钛媒体"
+lang = "zh"
+config = { body_from_feed = true }
+
+[[channel]]
+key = "leiphone"
+name = "雷峰网"
+fetch_kind = "feed"
+endpoint = "https://www.leiphone.com/feed"
+publisher = "雷峰网"
+lang = "zh"
+config = { body_from_feed = true }
+
+[[channel]]
+key = "qbitai"
+name = "量子位"
+fetch_kind = "feed"
+endpoint = "https://www.qbitai.com/feed"
+publisher = "量子位"
+lang = "zh"
+
+[[channel]]
+key = "infoq_cn"
+name = "InfoQ 中国"
+fetch_kind = "feed"
+endpoint = "https://www.infoq.cn/feed"
+publisher = "InfoQ 中国"
+lang = "zh"
+
+[[channel]]
+key = "solidot"
+name = "Solidot"
+fetch_kind = "feed"
+endpoint = "https://www.solidot.org/index.rss"
+publisher = "Solidot"
+lang = "zh"
+
+[[channel]]
+key = "huxiu"
+name = "虎嗅"
+fetch_kind = "feed"
+endpoint = "https://rss.huxiu.com/"
+publisher = "虎嗅"
+lang = "zh"
+config = { body_from_feed = true }
+
+# Community signal and reference
+
+[[channel]]
+key = "hn_frontpage"
+name = "HackerNews"
+fetch_kind = "hn"
+endpoint = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=60&numericFilters=points>=30,num_comments>=5"
+lang = "en"
+config = { discussion_min_comments = 20, discussion_after_hours = 24 }
+
+[[channel]]
+key = "techmeme"
+name = "Techmeme"
+fetch_kind = "feed"
+endpoint = "https://www.techmeme.com/feed.xml"
+purpose = "reference"
+lang = "en"
+
+# Retired channels, kept so migrated sightings can reference them
+
+[[channel]]
+key = "google_ai_blog"
+name = "Google Blog"
+fetch_kind = "feed"
+endpoint = "https://blog.google/rss/"
+publisher = "Google"
+lang = "en"
+enabled = false
+
+[[channel]]
+key = "aws_ml_blog"
+name = "AWS Machine Learning Blog"
+fetch_kind = "feed"
+endpoint = "https://aws.amazon.com/blogs/machine-learning/feed/"
+publisher = "AWS"
+lang = "en"
+enabled = false
+
+[[channel]]
+key = "nvidia_dev_blog"
+name = "NVIDIA Developer Blog"
+fetch_kind = "feed"
+endpoint = "https://developer.nvidia.com/blog/feed/"
+publisher = "NVIDIA"
+lang = "en"
+enabled = false

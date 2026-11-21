@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 import pytest
 
-from agent.core.trace import (
+from agent.trace import (
     extract_token_usage,
     finalize_request_trace,
     request_trace_context,
@@ -65,7 +64,7 @@ def test_extract_token_usage_sums_across_messages() -> None:
 
 
 def test_request_token_usage_accumulates_across_model_calls() -> None:
-    from agent.core.trace import set_request_token_usage
+    from agent.trace import set_request_token_usage
 
     with request_trace_context(user_message="multi node run", request_id="req-token-sum"):
         set_request_token_usage({"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 150})
@@ -111,72 +110,10 @@ def test_trace_records_tool_call_spans_and_chain() -> None:
     assert tool_spans[0]["output_summary"]["evidence_urls"] == ["https://a.example.com"]
 
 
-def test_generate_response_finalizes_success_trace() -> None:
-    from agent.agent import generate_response, get_last_request_trace_summary
-
-    expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
-    with (
-        patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}, {"https://a.example.com"})),
-        patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})),
-    ):
-        out = generate_response([], "summarize recent ai updates")
-
-    summary = get_last_request_trace_summary()
-    assert out == expected
-    assert summary is not None
-    assert summary["final_status"] == "success"
-    assert summary["evidence_count"] == 1
-    assert summary["user_message"] == "summarize recent ai updates"
-    assert isinstance(summary["request_id"], str) and summary["request_id"]
-
-
-def test_generate_response_finalizes_blocked_trace() -> None:
-    from agent.agent import AgentGenerationError, generate_response, get_last_request_trace_summary
-
-    with (
-        patch("agent.agent._run_generation_core", return_value=("Main analysis body.", {"https://a.example.com"}, {"https://a.example.com"})),
-        patch(
-            "agent.agent._decorate_response_with_sources",
-            return_value=("Main analysis body.\n\n## Sources\n- [1] https://a.example.com", {}),
-        ),
-        patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}),
-    ):
-        with pytest.raises(AgentGenerationError) as ei:
-            generate_response([], "analyze ai trend")
-
-    summary = get_last_request_trace_summary()
-    assert ei.value.code == "graph_inline_citation_missing"
-    assert summary is not None
-    assert summary["final_status"] == "blocked"
-    assert summary["error_code"] == "graph_inline_citation_missing"
-
-
-def test_generate_response_eval_payload_preserves_tool_call_sequence() -> None:
-    from agent.agent import generate_response_eval_payload
-
-    expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
-    tool_chain = ["search_news", "query_news", "search_news"]
-    with (
-        patch(
-            "agent.agent._generate_response_core",
-            return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}, {"https://a.example.com"}),
-        ),
-        patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})),
-        patch(
-            "agent.agent._finalize_request_trace",
-            return_value={"tool_call_chain": tool_chain},
-        ),
-        patch("agent.agent._get_accumulated_tool_call_chain", return_value=tool_chain),
-    ):
-        payload = generate_response_eval_payload([], "summarize recent ai updates")
-
-    assert payload["tool_calls"] == tool_chain
-
-
 def test_finalize_request_trace_reentry_does_not_persist_twice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import agent.core.trace as trace_mod
+    import agent.trace as trace_mod
 
     persisted: list[str] = []
 
@@ -205,7 +142,7 @@ def test_trace_span_records_parent_child_and_full_model_io(
     monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "true")
     monkeypatch.setenv("AGENT_TRACE_SECRET_REDACTION", "true")
     persisted: list[dict] = []
-    monkeypatch.setattr("agent.core.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
+    monkeypatch.setattr("agent.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
 
     with request_trace_context(user_message="hello", request_id="req-span-1"):
         with trace_span("graph_node", "intent_router") as parent:
@@ -267,7 +204,7 @@ def test_model_io_omits_provider_internal_thought_signature(
 ) -> None:
     monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "true")
     persisted: list[dict] = []
-    monkeypatch.setattr("agent.core.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
+    monkeypatch.setattr("agent.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
 
     with request_trace_context(user_message="hello", request_id="req-provider-internal"):
         with trace_span("model_call", "intent_router") as span:
@@ -297,7 +234,7 @@ def test_trace_full_model_io_can_be_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "false")
-    monkeypatch.setattr("agent.core.trace._persist_request_trace", lambda _summary: True)
+    monkeypatch.setattr("agent.trace._persist_request_trace", lambda _summary: True)
 
     with request_trace_context(user_message="hello", request_id="req-no-model-io"):
         with trace_span("model_call", "intent_router") as span:
@@ -314,44 +251,10 @@ def test_trace_full_model_io_can_be_disabled(
     assert summary["model_io"] == []
 
 
-def test_missing_model_client_still_records_model_io(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from agent.graph.nodes import _invoke_text_model
-    from agent.graph.state import GraphModelHandle
-
-    monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "true")
-    persisted: list[dict] = []
-    monkeypatch.setattr("agent.core.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
-
-    with request_trace_context(user_message="hello", request_id="req-missing-client"):
-        text = _invoke_text_model(
-            GraphModelHandle(
-                role="intent_router",
-                provider="gemini_api",
-                model="gemini-test",
-                client=None,
-                fallback=True,
-                error="missing config",
-            ),
-            node="intent_router",
-            messages=[HumanMessage(content="full prompt")],
-        )
-        summary = finalize_request_trace(final_status="success", evidence_count=0)
-
-    assert text == ""
-    assert summary is not None
-    assert summary["spans"][0]["span_type"] == "model_call"
-    assert persisted[0]["model_io"][0]["raw_output"] == {
-        "status": "skipped",
-        "reason": "missing_client",
-    }
-
-
 def test_trace_span_marks_exceptions_as_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("agent.core.trace._persist_request_trace", lambda _summary: True)
+    monkeypatch.setattr("agent.trace._persist_request_trace", lambda _summary: True)
 
     with request_trace_context(user_message="hello", request_id="req-span-error"):
         with pytest.raises(ValueError):
@@ -364,3 +267,28 @@ def test_trace_span_marks_exceptions_as_error(
     assert span["status"] == "error"
     assert span["error_code"] == "guard_valueerror"
     assert span["exception_chain"][0]["type"] == "ValueError"
+
+
+def test_trace_span_records_interrupt_named_exceptions_as_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class GraphInterrupt(Exception):
+        pass
+
+    monkeypatch.setattr("agent.trace._persist_request_trace", lambda _summary: True)
+
+    with request_trace_context(user_message="hello", request_id="req-span-interrupt"):
+        with pytest.raises(GraphInterrupt):
+            with trace_span("graph_node", "gather"):
+                raise GraphInterrupt("paused")
+        summary = finalize_request_trace(final_status="error", error_code="graph_failed")
+
+    assert summary is not None
+    span = summary["spans"][0]
+    assert span["status"] == "error"
+    assert span["error_code"] == "graph_node_graphinterrupt"
+
+
+def test_runtime_metadata_holds_trace_flags_and_langsmith_only() -> None:
+    with request_trace_context(user_message="q") as trace:
+        assert set(trace.runtime) == {"trace", "langsmith"}

@@ -5,10 +5,9 @@ import re
 import asyncio
 import logging
 import time
-from pathlib import Path
+from dataclasses import asdict
 from urllib.parse import urlparse, unquote
 
-from dotenv import load_dotenv
 from cachetools import TTLCache
 from telegram import Update, BotCommand
 from telegram.ext import (
@@ -19,14 +18,11 @@ from telegram.ext import (
     filters,
 )
 
-from agent import AgentGenerationError, generate_response_payload
-from agent.clarification import (
-    build_clarification_history_item,
-    resolve_user_message_with_history_clarification,
-)
+from agent import run_turn
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
+from services.script_env import load_env
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=True)
+load_env()
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -178,26 +174,7 @@ def _schedule_delete_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
 import html as html_mod
 
 
-_URL_PATTERN = re.compile(r"https?://[^\s<>\]\)}`]+")
 _LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s<>\]\)\}`]+)\)|(https?://[^\s<>\]\)\}`]+)")
-_SOURCE_HEADER_RE = re.compile(
-    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
-    re.IGNORECASE,
-)
-_SOURCE_BULLET_RE = re.compile(r"^\s*-\s*\[(\d{1,3})\]\s+(.+?)\s*$")
-
-
-
-def _extract_urls(text: str) -> list[str]:
-    seen: set[str] = set()
-    urls: list[str] = []
-    for m in _URL_PATTERN.finditer(text or ""):
-        u = (m.group(0) or "").strip().rstrip(".,;:!?")
-        if not u or u in seen:
-            continue
-        seen.add(u)
-        urls.append(u)
-    return urls
 
 
 def _fallback_title_from_url(url: str) -> str:
@@ -219,50 +196,6 @@ def _fallback_title_from_url(url: str) -> str:
         return tail
     except Exception:
         return url
-
-
-def _unescape_markdown_link_text(text: str) -> str:
-    """Unescape minimal markdown escapes inside link titles."""
-    if not text:
-        return ""
-    out = text
-    out = out.replace(r"\[", "[")
-    out = out.replace(r"\]", "]")
-    out = out.replace(r"\(", "(")
-    out = out.replace(r"\)", ")")
-    out = out.replace(r"\\", "\\")
-    return out
-
-
-def _render_source_bullet_markdown_link(line: str) -> str | None:
-    """Render source bullet lines like '- [1] [title](https://...)' safely.
-
-    This parser intentionally handles titles that may contain '[' and ']'
-    by splitting on the last '](' token instead of a simple regex group.
-    """
-    m = re.match(r"^(\s*-\s*\[\d{1,3}\]\s+)(.+?)\s*$", line)
-    if not m:
-        return None
-
-    prefix = m.group(1)
-    token = m.group(2).strip()
-    if not (token.startswith("[") and token.endswith(")") and "](" in token):
-        return None
-
-    sep = token.rfind("](")
-    if sep <= 0:
-        return None
-
-    title = token[1:sep]
-    url = token[sep + 2 : -1].strip()
-    if not (url.startswith("http://") or url.startswith("https://")):
-        return None
-
-    title = _unescape_markdown_link_text(title.strip())
-    safe_prefix = html_mod.escape(prefix)
-    safe_url = html_mod.escape(url, quote=True)
-    safe_title = html_mod.escape(title)
-    return f'{safe_prefix}<a href="{safe_url}">{safe_title}</a>'
 
 
 def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
@@ -296,43 +229,6 @@ def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
     return "".join(out)
 
 
-def _find_source_section_start(lines: list[str]) -> int:
-    for idx, line in enumerate(lines):
-        if _SOURCE_HEADER_RE.match((line or "").strip()):
-            return idx
-    bullet_indexes: list[int] = []
-    for idx, line in enumerate(lines):
-        if _SOURCE_BULLET_RE.match(line or ""):
-            bullet_indexes.append(idx)
-    if len(bullet_indexes) >= 2:
-        return bullet_indexes[0]
-    return -1
-
-
-def _extract_source_citation_url_map(lines: list[str], source_start: int) -> dict[str, str]:
-    if source_start < 0:
-        return {}
-    citation_map: dict[str, str] = {}
-    for line in lines[source_start:]:
-        m = _SOURCE_BULLET_RE.match(line or "")
-        if not m:
-            continue
-        idx = m.group(1)
-        rest = m.group(2).strip()
-        url = None
-        markdown_link = re.search(r"\]\((https?://[^\s)]+)\)", rest, flags=re.IGNORECASE)
-        if markdown_link:
-            url = markdown_link.group(1)
-        else:
-            plain_url = re.search(r"https?://[^\s)]+", rest, flags=re.IGNORECASE)
-            if plain_url:
-                url = plain_url.group(0)
-        if not url:
-            continue
-        citation_map[idx] = url.rstrip(".,;:!?)")
-    return citation_map
-
-
 def _linkify_numeric_citations_html(html_text: str, citation_url_map: dict[str, str]) -> str:
     if not html_text or not citation_url_map:
         return html_text
@@ -358,7 +254,6 @@ def _render_limited_bold_line(
     line: str,
     url_title_map: dict[str, str],
     citation_url_map: dict[str, str] | None = None,
-    link_inline_citations: bool = False,
 ) -> str:
     """Keep bold only for short segment-summary labels, plain text otherwise.
 
@@ -372,7 +267,7 @@ def _render_limited_bold_line(
     if m:
         indent, label = m.group(1), m.group(2)
         rendered = f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>"
-        if link_inline_citations and citation_url_map:
+        if citation_url_map:
             return _linkify_numeric_citations_html(rendered, citation_url_map)
         return rendered
 
@@ -383,23 +278,18 @@ def _render_limited_bold_line(
         prefix = f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>{html_mod.escape(colon)}"
         if rest:
             rendered = f"{prefix} {_escape_and_linkify(rest, url_title_map)}"
-            if link_inline_citations and citation_url_map:
+            if citation_url_map:
                 return _linkify_numeric_citations_html(rendered, citation_url_map)
             return rendered
-        if link_inline_citations and citation_url_map:
+        if citation_url_map:
             return _linkify_numeric_citations_html(prefix, citation_url_map)
         return prefix
-
-    # Case 3: source line with markdown link title may include nested [].
-    rendered_source_line = _render_source_bullet_markdown_link(line)
-    if rendered_source_line is not None:
-        return rendered_source_line
 
     # Other lines: strip markdown bold markers and keep plain text.
     plain = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
     plain = re.sub(r"`(https?://[^`]+)`", r"\1", plain)
     rendered = _escape_and_linkify(plain, url_title_map)
-    if link_inline_citations and citation_url_map:
+    if citation_url_map:
         return _linkify_numeric_citations_html(rendered, citation_url_map)
     return rendered
 
@@ -436,21 +326,19 @@ def _chunk_by_lines(text: str, max_len: int = 4096) -> list[str]:
     return chunks
 
 
-def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None) -> str:
-    """将 Gemini 输出的 Markdown 转换为 Telegram HTML 格式。
+def _format_for_telegram(text: str, sources=()) -> str:
+    """将回答的 Markdown 转换为 Telegram HTML 格式。
 
     策略：
     - # / ## / ### 标题 → <b>粗体</b>
     - **正文加粗** → 去除星号，保留纯文本
+    - 正文里的 [n] 链到对应来源，来源行追加在正文之后
     - 其余内容 HTML 转义，防止解析错误
     """
-    lines = text.split("\n")
-    title_map = url_title_map or {}
-    source_start = _find_source_section_start(lines)
-    citation_url_map = _extract_source_citation_url_map(lines, source_start)
+    citation_url_map = {str(s.n): s.url for s in sources}
+    title_map = {s.url: s.title_zh or s.title for s in sources}
     result = []
-    for idx, line in enumerate(lines):
-        link_inline_citations = source_start < 0 or idx < source_start
+    for line in text.split("\n"):
         stripped = line.strip()
         # 处理 Markdown 标题行
         if stripped.startswith("#"):
@@ -459,7 +347,7 @@ def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None)
             title = html_mod.escape(title)
             if title:
                 heading = f"<b>{title}</b>"
-                if link_inline_citations and citation_url_map:
+                if citation_url_map:
                     heading = _linkify_numeric_citations_html(heading, citation_url_map)
                 result.append(heading)
             continue
@@ -473,9 +361,15 @@ def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None)
                 line,
                 title_map,
                 citation_url_map=citation_url_map,
-                link_inline_citations=link_inline_citations,
             )
         )
+    if sources:
+        result.append("")
+        result.append("<b>来源</b>")
+        for s in sources:
+            title = html_mod.escape(s.title_zh or s.title)
+            url = html_mod.escape(s.url, quote=True)
+            result.append(f'- [{s.n}] <a href="{url}">{title}</a>')
     return "\n".join(result)
 
 
@@ -501,9 +395,9 @@ async def _reply_text_with_retry(message, text: str, parse_mode: str | None = No
     raise last_error if last_error else RuntimeError("send failed")
 
 
-async def _send_reply(message, text: str, url_title_map: dict[str, str] | None = None):
-    """Send pre-processed agent output as Telegram-friendly HTML."""
-    formatted = _format_for_telegram(text, url_title_map=url_title_map or {})
+async def _send_reply(message, answer):
+    """Send agent output as Telegram-friendly HTML."""
+    formatted = _format_for_telegram(answer.text, answer.sources)
     chunks = _chunk_by_lines(formatted, 4096)
     for chunk in chunks:
         try:
@@ -584,13 +478,13 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     arg = _extract_command_arg(update.message.text or "")
     if not arg:
-        max_tool_rounds = os.getenv("AGENT_GRAPH_MAX_TOOL_ROUNDS", "2")
+        max_steps = os.getenv("AGENT_MAX_STEPS", "3")
         temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
         chat_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         await update.message.reply_text(
             "当前设置：\n"
             f"- 运行时: Custom LangGraph Agent\n"
-            f"- 工具轮次上限: {max_tool_rounds}\n"
+            f"- 取证步数上限: {max_steps}\n"
             f"- Temperature: {temperature}\n"
             f"- 当前 chat 历史轮数上限: {chat_limit}\n"
             f"- 默认历史轮数上限: {MAX_HISTORY_TURNS}\n"
@@ -697,7 +591,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_admin(update, "/status", private_only=True):
         return
 
-    max_tool_rounds = os.getenv("AGENT_GRAPH_MAX_TOOL_ROUNDS", "2")
+    max_steps = os.getenv("AGENT_MAX_STEPS", "3")
     temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
     active_sessions = sum(1 for h in conversation_histories.values() if h)
     total_sessions = len(conversation_histories)
@@ -724,7 +618,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = [
         "系统状态：",
         "- runtime: Custom LangGraph Agent",
-        f"- max_tool_rounds: {max_tool_rounds}",
+        f"- max_steps: {max_steps}",
         f"- temperature: {temperature}",
         f"- db: {'ok' if db_ok else 'error'}",
         f"- sessions(active/total): {active_sessions}/{total_sessions}",
@@ -761,39 +655,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         history = conversation_histories[chat_id]
-        effective_message, pending = resolve_user_message_with_history_clarification(history, user_text)
-        if pending is not None:
-            logger.info(
-                "[chat_id=%s] clarification follow-up detected: reason=%s",
-                chat_id,
-                pending.reason,
-            )
+        answer = await asyncio.to_thread(
+            run_turn, user_text, history, user_key="tg:" + str(chat_id)
+        )
 
-        payload = await asyncio.to_thread(generate_response_payload, history, effective_message)
-        kind = str(payload.get("kind", "answer")).strip().lower()
-        reply = str(payload.get("text", "")).strip()
+        if answer.status == "error":
+            try:
+                await thinking_msg.edit_text(answer.text)
+            except Exception:
+                await _reply_text_with_retry(update.message, answer.text)
+            return
 
-        # 更新历史（answer / clarification 都保留，便于下一轮继续）
         history.append({"role": "user", "parts": [{"text": user_text}]})
-        if kind == "clarification_required":
-            clarification_payload = payload.get("clarification", {})
-            history.append(build_clarification_history_item(clarification_payload))
-        else:
-            title_map = payload.get("url_title_map", {}) if isinstance(payload, dict) else {}
-            citation_urls = payload.get("citation_urls", []) if isinstance(payload, dict) else []
-            history.append(
-                {
-                    "role": "model",
-                    "parts": [{"text": reply}],
-                    "citation_urls": [
-                        str(url).strip()
-                        for url in citation_urls
-                        if str(url).strip()
-                    ] if isinstance(citation_urls, list) else [],
-                    "url_title_map": title_map if isinstance(title_map, dict) else {},
-                }
-            )
-
+        history.append(
+            {
+                "role": "model",
+                "parts": [{"text": answer.text}],
+                "status": answer.status,
+                "sources": [asdict(s) for s in answer.sources],
+            }
+        )
         history_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         conversation_histories[chat_id] = _trim_history(history, max_turns=history_limit)
 
@@ -803,32 +684,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        if kind == "clarification_required":
-            clarification_payload = payload.get("clarification", {})
-            question = str(payload.get("text", "")).strip()
-            hints = []
-            if isinstance(clarification_payload, dict):
-                raw_hints = clarification_payload.get("hints", [])
-                if isinstance(raw_hints, list):
-                    hints = [str(item).strip() for item in raw_hints if str(item).strip()]
-            clarification_text = question
-            if hints:
-                clarification_text = (
-                    f"{question}\n\n"
-                    + "\n".join(f"- {hint}" for hint in hints)
-                )
-            await _send_reply(update.message, clarification_text, url_title_map={})
-            return
-
-        title_map = payload.get("url_title_map", {}) if isinstance(payload, dict) else {}
-        await _send_reply(update.message, reply, url_title_map=title_map if isinstance(title_map, dict) else {})
-    except AgentGenerationError as e:
-        logger.warning(f"[chat_id={chat_id}] generation blocked: {e}")
-        friendly = str(e).strip() or "抱歉，本次分析暂时不可用，请稍后重试。"
-        try:
-            await thinking_msg.edit_text(friendly)
-        except Exception:
-            await _reply_text_with_retry(update.message, friendly)
+        await _send_reply(update.message, answer)
     except Exception as e:
         logger.error(f"[chat_id={chat_id}] message handling error: {e}")
         fallback = "抱歉，系统暂时不可用，请稍后重试。"

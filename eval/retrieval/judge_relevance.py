@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 from eval.eval_retry import call_with_retry  # noqa: E402
 
@@ -40,12 +40,6 @@ _JUDGE_SYSTEM_PROMPT = (
     'Return JSON only: {"judgments":[{"index":1,"relevance":2,"reason":"..."}, ...]} '
     "with one entry per candidate index."
 )
-
-
-def _load_env() -> None:
-    env_path = PROJECT_ROOT / "agent" / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -158,7 +152,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    _load_env()
+    load_env()
 
     results_path = args.results.resolve()
     if not results_path.exists():
@@ -181,18 +175,13 @@ def main() -> int:
     if done:
         print(f"Resume: {len(done)} query(ies) already judged; skipping them.")
 
-    from agent.graph.model_io import _coerce_to_text, _extract_json_object  # noqa: E402
-    from services.llm_provider import build_chat_model, resolve_agent_model_config  # noqa: E402
+    from agent.llm import build_models, coerce_to_text, extract_json_object  # noqa: E402
+    from services.llm_provider import build_chat_model  # noqa: E402
 
-    config = resolve_agent_model_config()
-    client = build_chat_model(
-        provider=config.provider,
-        model_name=config.model,
-        temperature=0.0,
-        default_provider=config.provider,
-        default_model=config.model,
-    )
-    print(f"Judge model: provider={config.provider} model={config.model}")
+    # The judge is the production final model, AGENT_FINAL_*.
+    final = build_models()[1]
+    client = build_chat_model(provider=final.provider, model_name=final.model, temperature=0.0)
+    print(f"Judge model: provider={final.provider} model={final.model}")
 
     pending = [c for c in cases if str(c.get("case_id")) not in done]
     print(f"Total queries: {len(cases)}; pending: {len(pending)}")
@@ -210,8 +199,8 @@ def main() -> int:
                     query,
                     pool,
                     client=client,
-                    coerce_text_fn=_coerce_to_text,
-                    extract_json_fn=_extract_json_object,
+                    coerce_text_fn=coerce_to_text,
+                    extract_json_fn=extract_json_object,
                 ),
                 label=f"{case_id} judge",
             )

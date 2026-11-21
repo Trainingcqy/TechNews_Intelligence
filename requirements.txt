@@ -9,16 +9,10 @@ cachetools>=5.3,<6
 feedparser>=6.0,<7
 
 # Agent graph / model integrations
-langgraph>=1.1.6,<2
-langgraph-checkpoint-postgres>=3.1,<4
-psycopg[binary]>=3.2,<4
-mcp>=1.27,<2
+langgraph>=1.2.22,<2
 langchain-openai>=1.1.13,<2
 langchain-google-genai>=4.2.2,<5
 langchain-google-vertexai>=3.2.2,<4
 
-# Evaluation / observability
+# Observability
 langsmith>=0.7.30,<0.8
-datasets>=2.18,<4
-rapidfuzz>=3.13,<4
-hdbscan>=0.8.33

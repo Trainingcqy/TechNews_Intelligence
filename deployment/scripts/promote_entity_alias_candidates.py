@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 from services.db import db_cursor, db_transaction  # noqa: E402
 from services.entity_resolution import normalize_aliases  # noqa: E402
-from services.script_env import _load_env_file  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 
 def _detect_language(alias: str) -> str:
@@ -176,10 +176,10 @@ def main() -> int:
     parser.add_argument("--include-auto-approved", action="store_true")
     parser.add_argument("--limit", type=int, default=500)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--env-file", default="deployment/.env")
+    parser.add_argument("--env-file", default=".env")
     args = parser.parse_args()
 
-    _load_env_file(args.env_file)
+    load_env(args.env_file)
     promoted = promote_candidates(
         include_auto_approved=bool(args.include_auto_approved),
         limit=max(1, min(args.limit, 10000)),

@@ -96,10 +96,6 @@
         return { url, suffix };
     }
 
-    function _sanitizeDetectedUrl(rawUrl) {
-        return _splitTrailingUrlSuffix(rawUrl).url;
-    }
-
     // == Marked.js: 链接在新标签页打开 ==
     const renderer = new marked.Renderer();
     renderer.link = function ({ href, title, text }) {
@@ -321,37 +317,11 @@
 
     function applyChatSuccess(text, data) {
         const reply = String(data.reply || '').trim();
-        const citationUrls = Array.isArray(data.citation_urls)
-            ? data.citation_urls.map((u) => String(u || '').trim()).filter(Boolean)
-            : [];
+        const sources = Array.isArray(data.sources) ? data.sources : [];
         history.push({ role: 'user', parts: [{ text }] });
-        history.push({ role: 'model', parts: [{ text: reply }] });
+        history.push({ role: 'model', parts: [{ text: reply }], sources });
 
-        appendMessage('agent', reply, { citationUrls });
-        const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
-        const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
-        updateQuotaUI(data.remaining, totalQuota, data.status || quotaStatusFromChatPayload(data), Boolean(data.unlimited));
-    }
-
-    function applyChatClarification(text, data) {
-        const clarification = data && typeof data.clarification === 'object' ? data.clarification : {};
-        const question = String((clarification && clarification.question) || data.reply || '').trim();
-        const hints = Array.isArray(clarification.hints)
-            ? clarification.hints.map((item) => String(item || '').trim()).filter(Boolean)
-            : [];
-        const clarificationText = hints.length
-            ? `${question}\n\n${hints.map((hint) => `- ${hint}`).join('\n')}`
-            : question;
-
-        history.push({ role: 'user', parts: [{ text }] });
-        history.push({
-            role: 'model',
-            kind: 'clarification_required',
-            clarification: clarification,
-            parts: [{ text: question }],
-        });
-
-        appendMessage('agent', clarificationText || '请补充分析范围后我再继续。');
+        appendMessage('agent', reply, { sources });
         const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
         const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
         updateQuotaUI(data.remaining, totalQuota, data.status || quotaStatusFromChatPayload(data), Boolean(data.unlimited));
@@ -359,11 +329,6 @@
 
     function applyChatPayload(text, data) {
         rememberThreadId(data);
-        const kind = String((data && data.kind) || 'answer').toLowerCase();
-        if (kind === 'clarification_required') {
-            applyChatClarification(text, data || {});
-            return;
-        }
         applyChatSuccess(text, data || {});
     }
 
@@ -603,64 +568,6 @@
     }
 
     // == Message Rendering ==
-    const sourceHeaderRe = /^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$/i;
-    const sourceBulletRe = /^\s*(?:-\s*)?\[(\d{1,3})\]\s+.+$/;
-
-    function _splitBodyAndSource(rawText) {
-        const text = String(rawText || '');
-        const lines = text.split('\n');
-        let sourceStart = -1;
-        for (let i = 0; i < lines.length; i++) {
-            if (sourceHeaderRe.test(lines[i].trim())) {
-                sourceStart = i;
-                break;
-            }
-        }
-        if (sourceStart < 0) {
-            const bulletIndexes = [];
-            for (let i = 0; i < lines.length; i++) {
-                if (sourceBulletRe.test(lines[i])) {
-                    bulletIndexes.push(i);
-                }
-            }
-            if (bulletIndexes.length >= 2) {
-                sourceStart = bulletIndexes[0];
-            }
-        }
-        if (sourceStart < 0) {
-            return { body: text, source: '' };
-        }
-        return {
-            body: lines.slice(0, sourceStart).join('\n'),
-            source: lines.slice(sourceStart).join('\n'),
-        };
-    }
-
-    function _extractCitationUrlMap(sourceText) {
-        const map = {};
-        const lines = String(sourceText || '').split('\n');
-        for (const line of lines) {
-            const m = line.match(/^\s*(?:-\s*)?\[(\d{1,3})\]\s+(.+)$/);
-            if (!m) continue;
-            const idx = m[1];
-            const rest = m[2];
-            let url = null;
-
-            const markdownLink = rest.match(/\]\((https?:\/\/[^\s)]+)\)/i);
-            if (markdownLink) {
-                url = markdownLink[1];
-            } else {
-                const plainUrl = rest.match(/https?:\/\/[^\s)]+/i);
-                if (plainUrl) url = plainUrl[0];
-            }
-
-            if (url) {
-                map[idx] = _sanitizeDetectedUrl(url);
-            }
-        }
-        return map;
-    }
-
     // Normalize section headings so they reliably render as styled (blue) <h2/h3>.
     // Only h1-h3 are styled (style.css), and marked needs a space after '#'. The model
     // drifts between forms, so coerce them into the styled range deterministically:
@@ -702,35 +609,22 @@
         return lines.join('\n');
     }
 
-    function _prepareAgentMarkdown(rawText, citationUrls = []) {
-        const { body, source } = _splitBodyAndSource(rawText);
-        const normalizedBody = _normalizeAgentHeadings(body);
-        const citationMap = _extractCitationUrlMap(source);
-        if (Array.isArray(citationUrls) && citationUrls.length) {
-            citationUrls.forEach((url, i) => {
-                const normalized = _sanitizeDetectedUrl(String(url || '').trim());
-                if (normalized) {
-                    citationMap[String(i + 1)] = normalized;
-                }
-            });
-        }
+    function _renderAnswerMarkdown(rawText, sources = []) {
+        const body = _normalizeAgentHeadings(rawText);
+        if (!Array.isArray(sources) || !sources.length) return body;
 
-        // Body: [n] -> linked [n](url) when url exists; otherwise keep as literal [n].
-        const linkedBody = String(normalizedBody || '').replace(/\[(\d{1,3})\](?!\()/g, (full, idx) => {
-            const url = citationMap[idx];
-            if (!url) return `\\[${idx}\\]`;
-            return `[${idx}](${url})`;
+        const urlByN = {};
+        for (const src of sources) urlByN[String(src.n)] = src.url;
+        const linkedBody = body.replace(/\[(\d{1,3})\](?!\()/g, (full, n) => (
+            urlByN[n] ? `[${n}](${urlByN[n]})` : full
+        ));
+
+        const lines = sources.map((src) => {
+            const title = String(src.title_zh || src.title || '').replace(/[\\\[\]]/g, '\\$&');
+            const tail = [src.source, src.published_at].filter(Boolean).join(' · ');
+            return `- \\[${src.n}\\] [${title}](${src.url})${tail ? ` · ${tail}` : ''}`;
         });
-
-        if (!source) {
-            return linkedBody;
-        }
-
-        // Source section: keep numbering literal, avoid accidental relative links like /[5].
-        const normalizedSource = String(source)
-            .replace(/^(\s*-\s*)\[(\d{1,3})\]/gm, '$1\\[$2\\]')
-            .replace(/^(\s*)\[(\d{1,3})\]/gm, '$1\\[$2\\]');
-        return `${linkedBody}\n${normalizedSource}`.trim();
+        return `${linkedBody}\n\n## 来源\n${lines.join('\n')}`;
     }
 
     function appendMessage(role, text, meta = {}) {
@@ -740,8 +634,8 @@
         const content = document.createElement('div');
         content.className = 'msg-content';
         if (role === 'agent') {
-            const citationUrls = Array.isArray(meta.citationUrls) ? meta.citationUrls : [];
-            content.innerHTML = marked.parse(_prepareAgentMarkdown(text, citationUrls));
+            const sources = Array.isArray(meta.sources) ? meta.sources : [];
+            content.innerHTML = marked.parse(_renderAnswerMarkdown(text, sources));
         } else {
             content.textContent = text;
         }
@@ -773,21 +667,8 @@
             if (role === 'user') {
                 appendMessage('user', _historyItemText(item));
             } else if (role === 'model') {
-                const kind = String((item && item.kind) || 'answer').toLowerCase();
-                if (kind === 'clarification_required') {
-                    const clar = item.clarification && typeof item.clarification === 'object' ? item.clarification : {};
-                    const question = String(clar.question || _historyItemText(item) || '').trim();
-                    const hints = Array.isArray(clar.hints)
-                        ? clar.hints.map((h) => String(h || '').trim()).filter(Boolean)
-                        : [];
-                    const text = hints.length ? `${question}\n\n${hints.map((h) => `- ${h}`).join('\n')}` : question;
-                    appendMessage('agent', text || '请补充分析范围后我再继续。');
-                } else {
-                    const citationUrls = Array.isArray(item.citation_urls)
-                        ? item.citation_urls.map((u) => String(u || '').trim()).filter(Boolean)
-                        : [];
-                    appendMessage('agent', _historyItemText(item), { citationUrls });
-                }
+                const sources = Array.isArray(item.sources) ? item.sources : [];
+                appendMessage('agent', _historyItemText(item), { sources });
             }
         }
     }

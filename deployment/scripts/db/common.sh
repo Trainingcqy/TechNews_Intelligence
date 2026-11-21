@@ -4,9 +4,8 @@
 # shellcheck shell=bash
 
 DB_RUNTIME_READY=0
-POSTGRES_USER="${POSTGRES_USER:-}"
-POSTGRES_DB="${POSTGRES_DB:-}"
-DEPLOY_DIR="${DEPLOY_DIR:-}"
+DB_USER="${DB_USER:-}"
+DB_NAME="${DB_NAME:-}"
 REPO_ROOT="${REPO_ROOT:-}"
 COMPOSE_CMD=()
 PYTHON_CMD=()
@@ -111,7 +110,7 @@ db_python_run() {
   fi
 
   (
-    cd "${DEPLOY_DIR}"
+    cd "${REPO_ROOT}"
     "${COMPOSE_CMD[@]}" run --rm -T --no-deps \
       -v "${REPO_ROOT}:/app" \
       -w /app \
@@ -131,21 +130,21 @@ db_require_file() {
 db_init_runtime() {
   local repo_root="$1"
   REPO_ROOT="${repo_root}"
-  DEPLOY_DIR="${REPO_ROOT}/deployment"
 
-  if [[ ! -f "${DEPLOY_DIR}/.env" ]]; then
-    db_die "Missing deployment/.env at ${DEPLOY_DIR}/.env. Please copy from .env.example and fill DB credentials first."
+  if [[ ! -f "${REPO_ROOT}/.env" ]]; then
+    db_die "Missing .env at ${REPO_ROOT}/.env. Copy .env.example and fill in the database account first."
   fi
 
-  if [[ -z "${POSTGRES_USER:-}" ]]; then
-    POSTGRES_USER="$(db_read_env_var POSTGRES_USER "${DEPLOY_DIR}/.env")"
+  if [[ -z "${DB_USER:-}" ]]; then
+    DB_USER="$(db_read_env_var DB_USER "${REPO_ROOT}/.env")"
   fi
-  if [[ -z "${POSTGRES_DB:-}" ]]; then
-    POSTGRES_DB="$(db_read_env_var POSTGRES_DB "${DEPLOY_DIR}/.env")"
+  if [[ -z "${DB_NAME:-}" ]]; then
+    DB_NAME="$(db_read_env_var DB_NAME "${REPO_ROOT}/.env")"
   fi
+  DB_NAME="${DB_NAME:-DB}"
 
-  if [[ -z "${POSTGRES_USER:-}" || -z "${POSTGRES_DB:-}" ]]; then
-    db_die "POSTGRES_USER / POSTGRES_DB must be set in deployment/.env"
+  if [[ -z "${DB_USER:-}" ]]; then
+    db_die "DB_USER must be set in .env"
   fi
 
   db_detect_compose_cmd
@@ -162,7 +161,7 @@ db_ensure_postgres_running() {
   db_assert_runtime
   echo "Starting postgres service if needed..."
   (
-    cd "${DEPLOY_DIR}"
+    cd "${REPO_ROOT}"
     "${COMPOSE_CMD[@]}" up -d postgres >/dev/null
   )
 }
@@ -173,9 +172,9 @@ db_psql_file() {
   shift || true
   db_require_file "${sql_file}" "SQL file"
   (
-    cd "${DEPLOY_DIR}"
+    cd "${REPO_ROOT}"
     cat "${sql_file}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-      psql -v ON_ERROR_STOP=1 "$@" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
+      psql -v ON_ERROR_STOP=1 "$@" -U "${DB_USER}" -d "${DB_NAME}"
   )
 }
 
@@ -184,8 +183,8 @@ db_psql_sql() {
   local sql="$1"
   shift || true
   (
-    cd "${DEPLOY_DIR}"
+    cd "${REPO_ROOT}"
     printf '%s\n' "${sql}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-      psql -v ON_ERROR_STOP=1 "$@" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
+      psql -v ON_ERROR_STOP=1 "$@" -U "${DB_USER}" -d "${DB_NAME}"
   )
 }

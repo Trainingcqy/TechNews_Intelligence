@@ -24,7 +24,7 @@ from services.entity_resolution import (  # noqa: E402
     decision_to_candidate_row,
     extract_alias_candidates_from_text,
 )
-from services.script_env import _load_env_file  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 
 def _load_news_rows(*, days: int, limit: int) -> list[dict[str, Any]]:
@@ -243,10 +243,10 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--use-deepseek", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--env-file", default="deployment/.env")
+    parser.add_argument("--env-file", default=".env")
     args = parser.parse_args()
 
-    _load_env_file(args.env_file)
+    load_env(args.env_file)
     rows = build_candidates(
         days=max(1, min(args.days, 365)),
         limit=max(1, min(args.limit, 10000)),

@@ -4,7 +4,6 @@ Transport-agnostic DB primitives for:
 - creating threads
 - appending conversation messages
 - loading history in current `history` shape
-- listing recent threads
 """
 
 from __future__ import annotations
@@ -18,8 +17,6 @@ from psycopg2.extras import Json
 from services.db import db_cursor, db_transaction
 
 DEFAULT_THREAD_CHANNEL = "generic"
-DEFAULT_RECENT_THREADS_LIMIT = 20
-MAX_RECENT_THREADS_LIMIT = 100
 MAX_HISTORY_LOAD_LIMIT = 500
 
 
@@ -56,52 +53,6 @@ def create_thread(
     if row is None:
         raise RuntimeError("failed to create conversation thread")
     return _thread_row_to_dict(row, default_message_count=0)
-
-
-def append_message(
-    thread_id: str,
-    message: dict[str, Any],
-    *,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Append one message to an existing thread and update thread timestamp."""
-    thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
-    role, parts, payload = _normalize_message(message)
-    metadata_value = _normalize_metadata(metadata)
-
-    with db_transaction() as (_, cur):
-        _assert_thread_exists(cur, thread_key)
-
-        cur.execute(
-            """
-            INSERT INTO public.conversation_messages (
-                thread_id, role, parts, payload, metadata
-            )
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id, thread_id, role, parts, payload, metadata, created_at
-            """,
-            (
-                thread_key,
-                role,
-                Json(parts),
-                Json(payload),
-                Json(metadata_value),
-            ),
-        )
-        row = cur.fetchone()
-        if row is None:
-            raise RuntimeError("failed to append conversation message")
-
-        cur.execute(
-            """
-            UPDATE public.conversation_threads
-            SET last_message_at = %s, updated_at = NOW()
-            WHERE thread_id = %s
-            """,
-            (row[6], thread_key),
-        )
-
-    return _message_row_to_dict(row)
 
 
 def append_message_for_token(
@@ -150,40 +101,6 @@ def append_message_for_token(
         )
 
     return _message_row_to_dict(row)
-
-
-def load_history(thread_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
-    """Load persisted history and map to current `history` structure."""
-    thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
-    limit_value = _normalize_optional_limit(limit, max_limit=MAX_HISTORY_LOAD_LIMIT)
-
-    with db_cursor() as (_, cur):
-        if limit_value is None:
-            cur.execute(
-                """
-                SELECT payload, role, parts
-                FROM public.conversation_messages
-                WHERE thread_id = %s
-                ORDER BY id ASC
-                """,
-                (thread_key,),
-            )
-            rows = cur.fetchall()
-        else:
-            cur.execute(
-                """
-                SELECT payload, role, parts
-                FROM public.conversation_messages
-                WHERE thread_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-                """,
-                (thread_key, limit_value),
-            )
-            rows = cur.fetchall()
-            rows.reverse()
-
-    return [_history_item_from_row(row) for row in rows]
 
 
 def load_history_for_token(
@@ -250,45 +167,6 @@ def delete_thread_for_token(thread_id: str, token_id: int | str) -> None:
         )
         if cur.fetchone() is None:
             raise ConversationThreadNotFoundError(f"thread not found: {thread_id}")
-
-
-def list_recent_threads(
-    *,
-    limit: int = DEFAULT_RECENT_THREADS_LIMIT,
-    channel: str | None = None,
-) -> list[dict[str, Any]]:
-    """List recent threads ordered by latest activity time."""
-    limit_value = _normalize_limit(limit, max_limit=MAX_RECENT_THREADS_LIMIT)
-    channel_value = _normalize_channel(channel) if channel is not None else None
-
-    with db_cursor() as (_, cur):
-        cur.execute(
-            """
-            SELECT
-                t.thread_id,
-                t.channel,
-                t.subject,
-                t.metadata,
-                t.created_at,
-                t.updated_at,
-                t.last_message_at,
-                COALESCE(stats.message_count, 0) AS message_count
-            FROM public.conversation_threads t
-            LEFT JOIN (
-                SELECT thread_id, COUNT(*)::INTEGER AS message_count
-                FROM public.conversation_messages
-                GROUP BY thread_id
-            ) stats
-                ON stats.thread_id = t.thread_id
-            WHERE (%s IS NULL OR t.channel = %s)
-            ORDER BY COALESCE(t.last_message_at, t.created_at) DESC, t.created_at DESC
-            LIMIT %s
-            """,
-            (channel_value, channel_value, limit_value),
-        )
-        rows = cur.fetchall()
-
-    return [_thread_row_to_dict(row) for row in rows]
 
 
 def _history_item_from_row(row: tuple[Any, Any, Any]) -> dict[str, Any]:
@@ -400,15 +278,6 @@ def _normalize_message(message: dict[str, Any]) -> tuple[str, list[Any], dict[st
         parts = copy.deepcopy(parts)
 
     return role, parts, payload
-
-
-def _assert_thread_exists(cur: Any, thread_id: str) -> None:
-    cur.execute(
-        "SELECT 1 FROM public.conversation_threads WHERE thread_id = %s LIMIT 1",
-        (thread_id,),
-    )
-    if cur.fetchone() is None:
-        raise ConversationThreadNotFoundError(f"thread not found: {thread_id}")
 
 
 def _assert_web_thread_token_owned(cur: Any, thread_id: str, token_id: str) -> None:

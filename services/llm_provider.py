@@ -1,4 +1,4 @@
-"""Shared chat-model provider factory for agent and eval runtimes."""
+"""Chat-model factory shared by the agent, the ingest pipeline and the evaluation scripts."""
 
 from __future__ import annotations
 
@@ -12,10 +12,12 @@ DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 DEFAULT_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
-GEMINI_API_PROVIDERS = {"gemini", "gemini_api", "google_ai_studio", "developer_api"}
-VERTEX_PROVIDERS = {"vertex", "vertex_ai", "gcp"}
-DEEPSEEK_PROVIDERS = {"deepseek", "deepseek_api", "deepseek_openai"}
-SUPPORTED_PROVIDERS = GEMINI_API_PROVIDERS | VERTEX_PROVIDERS | DEEPSEEK_PROVIDERS
+# The supported providers and the model used when a caller names none.
+DEFAULT_MODELS = {
+    "gemini_api": DEFAULT_GEMINI_API_MODEL,
+    "vertex": DEFAULT_VERTEX_MODEL,
+    "deepseek": DEFAULT_DEEPSEEK_MODEL,
+}
 
 
 @dataclass(frozen=True)
@@ -28,64 +30,16 @@ def _clean(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _first_env(*names: str, default: str = "") -> str:
-    for name in names:
-        value = _clean(os.getenv(name, ""))
-        if value:
-            return value
-    return default
+def normalize_provider(provider: str | None) -> str:
+    normalized = _clean(provider).lower()
+    if normalized not in DEFAULT_MODELS:
+        raise ValueError(f"Unsupported provider: {provider}. Expected one of: {'|'.join(DEFAULT_MODELS)}.")
+    return normalized
 
 
-def normalize_provider(provider: str | None, *, default_provider: str = "vertex") -> str:
-    """Normalize provider aliases into one of: gemini_api, vertex, deepseek."""
-    raw = _clean(provider) or _clean(default_provider)
-    normalized = raw.lower()
-    if normalized in GEMINI_API_PROVIDERS:
-        return "gemini_api"
-    if normalized in VERTEX_PROVIDERS:
-        return "vertex"
-    if normalized in DEEPSEEK_PROVIDERS:
-        return "deepseek"
-    allowed = "gemini_api|vertex|deepseek"
-    raise ValueError(f"Unsupported provider: {provider}. Expected one of: {allowed}.")
-
-
-def resolve_model_name(
-    provider: str,
-    model_name: str | None = None,
-    *,
-    default_model: str | None = None,
-) -> str:
-    """Resolve a model name from explicit input, provider env, then defaults."""
+def resolve_model_config(*, provider: str | None, model_name: str | None) -> ModelConfig:
     normalized = normalize_provider(provider)
-    explicit = _clean(model_name)
-    if explicit:
-        return explicit
-
-    if normalized == "deepseek":
-        return _first_env("DEEPSEEK_MODEL", default=DEFAULT_DEEPSEEK_MODEL)
-    if normalized == "vertex":
-        return _first_env(
-            "VERTEX_GENERATION_MODEL",
-            "VERTEX_MODEL",
-            "GEMINI_MODEL",
-            default=_clean(default_model) or DEFAULT_VERTEX_MODEL,
-        )
-    return _first_env("GEMINI_MODEL", default=_clean(default_model) or DEFAULT_GEMINI_API_MODEL)
-
-
-def resolve_model_config(
-    *,
-    provider: str | None,
-    model_name: str | None,
-    default_provider: str = "vertex",
-    default_model: str | None = None,
-) -> ModelConfig:
-    normalized = normalize_provider(provider, default_provider=default_provider)
-    return ModelConfig(
-        provider=normalized,
-        model=resolve_model_name(normalized, model_name, default_model=default_model),
-    )
+    return ModelConfig(provider=normalized, model=_clean(model_name) or DEFAULT_MODELS[normalized])
 
 
 def _deepseek_timeout() -> float:
@@ -96,21 +50,9 @@ def _deepseek_timeout() -> float:
         return 120.0
 
 
-def build_chat_model(
-    *,
-    provider: str | None,
-    model_name: str | None,
-    temperature: float,
-    default_provider: str = "vertex",
-    default_model: str | None = None,
-) -> Any:
+def build_chat_model(*, provider: str | None, model_name: str | None, temperature: float) -> Any:
     """Create a LangChain chat model for the requested provider."""
-    config = resolve_model_config(
-        provider=provider,
-        model_name=model_name,
-        default_provider=default_provider,
-        default_model=default_model,
-    )
+    config = resolve_model_config(provider=provider, model_name=model_name)
 
     if config.provider == "gemini_api":
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -127,26 +69,20 @@ def build_chat_model(
     if config.provider == "vertex":
         from langchain_google_vertexai import ChatVertexAI
 
-        project = _first_env("VERTEX_PROJECT", "GOOGLE_CLOUD_PROJECT")
+        project = _clean(os.getenv("VERTEX_PROJECT", ""))
         if not project:
-            raise ValueError("VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT is required for provider=vertex.")
-        location = _first_env(
-            "VERTEX_GENERATION_LOCATION",
-            "VERTEX_LOCATION",
-            "GOOGLE_CLOUD_LOCATION",
-            default="global",
-        )
+            raise ValueError("VERTEX_PROJECT is required for provider=vertex.")
         return ChatVertexAI(
             model=config.model,
             project=project,
-            location=location,
+            location=_clean(os.getenv("VERTEX_LOCATION", "")) or "global",
             temperature=float(temperature),
         )
 
     api_key = _clean(os.getenv("DEEPSEEK_API_KEY", ""))
     if not api_key:
         raise ValueError("DEEPSEEK_API_KEY is required for provider=deepseek.")
-    base_url = _first_env("DEEPSEEK_BASE_URL", default=DEFAULT_DEEPSEEK_BASE_URL).rstrip("/")
+    base_url = (_clean(os.getenv("DEEPSEEK_BASE_URL", "")) or DEFAULT_DEEPSEEK_BASE_URL).rstrip("/")
     from langchain_openai import ChatOpenAI
 
     return ChatOpenAI(
@@ -156,40 +92,3 @@ def build_chat_model(
         temperature=float(temperature),
         timeout=_deepseek_timeout(),
     )
-
-
-def resolve_agent_model_config() -> ModelConfig:
-    """Resolve the provider/model used by the realtime agent runtime."""
-    provider = normalize_provider(_clean(os.getenv("AGENT_MODEL_PROVIDER", "gemini_api")) or "gemini_api")
-    explicit_model = _clean(os.getenv("AGENT_MODEL", ""))
-    default_model = DEFAULT_GEMINI_API_MODEL
-    if provider == "vertex":
-        default_model = DEFAULT_VERTEX_MODEL
-    elif provider == "deepseek":
-        default_model = DEFAULT_DEEPSEEK_MODEL
-    return resolve_model_config(
-        provider=provider,
-        model_name=explicit_model,
-        default_provider="gemini_api",
-        default_model=default_model,
-    )
-
-
-def build_agent_chat_model(*, temperature: float) -> Any:
-    config = resolve_agent_model_config()
-    return build_chat_model(
-        provider=config.provider,
-        model_name=config.model,
-        temperature=temperature,
-        default_provider="gemini_api",
-        default_model=DEFAULT_GEMINI_API_MODEL,
-    )
-
-
-def agent_runtime_metadata() -> dict[str, str]:
-    config = resolve_agent_model_config()
-    return {
-        "route": "custom_graph",
-        "provider": config.provider,
-        "model": config.model,
-    }

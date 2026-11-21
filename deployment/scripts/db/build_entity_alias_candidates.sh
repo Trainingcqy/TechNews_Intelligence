@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Convenience wrapper for the offline entity-alias candidate pipeline.
-# Recommended scheduling target for n8n Schedule Trigger, cron, or Windows Task
-# Scheduler. It does not run on the user-facing request path.
+# Recommended scheduling target for cron or Windows Task Scheduler. It does not
+# run on the user-facing request path.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
@@ -36,7 +36,7 @@ Options:
   -h, --help            Show this help message.
 
 Scheduling:
-  This wrapper is the preferred target for n8n/cron/Task Scheduler. For a
+  This wrapper is the preferred target for cron/Task Scheduler. For a
   conservative daily run, use:
     bash deployment/scripts/db/build_entity_alias_candidates.sh --days 14 --limit 1000 --use-deepseek
 
@@ -117,7 +117,7 @@ ARGS=(
   "deployment/scripts/build_entity_alias_candidates.py"
   --days "${DAYS}"
   --limit "${LIMIT}"
-  --env-file "deployment/.env"
+  --env-file ".env"
 )
 
 if [[ "${USE_DEEPSEEK}" == true ]]; then
@@ -133,7 +133,7 @@ if [[ "${DRY_RUN}" == false && "${PROMOTE_APPROVED}" == true ]]; then
   PROMOTE_ARGS=(
     "deployment/scripts/promote_entity_alias_candidates.py"
     --limit "${LIMIT}"
-    --env-file "deployment/.env"
+    --env-file ".env"
   )
   if [[ "${INCLUDE_AUTO_APPROVED_PROMOTION}" == true ]]; then
     PROMOTE_ARGS+=(--include-auto-approved)

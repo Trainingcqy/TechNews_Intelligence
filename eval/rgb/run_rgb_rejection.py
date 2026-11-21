@@ -1,9 +1,11 @@
 """G6 — RGB negative-rejection alignment (public-benchmark backing for anti-hallucination).
 
 Feeds RGB Chinese negative-rejection cases through THIS agent's production grounding
-layer: the exact ``_FINAL_SYSTEM_PROMPT`` synthesizer call, but with ONLY the ``negative``
-documents (none contain the answer). Correct behavior = decline / declare the evidence
-insufficient instead of fabricating an answer.
+layer: the exact ``FINAL_SYSTEM_PROMPT`` synthesizer call, with ONLY the ``negative``
+documents (none contain the answer) as an evidence block ([E1]..[En], title + body).
+Correct behavior = decline / declare the evidence insufficient instead of fabricating an
+answer. An output whose header is ``STATUS: insufficient`` is counted as a refusal directly;
+``STATUS: answered`` outputs go to the LLM judge.
 
 Two metrics (the agent does NOT hard-refuse by default — it declares the evidence
 insufficient and then supplements from its own knowledge, clearly marked as an
@@ -39,7 +41,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv  # noqa: E402
+from services.llm_provider import normalize_provider, resolve_model_config  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 from eval.eval_retry import call_with_retry  # noqa: E402
 
@@ -68,12 +71,6 @@ def _safe_print(text: str) -> None:
         print(str(text).encode(encoding, errors="replace").decode(encoding, errors="replace"), flush=True)
     except Exception:
         print(str(text).encode("utf-8", errors="replace").decode("utf-8", errors="replace"), flush=True)
-
-
-def _load_env() -> None:
-    env_path = PROJECT_ROOT / "agent" / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -122,13 +119,18 @@ def _gold_answer_present(gold: Any, answer: str) -> bool:
 
 
 def _format_negative_docs(docs: list[str], *, limit: int, max_chars: int = 1200) -> str:
-    lines: list[str] = []
+    # RGB documents carry no title, so each gets a neutral placeholder title.
+    blocks: list[str] = []
     for i, doc in enumerate(list(docs)[:limit], start=1):
         text = " ".join(str(doc or "").split())
-        if len(text) > max_chars:
-            text = text[:max_chars] + "..."
-        lines.append(f"[{i}] {text}")
-    return "\n".join(lines)
+        total = len(text)
+        if total > max_chars:
+            heading = f"正文，前 {max_chars} 字符，全文 {total} 字符："
+            text = text[:max_chars]
+        else:
+            heading = f"正文，全文 {total} 字符："
+        blocks.append(f"[E{i}] 标题：RGB 文档 {i}\n{heading}\n{text}")
+    return "\n\n".join(blocks)
 
 
 def _int_to_cn(n: int) -> str:
@@ -201,22 +203,30 @@ def _synthesize(
 ) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage  # noqa: WPS433
 
-    intent = {"route": "needs_tools", "intent_type": "news_analysis"}
     messages = [
         SystemMessage(content=final_prompt),
         HumanMessage(
             content=(
                 f"User question:\n{question}\n\n"
-                f"Conversation context pack:\n(none)\n\n"
-                f"Intent:\n{json.dumps(intent, ensure_ascii=False)}\n\n"
-                f"Evidence brief:\n(none)\n\n"
-                f"Tool results:\n{evidence_block}\n\n"
+                f"Evidence brief:\n{evidence_block}\n\n"
                 "Write the final answer now."
             )
         ),
     ]
     raw = client.invoke(messages)
     return coerce_text_fn(getattr(raw, "content", raw)) or ""
+
+
+def _verdict_for(
+    answer_status: str | None,
+    question: str,
+    evidence_block: str,
+    answer: str,
+    **judge_kwargs: Any,
+) -> dict[str, Any] | None:
+    if answer_status == "insufficient":
+        return {"answered": False, "misattributed": False, "reason": "STATUS: insufficient"}
+    return _judge_answer(question, evidence_block, answer, **judge_kwargs)
 
 
 def _judge_answer(
@@ -266,14 +276,22 @@ def _resolve_judge_config(
     (current shared-client behavior). Setting them lets a deepseek synthesizer be
     scored by a vertex judge — a clean, non-self-eval comparison.
     """
-    return (judge_provider or synth_provider, judge_model or synth_model)
+    return _resolve_model(judge_provider, judge_model, base_provider=synth_provider, base_model=synth_model)
+
+
+def _resolve_model(provider: str | None, model: str | None, *, base_provider: str, base_model: str) -> tuple[str, str]:
+    """Overrides on top of a base provider and model. Another provider given without a model gets its own default
+    model, not the base model name, which that provider would not serve."""
+    chosen = normalize_provider(provider or base_provider)
+    config = resolve_model_config(provider=chosen, model_name=model or (base_model if chosen == base_provider else None))
+    return config.provider, config.model
 
 
 def _resolve_final_prompt(prompt_file: Path | None, *, default: str) -> str:
     """Final-synthesizer prompt: external file when given, else production default.
 
     Lets a grounding-hardened prompt be A/B-tested via --synth-prompt-file without
-    touching agent/graph/prompts.py.
+    touching agent/prompts.py.
     """
     if prompt_file is None:
         return default
@@ -443,7 +461,7 @@ def _build_report(
 
 def main() -> int:
     args = _parse_args()
-    _load_env()
+    load_env()
 
     data_path = args.data.resolve()
     if not data_path.exists():
@@ -462,9 +480,10 @@ def main() -> int:
 
     if not args.report_only:
         cases = eligible[: args.limit] if args.limit and args.limit > 0 else eligible
-        from agent.graph.model_io import _coerce_to_text, _extract_json_object  # noqa: E402
-        from agent.graph.prompts import _FINAL_SYSTEM_PROMPT  # noqa: E402
-        from services.llm_provider import build_chat_model, resolve_agent_model_config  # noqa: E402
+        from agent.citations import split_status  # noqa: E402
+        from agent.llm import build_models, coerce_to_text, extract_json_object  # noqa: E402
+        from agent.prompts import FINAL_SYSTEM_PROMPT  # noqa: E402
+        from services.llm_provider import build_chat_model  # noqa: E402
 
         prompt_file = args.synth_prompt_file
         if prompt_file is not None:
@@ -472,19 +491,17 @@ def main() -> int:
             if not prompt_file.exists():
                 _safe_print(f"Synth prompt file not found: {prompt_file}")
                 return 1
-        final_prompt = _resolve_final_prompt(prompt_file, default=_FINAL_SYSTEM_PROMPT)
+        final_prompt = _resolve_final_prompt(prompt_file, default=FINAL_SYSTEM_PROMPT)
         if prompt_file is not None:
             _safe_print(f"Using OVERRIDE final prompt from {prompt_file} ({len(final_prompt)} chars)")
 
-        config = resolve_agent_model_config()
-        provider = args.provider or config.provider
-        model = args.model or config.model
+        # Without overrides the synthesizer is the production final model, AGENT_FINAL_*.
+        final = build_models()[1]
+        provider, model = _resolve_model(args.provider, args.model, base_provider=final.provider, base_model=final.model)
         client = build_chat_model(
             provider=provider,
             model_name=model,
             temperature=0.0,
-            default_provider=config.provider,
-            default_model=config.model,
         )
         # Single backoff layer: disable the client's internal retry so call_with_retry paces
         # 429s (fewer hammering calls + longer spacing = better under exhausted quota).
@@ -505,8 +522,6 @@ def main() -> int:
                 provider=judge_provider,
                 model_name=judge_model,
                 temperature=0.0,
-                default_provider=config.provider,
-                default_model=config.model,
             )
             try:
                 judge_client.max_retries = 0
@@ -527,17 +542,19 @@ def main() -> int:
             evidence_block = _format_negative_docs(list(case.get("negative") or []), limit=args.docs_per_case)
             _safe_print(f"[{idx}/{len(pending)}] id={case_id} {question[:48]} ...")
             try:
-                answer = call_with_retry(
+                raw = call_with_retry(
                     lambda: _synthesize(
                         question, evidence_block,
-                        client=client, coerce_text_fn=_coerce_to_text, final_prompt=final_prompt,
+                        client=client, coerce_text_fn=coerce_to_text, final_prompt=final_prompt,
                     ),
                     label=f"{case_id} synth",
                 )
+                answer_status, answer = split_status(raw)
+                answer = answer.strip()
                 verdict = call_with_retry(
-                    lambda: _judge_answer(
-                        question, evidence_block, answer,
-                        client=judge_client, coerce_text_fn=_coerce_to_text, extract_json_fn=_extract_json_object,
+                    lambda: _verdict_for(
+                        answer_status, question, evidence_block, answer,
+                        client=judge_client, coerce_text_fn=coerce_to_text, extract_json_fn=extract_json_object,
                     ),
                     label=f"{case_id} judge",
                 )
@@ -547,6 +564,7 @@ def main() -> int:
                     "question": question,
                     "gold_answer": gold,
                     "answer": answer,
+                    "answer_status": answer_status,
                     "gold_present": _gold_answer_present(gold, answer),
                     "answered": (verdict or {}).get("answered"),
                     "misattributed": (verdict or {}).get("misattributed"),

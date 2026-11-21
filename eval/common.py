@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ENV_FILE = "agent/.env"
+DEFAULT_ENV_FILE = ".env"
 
 
 def configure_stdout() -> None:
@@ -27,9 +27,9 @@ def add_db_args(parser) -> None:
 def readonly_cursor(env_file: str | None = DEFAULT_ENV_FILE):
     import psycopg2
 
-    from services.script_env import _load_env_file
+    from services.script_env import load_env
 
-    _load_env_file(env_file)
+    load_env(env_file)
     conn = psycopg2.connect(
         host=os.getenv("DB_HOST", "127.0.0.1"),
         port=int(os.getenv("DB_PORT", "5555")),

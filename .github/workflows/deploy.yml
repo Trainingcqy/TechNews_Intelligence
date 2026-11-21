@@ -31,38 +31,29 @@ jobs:
             git checkout main
             git pull --ff-only origin main
 
-            if [ -f deployment/docker-compose.yml ]; then
-              COMPOSE_FILE="deployment/docker-compose.yml"
-            elif [ -f docker-compose.yml ]; then
-              COMPOSE_FILE="docker-compose.yml"
-            else
-              echo "docker-compose file not found."
-              exit 1
-            fi
-
             OLD_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' pgvector/pgvector:pg15 2>/dev/null || echo "none")
 
-            docker compose -f "$COMPOSE_FILE" pull postgres n8n metabase
-            docker compose -f "$COMPOSE_FILE" up -d postgres
+            docker compose pull postgres metabase
+            docker compose up -d postgres
             bash deployment/scripts/db/apply_schema.sh
-            docker compose -f "$COMPOSE_FILE" build --pull bot api trace ingest
-            docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+            docker compose build --pull bot api trace ingest
+            docker compose up -d --remove-orphans
             docker image prune -f
 
             NEW_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' pgvector/pgvector:pg15 2>/dev/null || echo "none")
 
             if [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
               echo "PostgreSQL image updated, running REINDEX..."
-              docker compose -f "$COMPOSE_FILE" exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "REINDEX INDEX unique_url;"'
+              docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "REINDEX INDEX unique_url;"'
             else
               echo "PostgreSQL image unchanged, skipping REINDEX."
             fi
 
             echo "Checking container health..."
-            for svc in postgres n8n bot api trace ingest; do
-              if ! docker compose -f "$COMPOSE_FILE" ps "$svc" | grep -q "Up"; then
+            for svc in postgres bot api trace ingest; do
+              if ! docker compose ps "$svc" | grep -q "Up"; then
                 echo "Service $svc is not healthy/up"
-                docker compose -f "$COMPOSE_FILE" ps "$svc"
+                docker compose ps "$svc"
                 exit 1
               fi
             done

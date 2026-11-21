@@ -6,8 +6,7 @@ Read-only. Run once the reference channel has accumulated 7 days of headlines.
     python eval/coverage/techmeme_coverage.py event-sheet --since ... --until ...   # needs JINA_API_KEY; run by the user
     python eval/coverage/techmeme_coverage.py event-score --sheet runs/event_sheet.md --key runs/event_key.json
 
-Story importance signals follow plan 10.3 and are computed here; the candidate ranking rules are
-defined in this file because agent/retrieval/stories.py does not exist yet.
+Story importance signals follow plan 10.3 and are computed here, together with the candidate ranking rules.
 """
 
 from __future__ import annotations

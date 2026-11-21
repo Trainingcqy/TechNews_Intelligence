@@ -10,15 +10,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 
 from services.db import close_db_pool, db_cursor, init_db_pool
+from services.script_env import load_env
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=True)
+load_env()
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -43,21 +43,16 @@ SPAN_TYPE_LABELS = {
 }
 
 SPAN_NAME_LABELS = {
-    "history_manifest_builder": "构建历史索引",
-    "context_pack_builder": "生成上下文包",
-    "context_curator": "上下文整理模型",
-    "prepare_context": "准备上下文",
-    "intent_router": "判断问题类型",
-    "tool_selection": "选择工具",
-    "tool_worker": "规划工具调用",
-    "tool_policy": "工具策略检查",
-    "tool_executor": "执行工具",
-    "evidence_normalizer": "归一化证据",
-    "tool_loop_decider": "判断是否继续调用工具",
+    "prepare": "准备上下文",
+    "gather": "取证：选择工具",
+    "run_tool": "执行工具",
+    "collect": "登记证据",
+    "route": "路由",
+    "synthesize": "综合",
+    "finalize": "校验引用",
     "final_synthesizer": "生成最终回答",
-    "output_guard": "输出检查",
-    "clarification_response": "生成澄清回复",
-    "insufficient_evidence_response": "证据不足回复",
+    "search_news": "检索新闻",
+    "read_articles": "读取正文",
 }
 
 _bearer_scheme = HTTPBearer(auto_error=False)

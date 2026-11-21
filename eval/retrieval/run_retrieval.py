@@ -9,7 +9,7 @@ Ablation configs (reusing the existing matrix.json semantics):
   G1: wide recall profile  + no rerank
   G2: wide recall profile  + Jina llm_rerank
 
-Prerequisite: n8n ingestion paused so the DB is a stable snapshot across configs.
+Prerequisite: ingest paused (docker compose stop ingest), so the DB is a stable snapshot across configs.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 from eval.eval_retry import call_with_retry  # noqa: E402
 
@@ -38,12 +38,6 @@ CONFIGS: dict[str, dict[str, str]] = {
     "G1": {"recall_profile": "wide", "rerank_mode": "none"},
     "G2": {"recall_profile": "wide", "rerank_mode": "llm_rerank"},
 }
-
-
-def _load_env() -> None:
-    env_path = PROJECT_ROOT / "agent" / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -74,11 +68,11 @@ def _read_done(path: Path) -> set[str]:
     return done
 
 
-def _confirm_n8n_paused() -> bool:
+def _confirm_ingest_paused() -> bool:
     print("=" * 60)
-    print("PREREQUISITE: n8n ingestion must be paused (stable DB snapshot).")
+    print("PREREQUISITE: ingest must be paused (docker compose stop ingest) for a stable DB snapshot.")
     print("=" * 60)
-    return input("Confirm n8n workflows are paused? [y/N] ").strip().lower() == "y"
+    return input("Confirm ingest is paused? [y/N] ").strip().lower() == "y"
 
 
 def _run_one_query(
@@ -139,10 +133,10 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    _load_env()
+    load_env()
 
-    if not args.skip_confirm and not _confirm_n8n_paused():
-        print("Aborted: n8n not confirmed paused.")
+    if not args.skip_confirm and not _confirm_ingest_paused():
+        print("Aborted: ingest not confirmed paused.")
         return 1
 
     queries_path = args.queries.resolve()
@@ -161,7 +155,7 @@ def main() -> int:
     if done:
         print(f"Resume: {len(done)} query(ies) already done; skipping them.")
 
-    from agent.tools.retrieval import lookup_candidates_by_query  # noqa: E402
+    from agent.retrieval.search import lookup_candidates_by_query  # noqa: E402
 
     pending = [c for c in cases if str(c.get("case_id")) not in done]
     print(f"Total queries: {len(cases)}; pending: {len(pending)}")

@@ -13,6 +13,7 @@ from eval.rgb.run_rgb_rejection import (
     _load_cases,
     _resolve_final_prompt,
     _resolve_judge_config,
+    _verdict_for,
 )
 
 
@@ -32,13 +33,32 @@ def test_gold_answer_present_numeral_normalized_and_refusal():
 
 def test_format_negative_docs_caps_count_and_numbers():
     block = _format_negative_docs(["aaa", "bbb", "ccc"], limit=2)
-    assert block == "[1] aaa\n[2] bbb"
+    assert block == (
+        "[E1] 标题：RGB 文档 1\n正文，全文 3 字符：\naaa\n\n"
+        "[E2] 标题：RGB 文档 2\n正文，全文 3 字符：\nbbb"
+    )
 
 
 def test_format_negative_docs_truncates_long_doc():
     block = _format_negative_docs(["x" * 5000], limit=1, max_chars=100)
-    assert block.startswith("[1] " + "x" * 100 + "...")
-    assert len(block) < 200
+    assert block == "[E1] 标题：RGB 文档 1\n正文，前 100 字符，全文 5000 字符：\n" + "x" * 100
+
+
+def test_verdict_for_counts_insufficient_as_refusal_without_judge():
+    verdict = _verdict_for("insufficient", "q", "evidence", "无法回答", client=None)
+    assert verdict == {"answered": False, "misattributed": False, "reason": "STATUS: insufficient"}
+
+
+def test_verdict_for_sends_answered_to_judge():
+    class Client:
+        def invoke(self, messages):
+            return '{"answered": true, "misattributed": true, "reason": "r"}'
+
+    verdict = _verdict_for(
+        "answered", "q", "evidence", "答案是12人",
+        client=Client(), coerce_text_fn=str, extract_json_fn=json.loads,
+    )
+    assert verdict == {"answered": True, "misattributed": True, "reason": "r"}
 
 
 def test_load_cases_filters_no_negative_and_only_id(tmp_path: Path):
@@ -95,6 +115,16 @@ def test_resolve_judge_config_override_separates_judge_from_synth():
         synth_model="deepseek-v4-pro",
         judge_provider="vertex",
         judge_model="gemini-3.1-pro-preview",
+    ) == ("vertex", "gemini-3.1-pro-preview")
+
+
+def test_resolve_judge_config_other_provider_without_model_takes_its_default():
+    # a vertex judge without a model name must not receive the deepseek model name
+    assert _resolve_judge_config(
+        synth_provider="deepseek",
+        synth_model="deepseek-v4-pro",
+        judge_provider="vertex",
+        judge_model=None,
     ) == ("vertex", "gemini-3.1-pro-preview")
 
 

@@ -14,24 +14,24 @@ class ChatRequest(BaseModel):
     thread_id: str | None = None
 
 
-class ClarificationResponsePayload(BaseModel):
-    kind: str = "clarification_required"
-    reason: str
-    question: str
-    hints: list[str] = []
-    original_question: str = ""
+class SourceItem(BaseModel):
+    n: int
+    url: str
+    title: str
+    title_zh: str = ""
+    source: str = ""
+    published_at: str = ""
 
 
 class ChatResponse(BaseModel):
     reply: str
     thread_id: str
-    kind: str = "answer"
-    clarification: ClarificationResponsePayload | None = None
-    citation_urls: list[str] = Field(default_factory=list)
+    kind: str = "answered"             # Answer.status 的六个取值
+    sources: list[SourceItem] = Field(default_factory=list)
     remaining: int
     quota: int
     unlimited: bool = False
-    status: str = "active"
+    status: str = "active"             # 额度状态，含义不变
 
 
 class QuotaResponse(BaseModel):

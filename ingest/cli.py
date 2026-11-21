@@ -12,6 +12,7 @@ from ingest.migrate import migrate
 from ingest.relabel import run_relabel
 from ingest.sources import load_sources
 from services.db import init_db_pool
+from services.script_env import load_env
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -55,6 +56,7 @@ def _status() -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    load_env()
     config = IngestConfig.from_env()
     init_db_pool(maxconn=max(config.discover_workers, config.fetch_workers, config.analyze_workers) + 1)
 

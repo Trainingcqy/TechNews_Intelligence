@@ -6,9 +6,11 @@ on:
       - "agent/**"
       - "app/**"
       - "services/**"
+      - "ingest/**"
       - "eval/**"
       - "tests/**"
       - "requirements.txt"
+      - "constraints.txt"
       - ".github/workflows/ci.yml"
   push:
     branches:
@@ -17,9 +19,11 @@ on:
       - "agent/**"
       - "app/**"
       - "services/**"
+      - "ingest/**"
       - "eval/**"
       - "tests/**"
       - "requirements.txt"
+      - "constraints.txt"
       - ".github/workflows/ci.yml"
 
 jobs:
@@ -36,14 +40,16 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: "requirements.txt"
+          cache-dependency-path: |
+            requirements.txt
+            constraints.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c constraints.txt
           pip install pytest
 
       - name: Soft encoding guard (non-blocking)

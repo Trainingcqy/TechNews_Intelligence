@@ -23,13 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv  # noqa: E402
-
-
-def _load_env() -> None:
-    env_path = PROJECT_ROOT / "agent" / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
+from services.script_env import load_env  # noqa: E402
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -72,7 +66,7 @@ def main() -> int:
     parser.add_argument("--results", type=Path, default=here / "runs" / "generation.jsonl")
     parser.add_argument("--output", type=Path, default=here / "runs" / "generation_enriched.jsonl")
     args = parser.parse_args()
-    _load_env()
+    load_env()
 
     from services.db import db_cursor  # noqa: E402
 

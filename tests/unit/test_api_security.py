@@ -341,11 +341,11 @@ def test_chat_response_includes_unlimited_from_reservation(api_mod) -> None:  # 
         request_id="req-1",
         thread_id="thread-1",
         history=[],
-        effective_message="hello",
+        user_key="email:admin@example.com",
         reservation={"remaining": 0, "quota": 200, "used": 201, "unlimited": True},
     )
 
-    result = chat_mod.chat_response_from_payload(turn, {"kind": "answer", "text": "ok", "citation_urls": []})
+    result = chat_mod.chat_response(turn, chat_mod.Answer(status="answered", text="ok"))
 
     assert result.unlimited is True
 
@@ -602,7 +602,6 @@ def _install_token_thread_memory(chat_mod, monkeypatch: pytest.MonkeyPatch):  # 
 
     monkeypatch.setattr(chat_mod, "load_history_for_token", _load_history_for_token)
     monkeypatch.setattr(chat_mod, "append_message_for_token", _append_message_for_token)
-    monkeypatch.setattr(chat_mod, "schedule_thread_memory_update", lambda **_kwargs: None)
     return threads, append_calls
 
 
@@ -682,8 +681,8 @@ def test_chat_allows_owner_thread_and_persists_turn(api_mod, monkeypatch: pytest
     _, append_calls = _install_token_thread_memory(api_mod.chat_service, monkeypatch)
     monkeypatch.setattr(
         api_mod.chat_service,
-        "generate_response_payload",
-        lambda *_a, **_k: {"kind": "answer", "text": "ok", "citation_urls": []},
+        "run_turn",
+        lambda *_a, **_k: api_mod.chat_service.Answer(status="answered", text="ok"),
     )
 
     client = TestClient(api_mod.app)

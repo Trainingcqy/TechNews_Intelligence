@@ -123,6 +123,9 @@ def parse_analysis(raw: str) -> Analysis:
 
 def _with_cause(exc: BaseException) -> str:
     cause = exc.__cause__
+    # langchain-openai wraps the SDK error, which wraps the transport error; name the innermost one.
+    while cause is not None and cause.__cause__ is not None:
+        cause = cause.__cause__
     return f"{exc} ({type(cause).__name__}: {cause})" if cause else str(exc)
 
 

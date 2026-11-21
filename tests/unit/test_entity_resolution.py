@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
 import pytest
 
 from services import entity_resolution as mod
-from services import script_env
 
 
 class _FakeResponse:
@@ -95,34 +93,6 @@ def test_adjudicate_alias_parses_deepseek_json(monkeypatch) -> None:
     assert decision.status == "auto_approved"
     assert decision.canonical_name == "OpenAI"
     assert decision.aliases_to_add == ["OpenAI"]
-
-
-def test_apply_db_env_defaults_maps_deployment_db_vars(monkeypatch) -> None:
-    for key in [
-        "POSTGRES_PORT",
-        "POSTGRES_DB",
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD",
-        "DB_HOST",
-        "DB_PORT",
-        "DB_NAME",
-        "DB_USER",
-        "DB_PASS",
-    ]:
-        monkeypatch.delenv(key, raising=False)
-
-    monkeypatch.setenv("POSTGRES_PORT", "15432")
-    monkeypatch.setenv("POSTGRES_DB", "warehouse")
-    monkeypatch.setenv("POSTGRES_USER", "myuser")
-    monkeypatch.setenv("POSTGRES_PASSWORD", "secret")
-
-    script_env._apply_db_env_defaults()
-
-    assert os.environ["DB_HOST"] == "127.0.0.1"
-    assert os.environ["DB_PORT"] == "15432"
-    assert os.environ["DB_NAME"] == "warehouse"
-    assert os.environ["DB_USER"] == "myuser"
-    assert os.environ["DB_PASS"] == "secret"
 
 
 def test_normalize_aliases_preserves_chinese_and_dedupes_case_insensitive_aliases() -> None:

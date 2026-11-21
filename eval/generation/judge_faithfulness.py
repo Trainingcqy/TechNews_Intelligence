@@ -2,8 +2,8 @@
 
 Reads runs/generation_enriched.jsonl and for each (question, evidence, answer):
   - LLM judge: faithfulness (1-5) and answer_relevancy (1-5)
-  - deterministic: url_leak = URLs appearing in the answer that are NOT in the
-    evidence set the answer was supposed to be grounded in
+  - deterministic: url_leak = URLs appearing in the answer body (the backend renders
+    sources, so the body must contain no address at all)
 
 Writes runs/faithfulness_judgments.jsonl and report.md.
 Resume support: cases already judged (status=success) are skipped.
@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 from eval.eval_retry import call_with_retry  # noqa: E402
 
@@ -44,12 +44,6 @@ _JUDGE_SYSTEM_PROMPT = (
     'Return JSON only: {"faithfulness":N,"answer_relevancy":N,'
     '"unsupported_claims":["..."],"reason":"..."}'
 )
-
-
-def _load_env() -> None:
-    env_path = PROJECT_ROOT / "agent" / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -87,20 +81,10 @@ def _read_done(path: Path) -> set[str]:
     return done
 
 
-def _answer_url_leaks(answer: str, evidence_urls: list[str]) -> list[str]:
-    from agent.core.evidence import extract_urls, normalize_url_for_match  # noqa: E402
+def _answer_url_leaks(answer: str) -> list[str]:
+    from services.urls import extract_urls  # noqa: E402
 
-    normalized_evidence = {
-        normalized
-        for url in evidence_urls
-        if (normalized := normalize_url_for_match(str(url).strip()))
-    }
-    leaks: list[str] = []
-    for url in sorted(set(extract_urls(answer))):
-        normalized = normalize_url_for_match(url)
-        if normalized and normalized not in normalized_evidence:
-            leaks.append(url)
-    return leaks
+    return sorted(set(extract_urls(answer)))
 
 
 def _refresh_url_leaks(
@@ -114,10 +98,7 @@ def _refresh_url_leaks(
         case = cases_by_id.get(case_id)
         if not case:
             continue
-        leaks = _answer_url_leaks(
-            str(case.get("answer") or ""),
-            [str(u) for u in (case.get("evidence_urls") or [])],
-        )
+        leaks = _answer_url_leaks(str(case.get("answer") or ""))
         if judgment.get("url_leak_count") != len(leaks) or judgment.get("leaked_urls") != leaks:
             judgment["url_leak_count"] = len(leaks)
             judgment["leaked_urls"] = leaks
@@ -222,7 +203,7 @@ def _build_report(judgments: list[dict[str, Any]]) -> str:
     lines.append(f"| 回答相关性均分（1-5） | **{avg_rel:.2f}** |")
     lines.append(f"| 证据充分支撑率（忠实度>=4） | {grounded*100:.1f}% |")
     lines.append(f"| 幻觉率（忠实度<=2） | {halluc*100:.1f}% |")
-    lines.append(f"| URL 泄漏率（回答中出现证据外 URL） | {leak_any*100:.1f}% |")
+    lines.append(f"| URL 泄漏率（回答正文中出现地址） | {leak_any*100:.1f}% |")
     lines.append(f"| 泄漏 URL 总数 | {total_leaks} |")
     lines.append("")
     lines.append("## 忠实度最低样本")
@@ -239,7 +220,7 @@ def _build_report(judgments: list[dict[str, Any]]) -> str:
 
 def main() -> int:
     args = _parse_args()
-    _load_env()
+    load_env()
 
     results_path = args.results.resolve()
     if not results_path.exists():
@@ -255,18 +236,13 @@ def main() -> int:
     existing = {str(r.get("case_id") or ""): r for r in _read_jsonl(output_path)} if output_path.exists() else {}
 
     if not args.report_only:
-        from agent.graph.model_io import _coerce_to_text, _extract_json_object  # noqa: E402
-        from services.llm_provider import build_chat_model, resolve_agent_model_config  # noqa: E402
+        from agent.llm import build_models, coerce_to_text, extract_json_object  # noqa: E402
+        from services.llm_provider import build_chat_model  # noqa: E402
 
-        config = resolve_agent_model_config()
-        client = build_chat_model(
-            provider=config.provider,
-            model_name=config.model,
-            temperature=0.0,
-            default_provider=config.provider,
-            default_model=config.model,
-        )
-        print(f"Judge model: provider={config.provider} model={config.model}")
+        # The judge is the production final model, AGENT_FINAL_*.
+        final = build_models()[1]
+        client = build_chat_model(provider=final.provider, model_name=final.model, temperature=0.0)
+        print(f"Judge model: provider={final.provider} model={final.model}")
 
         done = {cid for cid, r in existing.items() if r.get("status") == "success"}
         pending = [c for c in cases if str(c.get("case_id")) not in done]
@@ -276,7 +252,6 @@ def main() -> int:
             case_id = str(case.get("case_id") or "")
             question = str(case.get("question") or "")
             answer = str(case.get("answer") or "")
-            evidence_urls = set(str(u).strip() for u in (case.get("evidence_urls") or []))
             # Prefer the exact synthesizer context (tool stats + full text); fall back to summaries.
             evidence_text = str(case.get("synthesizer_evidence") or "").strip()
             if not evidence_text:
@@ -287,12 +262,12 @@ def main() -> int:
                     lambda: _judge_one(
                         question, evidence_text, answer,
                         client=client,
-                        coerce_text_fn=_coerce_to_text,
-                        extract_json_fn=_extract_json_object,
+                        coerce_text_fn=coerce_to_text,
+                        extract_json_fn=extract_json_object,
                     ),
                     label=f"{case_id} judge",
                 )
-                leaks = _answer_url_leaks(answer, list(evidence_urls))
+                leaks = _answer_url_leaks(answer)
                 record = {
                     "case_id": case_id,
                     "question": question,

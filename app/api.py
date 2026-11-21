@@ -6,11 +6,10 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from dotenv import load_dotenv
+from services.script_env import load_env
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=True)
+load_env()
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware

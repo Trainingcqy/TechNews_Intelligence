@@ -1,183 +1,230 @@
 # 评测体系
 
-分层评测（G1–G6），复用线上链路定位并量化智能体在每一层的失效。系统架构见 [系统架构](ARCHITECTURE.md)。
+评测分两部分：数据层评测检查采集管线和派生数据（分类、故事、来源覆盖），Agent 评测检查检索、生成和问答链路。Agent 评测复用线上链路，定位并量化每一层的失效。系统架构见 [系统架构](ARCHITECTURE.md)。
 
-> 本文是耐久的方法论与运行说明。**具体数值不写在正文里**——每层的实时结果由脚本生成在各自的 `report.md`，正文只指向它们；§6 给一份带日期的结果快照，会随重跑过期。
+> 本文是耐久的方法论与运行说明。**具体数值不写在正文里**：每项评测的结果由脚本生成在各自目录的 `report.md` 或标准输出，正文只指向它们。
 
 ---
 
 ## 1. 评测对象与目标
 
-被评测对象是一个 **LangGraph StateGraph 智能体**：上下文准备 → 意图判断 → 工具选择 → 工具规划 → 策略检查 → 工具执行 → 证据归一 → 是否继续 → 最终综合，并包含澄清与证据不足分支；图后再执行输出 URL 守卫和来源装饰。它读取 PostgreSQL + pgvector 的科技新闻库，回答必须由工具证据支撑。
+被评测对象有两个：
 
-评测目标不是"答案读起来好不好"，而是 **用实打实的数据，定位并量化智能体在每一层会在哪里翻车**。为此把评测拆成六层（G1–G6），每层锁定一个能力层，用独立构造的题集 + 复用线上链路 + 可回溯 Trace，产出单一可辩护的核心指标。
+- **数据层**：采集管线 `ingest/` 写入 `news` schema 的数据，包括文章的状态与失败、领域与类型标签、故事归并、来源覆盖。
+- **Agent**：`agent.run_turn` 的问答链路。它是一张 LangGraph StateGraph：`prepare → gather ⇄ run_tool → collect → route → synthesize → finalize`；取证模型调用 `search_news`、`read_articles` 两个工具，综合模型依据证据登记表中的证据作答，代码校验引用并生成来源列表。回答必须由工具证据支撑。
+
+评测目标不是"答案读起来好不好"，而是用数据定位并量化系统在每一层会在哪里出问题：数据层看管线失败率、标签质量、归并阈值和来源覆盖；Agent 层看检索排序、回答的忠实度、无证据时的拒答，以及验收问题上的行为和耗时。每项评测用独立构造的题集或标注、复用线上链路、可经 Trace 回溯，产出少量可辩护的指标。
 
 ---
 
 ## 2. 设计原则
 
 - **题集独立于被测系统**：题目手写，不由被测模型生成，避免"同源模型出题又评分"的指标自证。
-- **复用线上 Runtime**：所有 G 直接调用生产 `generate_response_eval_payload` / `intent_router`，不维护 mock 链路 —— 评的就是线上行为。
-- **三级隔离**：每条 case 用空 history、独立 `thread_id`、独立 `request_id`，避免上下文 / 记忆串台污染。
-- **结构化优先，LLM-as-judge 兜底**：能用确定性信号（工具命中、URL 集合、IR 标签）就不用 LLM 打分；开放文本质量才用 LLM judge，且对 judge 做**人机一致性校准**（kappa）。
-- **可回溯**：每个失败 case 都能经 `agent_model_io` / `agent_trace_spans` 还原到意图 / 工具 / 检索 / 生成 / 系统层。
+- **复用线上链路**：生成评测和验收问题集直接调用 `agent.run_turn`，检索评测调用 `agent.retrieval.search.lookup_candidates_by_query`，不维护 mock 链路，评的就是线上行为。
+- **隔离**：每条 case 用空 history、独立 `thread_id`、独立 `request_id`，避免上下文串台。
+- **结构化优先，LLM-as-judge 兜底**：能用确定性信号（引用地址是否出现在正文、标准答案是否出现、标签比例）就不用 LLM 打分；开放文本质量才用 LLM judge，并对 judge 做人机一致性校准（kappa）。判官默认取综合模型（`AGENT_FINAL_*`）。
+- **标注表**：需要人工判断的统计（故事对、故事级检查、分类抽检、转译占比、检索相关性校准）都生成 Markdown 标注表，在方括号内填写答案，由脚本读回统计。故事对和检索相关性校准的标注表不显示机器结果（盲标），答案另存文件。
+- **可回溯**：每个失败 case 都能经 `agent_model_io`、`agent_trace_spans` 还原到取证、工具、检索、综合哪一层。
 - **断点恢复**：长跑脚本按 JSONL append 记录，可中断续跑（429、宕机不丢进度）。
-- **数据冻结**：触库的评测（G2/G3）手动暂停 n8n 采集，保证 DB 快照稳定、结果可复现。
+- **数据冻结**：G2、G3 运行前暂停采集（`docker compose stop ingest`），使各配置、各题在同一份数据库快照上比较；两个脚本启动时要求确认，`--skip-confirm` 跳过。
+- **只读与分工**：数据层的统计脚本对数据库只读；需要调用模型的脚本由使用者运行并观察输出。
 
 ---
 
-## 3. 分层总览
+## 3. 评测清单
 
-| 层 | 目录 | 核心问题 | 核心指标 |
+**数据层**
+
+| 评测 | 位置 | 核心问题 | 核心指标 |
 |---|---|---|---|
-| **G1 错误分析** | `eval/error_analysis/` | 智能体到底在哪类问题翻车？ | 失败分类占比 |
-| **G2 检索质量** | `eval/retrieval/` | 检索召回排序好不好？rerank 值不值？ | nDCG@10 / MRR@10 / Hit@5 |
-| **G3 生成忠实度** | `eval/generation/` | 答案是否被证据支撑、是否幻觉？ | Faithfulness(1-5) / 幻觉率 / URL 泄漏 |
-| **G4 意图分类** | `eval/intent_eval/` | 问题类型判得准不准？ | intent_type accuracy |
-| **G5 工具选择** | `eval/tool_selection/` | 选对工具了吗？错在哪一层？ | tool_selection accuracy |
-| **G6 RGB 拒答** | `eval/rgb/` | 只给干扰文档时会不会冒充证据？ | 误归因/伪造率 |
+| 分类试标 | `eval/taxonomy/` | 领域与类型词表能否稳定标注？ | 实验室与模型名文章的 `ai` 标签比例、同事件文章对的一致率、人工抽检正确率、各键占比 |
+| 故事归并阈值校准 | `eval/stories/` | 阈值取多少？故事是否是单一事件？ | 各阈值的精确率与召回率、故事跨度与成员数分布 |
+| 来源覆盖 | `eval/coverage/` | 语料覆盖了多少当日头条？ | 地址命中率、事件命中率、缺失媒体、头条的排名 |
+| 跨来源重叠与转译占比 | `eval/stories/cross_source.py` | 多发布方报道的故事占多少？中文报道是否多为转译？ | 重叠率、转译占比 |
+
+**Agent**
+
+| 层 | 位置 | 核心问题 | 核心指标 |
+|---|---|---|---|
+| **G2 检索质量** | `eval/retrieval/` | 检索召回排序好不好？重排值不值？ | nDCG@10 / MRR@10 / Hit@5 |
+| **G3 生成忠实度** | `eval/generation/` | 答案是否被证据支撑、是否幻觉？ | Faithfulness(1-5) / 幻觉率 / 地址泄漏 |
+| **G6 RGB 拒答** | `eval/rgb/` | 只给干扰文档时会不会冒充证据？ | 误归因率 |
+| **验收问题集** | `eval/acceptance/` | 真实问题上，工具使用、引用、角色归属是否符合预期？ | 逐条人工判断；状态分布、步数、耗时、token |
+| **效率** | `eval/trace_query.py` | 各节点耗时与并行收益 | 节点耗时与 token 的中位数；并行收益 |
 
 ---
 
 ## 4. 评测流程
 
-每一层都遵循同一条 **5 步流水线**；差异只在"造什么题、捕获什么、怎么打分"。
+Agent 评测遵循同一条 5 步流水线；差异只在"造什么题、捕获什么、怎么打分"。
 
-1. **造题** —— 手写独立于被测系统的 query 集。每层带该层标注：G5 标期望工具、G4 标期望意图桶、G2 标检索时间窗、G3 为开放问答 + 对抗性诱饵。
-2. **跑真实链路** —— 直接调用生产入口（`generate_response_eval_payload` / `intent_router`），不维护 mock。G5/G4 只跑到意图与工具规划（不执行、不合成）以隔离该层；G3 跑完整链路；G2 跑检索的三个消融配置。
-3. **捕获中间产物** —— 落盘每步可判信号：意图类型、候选工具集、LLM 选择、最终工具、检索排序、答案、引用 URL 集合；G3 额外从 Trace（`agent_model_io`）取回 synthesizer 真正看到的证据。
-4. **打分（结构化优先）** —— 能用确定性信号就不用 LLM：工具是否命中、URL 是否越界、IR 相关性标签。仅开放文本质量（检索相关性、生成忠实度）才用 LLM-as-judge，并对 judge 做人机一致性（kappa）校准。
-5. **出报告 + 归因** —— 自动生成准确率 / IR 指标 + 混淆矩阵；失败可回溯到意图 / 工具 / 检索 / 生成 / 系统具体哪一层（G5 进一步区分"意图层未进候选" vs "规划层未选中"）。
+1. **造题**：手写独立于被测系统的题集。G2 标检索时间窗，G3 为开放问答加对抗性诱饵，G6 用公开基准 RGB 的中文子集，验收问题集覆盖问答、盘点、追踪、对照四类任务。
+2. **跑真实链路**：G3 和验收问题集调用 `run_turn`；G2 调用检索函数，在三个消融配置下各取 top-10；G6 把只含干扰文档的证据块交给生产综合提示词。
+3. **捕获中间产物**：落盘每步可判信号：检索排序、答案、回答状态、工具调用序列、来源集合；G3 额外从 Trace（`agent_model_io`）取回综合模型真正看到的证据。
+4. **打分（结构化优先）**：地址是否出现在正文、标准答案是否出现等用确定性信号；检索相关性和生成忠实度用 LLM-as-judge，并对 judge 做人机一致性（kappa）校准。
+5. **出报告 + 归因**：自动生成指标表；失败可回溯到取证、工具、检索、综合具体哪一层。
 
 **横切工程机制**
 
 | 机制 | 实现 | 解决的问题 |
 |---|---|---|
-| 三级隔离 | 每题空 history + 独立 thread_id + 独立 request_id | 上下文 / 记忆串台污染 |
-| 断点续跑 | JSONL append，按 `status==success` 跳过 | 中断 / 配额耗尽不丢进度，并支持复用历史结果（**代价**：改代码后须先清对应 `runs/*.jsonl` 才会重测，见 §8「强制重跑」） |
-| 限流退避 | 429 指数退避（共享 `eval_retry`）+ `--sleep-seconds` 案例间隔 | preview 模型配额限制下的大样本运行 |
-| 数据冻结 | G2/G3 手动暂停 n8n 采集 | 同一 DB 快照，结果可复现、跨配置可比 |
-| Trace 驱动 | `agent_runs / agent_trace_spans / agent_model_io` | 失败回溯 + G3 取真实证据喂给 judge |
+| 隔离 | 每题空 history + 独立 thread_id + 独立 request_id | 上下文串台污染 |
+| 断点续跑 | JSONL append，按 `status` 跳过已完成的条目（**代价**：改代码后须先清对应 `runs/*.jsonl` 才会重测，见 §7「强制重跑」） | 中断 / 配额耗尽不丢进度，并支持复用历史结果 |
+| 限流退避 | 429 指数退避（共享 `eval_retry`）+ `--sleep-seconds` 案例间隔 | 模型配额限制下的大样本运行 |
+| 数据冻结 | G2/G3 运行前暂停采集 | 同一数据库快照，结果可复现、跨配置可比 |
+| Trace 驱动 | `agent_runs / agent_trace_spans / agent_model_io` | 失败回溯；G3 取真实证据喂给 judge；验收脚本取步数与 token |
 | judge 可信度 | LLM 判分 + Cohen's kappa 人机校准 | 不盲信 LLM 评委 |
 
 ---
 
-## 5. 各层详解
+## 5. 各项详解
 
-> 各层结果数值见对应 `report.md`；本节只讲方法与结论。
+> 各项结果数值见对应的 `report.md` 或脚本输出；本节只讲方法。
 
-### G1 · 错误分析摸底（失败分类）
+### 5.1 数据层
 
-- **方法**：手写覆盖 10 类（A 模糊 / B 对比 / C 长尾 / D 时间窗 / E 时间线·格局 / F 上下文追问 / G URL 读取 / H 边界 / I 幻觉诱饵 / J 混合语言）的挑战 query，跑真实链路，人工归类失败模式。
-- **关键发现**：智能体的强项是"不编、该澄清就澄清、对数据缺口诚实"；唯一系统性弱点是**专用分析工具（compare/timeline/landscape）很少被正确选中**，这定义了 G5 的范围。
-- **文件**：`queries.jsonl` · `run_error_analysis.py` · `build_labeling_sheet.py` · `summarize.py` · `failure_taxonomy.md`
+数据层的脚本默认从仓库根目录的 `.env` 读取数据库配置，可用 `--env-file` 指定其他文件；对数据库只读。
 
-### G2 · 检索质量 + 矩阵 ablation
+**分类试标**（`eval/taxonomy/build_sample.py`、`score.py`，标注用 `python -m ingest relabel`）：
 
-- **方法**：覆盖良好的 entity×aspect query；对 3 个配置（G0 base / G1 wide / G2 wide+Jina rerank）的 top-10 做 **TREC pooling**，用 LLM judge 打 0/1/2 相关性作为共享 gold；计算 IR 指标（nDCG 用指数增益 2^rel−1）。
-- **结论**：**Jina rerank 是关键增量**（nDCG / MRR / P@5 显著提升）；单纯放宽召回窗口（G1）几乎无效。题集越大越难，base 的 Hit@5 不再饱和、rerank 的相对增量越明显——所以排序质量（nDCG/MRR）才是有区分度的指标。
-- **judge 校准**：对 LLM 判官做人机一致性（Cohen's kappa）校准，盲标 + 隐藏 LLM 分以避免锚定。有序标签看 quadratic-weighted kappa；二元相关性 kappa 对应 Hit/MRR/P 实际依赖的"相关/不相关"判断。残留分歧主要在主观的 1↔2 边界。
-- **文件**：`queries.jsonl` · `run_retrieval.py` · `judge_relevance.py` · `compute_metrics.py` · `build_calibration_sheet.py`（盲标、隐藏 key）· `compute_kappa.py` · `report.md` · `calibration_report.md`
+1. `build_sample.py` 抽样：旧分类每类 50 篇；另从标题含 AI 实验室或模型名的文章中随机抽 200 篇；另取全部相似度不低于 0.94 且相隔不超过 3 天的文章对。输出 `sample.json` 与 `sample_keys.txt`（每行一个 `url_key`）。
+2. `python -m ingest relabel --keys-file sample_keys.txt` 标注这些文章；样本文章须已由 `migrate` 迁入。
+3. `score.py sheet` 生成 100 篇的人工抽检表，`score.py report` 统计下表指标。
 
-### G3 · 生成忠实度（+ 对抗 + prompt ablation）
+| 指标 | 通过条件 |
+| --- | --- |
+| 标题含 AI 实验室或模型名的文章中带 `ai` 标签的比例 | 不低于 95% |
+| 同事件文章对的主领域一致率 | 不低于 90% |
+| 同事件文章对的类型一致率 | 记录数值；低于 80% 时重写类型的范围描述 |
+| 人工抽检 100 篇的主领域正确率、类型正确率 | 分别不低于 90%、85% |
+| 各键的占比 | `general` 低于 15%；占比低于 2% 的键需要复核 |
 
-- **方法**：跑完整链路，捕获答案 + `valid_urls`；用 `enrich_evidence.py` 从 `agent_model_io` 取回**喂给 synthesizer 的真实证据**；LLM judge 打 faithfulness / answer_relevancy（1-5）+ 确定性 url_leak。
-- **证据对齐**：judge 评分依据是 `synthesizer_evidence`（模型真实输入），而非从 DB 重抓的摘要——保证评的是模型实际所见，避免"评委上下文错位"造成的假阳性幻觉。
-- **对抗集（幻觉诱饵）**：用"不存在的型号 / 精确数字 / 完整名单"等诱饵压测诚实性。扩大对抗集曾暴露一个真实缺陷：面对无数据问题，检索靠实体匹配仍返回沾边证据，synthesizer 正确地拒绝编造（返回空），但确定性兜底文案曾误称"已找到相关证据"并指向无关来源——修复兜底文案（output_guard）后，对抗集忠实度恢复、幻觉归零。剩余少量案例转为"诚实拒答"（见 §7 限制 C）。
-- **Prompt ablation（grounding 的价值，两层防御）**：用弱 grounding 提示词替换生产提示词，量化提示词的边际贡献。结论：忠实度是**双层防御**——① 提示词诱导：去掉"证据优先 / 只用证据 / 不足要明说"后 faithfulness 温和下降，掉分源于外部知识漂移而非编造；② 确定性 output_guard：再去掉"正文必须引用来源 URL"时，大部分回答被 output_guard 直接拦截、到不了用户。不是单点保证。
-- **文件**：`queries.jsonl` · `queries_adversarial.jsonl` · `run_generation.py`（带 `--synth-prompt-file` 做 ablation）· `enrich_evidence.py` · `judge_faithfulness.py` · `synth_prompt_weak.txt` · `report.md` · `report_adversarial.md` · `report_ablation.md` · `report_final.md`（加固提示词 before→after，对应 `../synth_prompt_final_hardened.txt`，已接入生产 `_FINAL_SYSTEM_PROMPT`）
+`score.py` 只统计 `label_source = 'model'` 且 `topics` 非空的文章，同事件文章对只计两篇都已重标的对。结果同时用于决定是否对旧文章全量重标。
 
-### G4 · 意图分类评测
+**故事归并阈值校准**（`eval/stories/build_label_sheet.py`、`compute_threshold.py`、`story_spans.py`）：
 
-- **方法**：10 个 bucket，直接调用 `intent_router`（`_heuristic_intent` + LLM + `_merge_intent`），`needs_clarification` 作为伪 bucket（比对路由结果）。
-- **结论**：混淆矩阵近乎完全对角，残留是相邻类目的混淆（如 `news_analysis ↔ trend`）。是 G5 修复后意图层的独立验证。
-- **文件**：`queries.jsonl` · `run_intent_eval.py` · `report.md`
+1. `build_label_sheet.py` 从 `news.story_member` 按 `nearest_similarity` 分段抽样文章对，默认每 0.02 一段，同语言每段 20 对，跨语言文章对另抽 40 对；输出不显示相似度的标注表和记录答案的 key 文件。
+2. 人工标注每对是否同一事件；`compute_threshold.py` 列出 0.75 到 0.95、步长 0.01 的各阈值的精确率、召回率和 F1，召回率按各段的总体数量加权，阈值由人确定。
+3. 按对标注测不出串联，所以 `story_spans.py report` 统计故事跨度与成员数的分布，并生成成员最多、跨度最长的故事的抽查表，`story_spans.py score` 统计其中包含多个事件的比例。
 
-### G5 · 工具选择评测 + 提示词优化 delta
+**来源覆盖**（`eval/coverage/techmeme_coverage.py`）：参照渠道积累满 7 天后执行。
 
-- **方法**：每条 case 标注期望工具；脚本同时捕获 `intent_type / 候选工具集 / LLM 选择 / 最终工具`，从而**区分失败是意图层造成（期望工具压根没进候选）还是 worker 层造成（进了候选但没被选）**。
-- **根因定位 → 修复（已进生产）**：基线失败集中在意图层——intent_router 自由发挥 `intent_type` 字符串、对不上路由表的 key，期望工具从未进入候选；归因把修复指向意图层而非 worker 提示词。修复：intent_router 提示词加 `intent_type` 枚举（含 `db_status` / `topic_overview` 两类元意图）；`_merge_intent` 加合法值校验与元意图锁定守卫；`tool_planning` 补齐元意图到工具的映射；tool_worker 加工具选择 rubric。
-- **价值**：评测驱动修复的闭环——量化根因、归因到正确层、提示词修复、复测确认无回归。
-- **文件**：`queries.jsonl` · `run_tool_selection_eval.py`（支持 `--intent-router-prompt-file` / `--tool-worker-prompt-file` 覆盖做提示词 A/B）· `report.md`
+| 指标 | 计算 |
+| --- | --- |
+| 地址命中率 | `reference_headline.target_url_key` 出现在 `news.article.url_key` 中的比例 |
+| 事件命中率 | 地址未命中的头条：对标题生成查询向量，取事件时间在前后 2 天内最相近的 3 个故事作为候选，人工判断是否报道了同一事件 |
+| 缺失媒体 | 未命中的头条按 Techmeme 标注的媒体名计数 |
+| 头条的排名 | 命中的头条所属故事在当天按重要性排序中的名次；对候选排序规则分别计算"进入当天前 20 名的比例" |
 
-### G6 · RGB negative-rejection（对抗性拒答 + grounding 加固 delta）
+`report` 子命令统计地址命中率、缺失媒体和排名；`event-sheet` 生成事件命中的标注表（需要 `JINA_API_KEY` 生成查询向量）；`event-score` 统计事件命中率。Techmeme 是英文头条，很少收录国内事件，以它为参照的结论只对英文事件成立。
 
-- **方法**：取 RGB 中文子集，每条只喂 `negative`（不含答案）文档 top-5，经生产接地 prompt 合成答案，压测"无证据时会不会冒充出处"。确定性剔除答案泄漏进所喂文档的 case（数字归一），避免把标注噪声误判为幻觉。
-- **指标三分**：`misattributed`（把证据外内容冒充成证据支撑 = 真·幻觉，标注假设的不算）是核心失败量；`gold_present`（确定性字串匹配）、`answered`（LLM judge）用于区分"干净拒答 / 标注假设补充 / 冒充出处"三种行为。
-- **grounding 加固 delta**：final 节点加入 Grounding & Refusal 硬规则后，误归因率在同题集上近乎砍半（配对：修好多于新坏），代价是回答率下降、模型更保守。换模型（gemini→deepseek）会显著抬高误归因，加固是迁移的缓解手段而非追平 gemini。
-- **文件**：`run_rgb_rejection.py`（带 `--provider` / `--synth-prompt-file` 做模型与提示词 A/B）· `data/zh.json` · `report_final.md`（合并 before→after）· 各单 run `report.md` / `runs/rgb_deepseek*.md`
+**跨来源重叠率与转译占比**（`eval/stories/cross_source.py`）：
+
+- `overlap`：可检索文章中属于多发布方故事的比例，及分渠道的重叠率；窗口内不少于 20 篇而重叠率为 0 的渠道列为复核对象。
+- `sheet`、`score`：从中英文都有的故事中抽 50 个，每个故事随机取一篇中文、一篇英文，人工判断中文一篇是否只是英文报道的翻译或改写，统计转译占比。占比超过一半时，`publisher_count` 应改为按语言分别计数后取较大值。
+
+### 5.2 Agent
+
+#### G2 · 检索质量 + 矩阵 ablation
+
+- **方法**：覆盖良好的 entity×aspect query；对 3 个配置（G0 基础召回 + 不重排 / G1 宽召回 + 不重排 / G2 宽召回 + Jina 重排）的 top-10 做 **TREC pooling**，用 LLM judge 打 0/1/2 相关性作为共享 gold；计算 IR 指标（nDCG 用指数增益 2^rel−1）。召回配置经环境变量 `EVAL_RECALL_PROFILE` 切换（`base`、`wide`）。
+- **判官**：取综合模型（`AGENT_FINAL_*`）。对判官做人机一致性（Cohen's kappa）校准：盲标、隐藏 LLM 分以避免锚定；有序标签看 quadratic-weighted kappa，二元相关性 kappa 对应 Hit/MRR/P 实际依赖的"相关/不相关"判断。
+- **精确召回**：`queries_exact.jsonl` 是 40 条精确匹配类问题（实体名、模型名、中英文对照、罕见词各 10 条），用于检查精确召回路（实体别名与 pg_trgm），结果在 `report_exact.md`。
+- **文件**：`queries.jsonl` · `queries_exact.jsonl` · `run_retrieval.py` · `judge_relevance.py` · `compute_metrics.py` · `build_calibration_sheet.py`（盲标、隐藏 key）· `compute_kappa.py` · `report.md` · `calibration_report.md`
+
+#### G3 · 生成忠实度（+ 对抗）
+
+- **方法**：对每个问题调用 `run_turn`，按回答状态分桶：`answered` 记 `success`，`direct` 记 `clarification`，`insufficient`、`not_found`、`blocked` 记 `refusal`，`error` 记 `error`。只有 `success` 进入忠实度评判。
+- **证据对齐**：`enrich_evidence.py` 从 `agent_model_io`（节点名 `final_synthesizer`）取回**综合模型真正看到的证据块**，judge 的评分依据是这份 `synthesizer_evidence`，而非从数据库重抓的摘要，保证评的是模型实际所见。
+- **打分**：LLM judge 打 faithfulness / answer_relevancy（1-5）；确定性 `url_leak`：回答正文中不应出现任何地址，来源由后端渲染。
+- **对抗集（幻觉诱饵）**：用"不存在的型号 / 精确数字 / 完整名单"等诱饵压测诚实性。
+- **提示词 A/B**：`run_generation.py --synth-prompt-file` 用指定文件替换 `agent.prompts.FINAL_SYSTEM_PROMPT`，量化提示词的边际贡献；替换后的提示词仍须要求输出 `STATUS` 首行并使用 `[E…]` 证据编号引用，否则回答被引用校验拦截。
+- **文件**：`queries.jsonl` · `queries_adversarial.jsonl` · `run_generation.py` · `enrich_evidence.py` · `judge_faithfulness.py` · `report.md` · `report_adversarial.md`
+
+#### G6 · RGB negative-rejection（对抗性拒答）
+
+- **方法**：取 RGB 中文子集，每条只喂 `negative`（不含答案）文档 top-5，渲染成证据块（编号 `[E1]` 到 `[E5]`，标题写作"RGB 文档 N"），经生产接地提示词合成答案，压测"无证据时会不会冒充出处"。输出首行为 `STATUS: insufficient` 的直接计为拒答，不调用判官；`STATUS: answered` 的交给 LLM judge。
+- **指标三分**：`misattributed`（把证据外内容冒充成证据支撑 = 真·幻觉，标注假设的不算）是核心失败量；`gold_present`（确定性字串匹配，数字归一）、`answered`（LLM judge）用于区分"干净拒答 / 标注假设补充 / 冒充出处"三种行为。
+- **模型与判官**：合成模型默认取综合模型（`AGENT_FINAL_*`），`--provider`、`--model` 可覆盖；只给 `--provider` 且与综合模型的供应商不同时，取该供应商的默认模型。`--judge-provider`、`--judge-model` 另指判官，避免自评，只给 `--judge-provider` 且与合成模型的供应商不同时同样取该供应商的默认模型；不指定判官时与合成模型相同。`--synth-prompt-file` 覆盖综合提示词做 A/B。
+- **文件**：`run_rgb_rejection.py` · `data/zh.json` · `report.md`
+
+#### 验收问题集
+
+- **问题集**：`eval/acceptance/questions.jsonl`，30 到 50 条实际会问的问题，由使用者手写，四类任务（问答、盘点、追踪、对照）都要覆盖。每行一个 JSON 对象：`question` 必填；`case_id` 选填，默认 `q<行号>`，不超过 40 字符（`request_id` 是 `VARCHAR(64)`）；`task` 选填，取问答、盘点、追踪、对照之一，只回显到表里。
+- **运行**：`run_acceptance.py` 对每条调用 `run_turn`，记录状态、工具调用序列、步数、来源数、耗时、token：`run_turn` 返回后只读查询 Trace 表，步数是 `collect` span 的个数，token 取 `agent_runs.token_usage`，工具参数取 `tool_call` span 的 `input_summary.args`。输出 `runs/acceptance.jsonl` 和 `report.md`，可断点续跑，`error` 的条目续跑时重跑。
+- **人工判断**：`report.md` 的表中留空五列，逐条判断：该调用工具的问题是否调用了工具（统计 `direct` 状态下的事实性问题数）；多对象问题是否每个对象各检索了一次；没有具体对象的问题是否走了按重要性的浏览；回答里的引用是否支持对应的句子（抽查引用精确率）；官方说法和社区评论是否按综合提示词的 Source Roles 归属。
+- **已知风险**：取证模型可能不调用工具就回答事实问题。代码无法从语义上识别，由提示词约束，在验收问题集上统计发生次数。
+
+#### 效率
+
+`eval/trace_query.py --node-stats --since <日期>` 按节点统计耗时和 token 的中位数，并与脚本中记录的改造前中位数对比。起点按北京时间零点；统计 `graph_node`、`model_call`、`tool_call` 三类 span，不筛状态；`gather` 对应改造前的工具规划，意图判断在当前链路没有对应节点。同一输出还统计一步内多个调用时 `run_tool` 各分支耗时之和与该步实际耗时之比，作为并行收益的测量。
 
 ---
 
-## 6. 结果快照（@2026-05-22；G3 标准、G6 @2026-06-12 刷新）
+## 6. 归档的评测
 
-> 某次运行的快照，**会随重跑过期；实时 / 完整数字以各层 `report.md` 为准**。
-
-| 层 | 指标 | 数值 | N |
-|---|---|---|---|
-| G1 错误分析 | OK / tool_wrong / 幻觉 | 74% / 26% / **0** | 50 |
-| G2 检索 | nDCG@10（rerank 前→后） | **0.68 → 0.86（+26%）** | 130 |
-| G2 检索 | P@5 / MRR@10（rerank 后） | 85.5% / 0.98 | 130 |
-| G3 生成（标准，deepseek+加固） | faithfulness（同 45 题，加固前→后）/ 幻觉 / URL 泄漏 | **4.73 → 4.82 / 0% / 0%** | 45 |
-| G3 生成（对抗） | faithfulness / 幻觉 / URL 泄漏 | 4.87 / 0% / 0%（4 个引用闸拦截） | 46 |
-| G4 意图 | intent_type accuracy | **98.7%** | 150 |
-| G5 工具选择 | accuracy（修复前→后） | **30% → 100%** | 97 |
-| G6 RGB 拒答（deepseek，加固前→后） | 误归因/伪造率（同 299 题） | **21.7% → 11.4%** | 299 |
-| judge 校准 | kappa 名义 / QWK / 二元 | 0.356 / **0.514** / 0.515 | 100 |
+`eval/legacy/` 存放 `error_analysis/`（错误分析）、`intent_eval/`（意图分类）、`tool_selection/`（工具选择）、`context_budget/`（上下文预算）四项评测。它们针对的意图分类器、工具集和上下文预算在当前链路中不存在，脚本不再可运行，报告保留。
 
 ---
 
-## 7. 遗留与后续
+## 7. 完整评测流程
 
-- **无数据问答的优雅降级（已知限制 C，主动暂缓）**：当问题指向不存在的具体事实、检索只返回沾边证据时，诚实的"无数据"回答因正文无可引 URL 会被 agent 层的强制引用闸拦成 `AgentGenerationError`（Web 端表现为错误而非一句"暂无相关信息"）。已确认"拒答优于乱答"，故优先保住核心 grounding 保证（0% URL 泄漏）；优雅放行无数据答案需区分"无数据" vs "有证据未引用"，改动触及 grounding 闸，留作后续。
-- **数据覆盖**：新闻库当前 6 个来源，部分"无数据"回答属 coverage_gap 而非检索 bug；扩源是独立的数据工程任务。
-- **compare_sources**：来源对比目前硬编码 HackerNews / TechCrunch 两个源，扩展到更多来源需重构。
+各入口脚本相互独立、可单独运行。两条约定：
 
----
-
-## 8. 完整评测流程
-
-各层入口脚本相互独立、可单独运行；下面是从零跑出全部指标的端到端顺序（对应 §4 的 5 步流水线）。两条约定：
-
-- **触库层（G1 / G2 / G3）** 跑真实链路或检索，运行前手动暂停 n8n 采集以冻结 DB 快照；脚本会弹确认，加 `--skip-confirm` 跳过。**G4 / G5** 只跑到意图与工具规划、不触库，无需暂停。
-- 所有 LLM / agent 脚本支持 429 指数退避与断点续跑（按 `status==success` 跳过），可加 `--sleep-seconds N` 拉大案例间隔避开配额；建议手动运行并观察输出。
-- **改动被测代码后想看真实新结果，必须先清对应层的断点文件**，否则会被全部跳过、只用旧缓存重建报告——见下「强制重跑」。
+- **触库的 Agent 评测（G2 / G3 / 验收问题集）** 跑真实链路或检索，G2、G3 运行前暂停采集以冻结数据库快照，脚本会弹确认，加 `--skip-confirm` 跳过。G6 用自带的 `data/zh.json`，不触新闻库，无需暂停。
+- 所有 LLM / agent 脚本支持 429 指数退避与断点续跑，可加 `--sleep-seconds N` 拉大案例间隔避开配额；建议手动运行并观察输出。
 
 ### 强制重跑（改代码后必读）
 
-断点续跑的代价：每个 LLM / agent 脚本把对应的 `runs/*.jsonl` 当作续跑状态，按 `status==success` 跳过已完成用例。**当所有用例都已成功后，直接重跑不会重新测试**——脚本跳过全部、仅用旧缓存重建 `report.md`（终端打印 `Resume: N case(s) already succeeded; skipping them.` 且 `pending: 0`）。所以改动被测代码后要看真实新结果，**必须先清空对应层的断点文件**。
+断点续跑的代价：每个 LLM / agent 脚本把对应的 `runs/*.jsonl` 当作续跑状态，按 `status` 跳过已完成的条目。**当所有用例都已完成后，直接重跑不会重新测试**，脚本跳过全部、仅用旧缓存重建报告。所以改动被测代码后要看真实新结果，**必须先清空对应评测的断点文件**。
 
 | 阶段 | 断点文件（清它才会重跑） |
 |---|---|
-| G1 错误分析 | `eval/error_analysis/runs/g1_run.jsonl` |
 | G2 检索 | `eval/retrieval/runs/retrieval_results.jsonl` |
 | G2 相关性评判（LLM judge） | `eval/retrieval/runs/relevance_judgments.jsonl` |
 | G3 生成 | `eval/generation/runs/generation.jsonl` |
 | G3 忠实度评判（LLM judge） | `eval/generation/runs/faithfulness_judgments.jsonl` |
-| G4 意图 | `eval/intent_eval/runs/g4_predictions.jsonl` |
-| G5 工具选择 | `eval/tool_selection/runs/g5_predictions.jsonl` |
 | G6 RGB 拒答 | `eval/rgb/runs/rgb_rejection.jsonl`（或对应 `--output`） |
+| 验收问题集 | `eval/acceptance/runs/acceptance.jsonl`（`error` 的条目续跑时自动重跑） |
 
-- **G3 是多阶段链**（run → enrich → judge）：重测某一集需清掉该集的 run 与 judge 两个 `runs/*.jsonl`，再依次重跑三步；对抗 / ablation 集对应各自 `--output` 文件名。
-- **纯计算 / 转换阶段**（`compute_metrics` / `compute_kappa` / `enrich_evidence` / `build_*` / `summarize`）每次都从输入重算，无续跑、无需清理。
-- `--report-only`（部分脚本提供）是反向操作：完全不跑、只用现有断点重建报告。
+- **G3 是多阶段链**（run → enrich → judge）：重测某一集需清掉该集的 run 与 judge 两个 `runs/*.jsonl`，再依次重跑三步；对抗集对应各自 `--output` 文件名。
+- **纯计算 / 转换阶段**（`compute_metrics` / `compute_kappa` / `enrich_evidence` / `build_*` / `score`）每次都从输入重算，无续跑、无需清理。
+- `--report-only`（`judge_faithfulness.py`、`run_rgb_rejection.py` 提供）是反向操作：完全不跑、只用现有断点重建报告。
 
-强制重跑示例（以 G5 为例，保留旧结果以便 before/after 对比）：
+强制重跑示例（以 G6 为例，保留旧结果以便对比）：
 
 ```powershell
-Move-Item eval\tool_selection\runs\g5_predictions.jsonl eval\tool_selection\runs\g5_predictions.before.jsonl
-Copy-Item eval\tool_selection\report.md eval\tool_selection\report.before.md
-python eval\tool_selection\run_tool_selection_eval.py
+Move-Item eval\rgb\runs\rgb_rejection.jsonl eval\rgb\runs\rgb_rejection.before.jsonl
+Copy-Item eval\rgb\report.md eval\rgb\report.before.md
+python eval/rgb/run_rgb_rejection.py --limit 0
 ```
 
-> 判读提醒：LLM 阶段（意图 / 工具 / judge）有模型不确定性，清断点重跑出现 ±1~2 条波动属正常，不等于回归。若改的是**确定性代码**（如正则等价改写、启发式重构），单元测试才是权威回归闸门，无需为验证它重跑 LLM 阶段。
+> 判读提醒：LLM 阶段（judge、综合模型）有模型不确定性，清断点重跑出现 ±1~2 条波动属正常，不等于回归。若改的是确定性代码，单元测试才是权威回归闸门，无需为验证它重跑 LLM 阶段。
 
-### G1 · 错误分析
+### 数据层
 
-```powershell
-python eval/error_analysis/run_error_analysis.py --skip-confirm        # -> runs/g1_run.jsonl
-python eval/error_analysis/build_labeling_sheet.py                     # -> labeling_sheet.md（人工归类失败模式）
-python eval/error_analysis/summarize.py                                # -> failure_taxonomy.md
+```bash
+# 分类试标
+python eval/taxonomy/build_sample.py                                   # -> runs/sample.json、runs/sample_keys.txt
+python -m ingest relabel --keys-file eval/taxonomy/runs/sample_keys.txt
+python eval/taxonomy/score.py sheet                                    # -> runs/spot_check.md（人工抽检表）
+python eval/taxonomy/score.py report --sheet eval/taxonomy/runs/spot_check.md
+
+# 故事归并阈值校准
+python eval/stories/build_label_sheet.py                               # -> pair_sheet.md + pair_key.json
+python eval/stories/compute_threshold.py
+python eval/stories/story_spans.py report                              # -> story_sheet.md
+python eval/stories/story_spans.py score
+
+# 来源覆盖（参照渠道积累满 7 天后）
+python eval/coverage/techmeme_coverage.py report
+python eval/coverage/techmeme_coverage.py event-sheet                  # 需要 JINA_API_KEY
+python eval/coverage/techmeme_coverage.py event-score
+
+# 跨来源重叠率与转译占比
+python eval/stories/cross_source.py overlap --days 14
+python eval/stories/cross_source.py sheet
+python eval/stories/cross_source.py score
 ```
 
 ### G2 · 检索质量 + kappa 校准
@@ -191,7 +238,7 @@ python eval/retrieval/build_calibration_sheet.py                       # -> cali
 python eval/retrieval/compute_kappa.py                                 # -> calibration_report.md（Cohen's kappa + 混淆矩阵）
 ```
 
-### G3 · 生成忠实度（标准 / 对抗 / ablation）
+### G3 · 生成忠实度（标准 / 对抗）
 
 ```powershell
 # 标准集
@@ -203,30 +250,20 @@ python eval/generation/judge_faithfulness.py --results eval/generation/runs/gene
 python eval/generation/run_generation.py --queries eval/generation/queries_adversarial.jsonl --output eval/generation/runs/generation_adversarial.jsonl --skip-confirm
 python eval/generation/enrich_evidence.py --results eval/generation/runs/generation_adversarial.jsonl --output eval/generation/runs/generation_adversarial_enriched.jsonl
 python eval/generation/judge_faithfulness.py --results eval/generation/runs/generation_adversarial_enriched.jsonl --output eval/generation/runs/faithfulness_adversarial.jsonl --report eval/generation/report_adversarial.md
-
-# Prompt ablation（弱 grounding 提示词，量化提示词的边际贡献）
-python eval/generation/run_generation.py --synth-prompt-file eval/generation/synth_prompt_weak.txt --output eval/generation/runs/generation_ablation.jsonl --skip-confirm
-python eval/generation/enrich_evidence.py --results eval/generation/runs/generation_ablation.jsonl --output eval/generation/runs/generation_ablation_enriched.jsonl
-python eval/generation/judge_faithfulness.py --results eval/generation/runs/generation_ablation_enriched.jsonl --output eval/generation/runs/faithfulness_ablation.jsonl --report eval/generation/report_ablation.md
 ```
 
-### G4 · 意图分类
+### G6 · RGB 拒答（用自带 `data/zh.json`，不触新闻库，无需暂停采集）
 
 ```powershell
-python eval/intent_eval/run_intent_eval.py                            # -> runs/g4_predictions.jsonl + report.md
+# 生产综合模型与生产提示词
+python eval/rgb/run_rgb_rejection.py --limit 0
+# 指定合成模型与另外的判官，避免自评；只给供应商时取其默认模型，要指定模型名时再加 --model、--judge-model
+python eval/rgb/run_rgb_rejection.py --limit 0 --provider deepseek --model deepseek-v4-flash --judge-provider vertex --judge-model gemini-3.1-pro-preview --output eval/rgb/runs/rgb_deepseek.jsonl --report eval/rgb/runs/rgb_deepseek.md
 ```
 
-### G5 · 工具选择
+### 验收问题集
 
 ```powershell
-python eval/tool_selection/run_tool_selection_eval.py                 # -> runs/g5_predictions.jsonl + report.md
-```
-
-### G6 · RGB 拒答（对抗性 negative-rejection；用自带 `data/zh.json`，不触新闻库，无需暂停 n8n）
-
-```powershell
-# deepseek 基线
-python eval/rgb/run_rgb_rejection.py --provider deepseek --limit 0 --output eval/rgb/runs/rgb_deepseek.jsonl --report eval/rgb/runs/rgb_deepseek.md
-# deepseek + 加固提示词（--synth-prompt-file 覆盖 final 节点提示词）
-python eval/rgb/run_rgb_rejection.py --provider deepseek --limit 0 --synth-prompt-file eval/synth_prompt_final_hardened.txt --output eval/rgb/runs/rgb_deepseek_hardened.jsonl --report eval/rgb/runs/rgb_deepseek_hardened.md
+python eval/acceptance/run_acceptance.py                               # -> runs/acceptance.jsonl + report.md
+python eval/trace_query.py --node-stats --since 2026-11-01             # 节点耗时与并行收益；日期为示例，按实际起点填写
 ```

@@ -53,7 +53,7 @@ const statusOptions = [
 ];
 
 // Local-only demo data for previewing Trace Console states when the Trace API has no rows.
-// Keep this aligned with the real agent graph_node flow so the navigator hierarchy stays representative.
+// Keep this aligned with the real turn graph (prepare, gather, run_tool, collect, route, synthesize, finalize).
 const demoRuns = [
   {
     request_id: "demo-trace-success-001",
@@ -82,183 +82,166 @@ const demoDetailsByRequestId = {
     run: demoRuns[0],
     spans: [
       {
-        span_id: "demo-prepare-context",
+        span_id: "demo-prepare",
         parent_span_id: null,
         span_type: "graph_node",
         span_type_label: "流程节点",
         display_name: "准备上下文",
-        name: "prepare_context",
+        name: "prepare",
         status: "success",
-        latency_ms: 1080,
-        input_summary: { question: "梳理最近两个月 OpenAI 时间线" },
-        output_summary: { context_strategy: "recent_context", selected_turn_count: 3 },
+        latency_ms: 38,
+        input_summary: {},
+        output_summary: {},
         metadata: { demo: true }
       },
       {
-        span_id: "demo-context",
-        parent_span_id: "demo-prepare-context",
-        span_type: "context",
-        span_type_label: "上下文整理",
-        display_name: "生成上下文包",
-        name: "context_pack_builder",
-        status: "success",
-        latency_ms: 18,
-        input_summary: { recent_question: "OpenAI 最近两个月发生了什么？" },
-        output_summary: {
-          strategy: "recent_context",
-          selected_turn_count: 3,
-          selected_evidence_count: 2,
-          depends_on_history: true
-        },
-        metadata: { demo: true }
-      },
-      {
-        span_id: "demo-intent-router",
+        span_id: "demo-gather-1",
         parent_span_id: null,
         span_type: "graph_node",
         span_type_label: "流程节点",
-        display_name: "判断问题类型",
-        name: "intent_router",
+        display_name: "取证：选择工具",
+        name: "gather",
         status: "success",
-        latency_ms: 420,
-        input_summary: { question: "梳理最近两个月 OpenAI 时间线" },
-        output_summary: { route: "needs_tools", confidence: 0.92 },
+        latency_ms: 1180,
+        input_summary: {},
+        output_summary: {},
         metadata: { demo: true }
       },
       {
-        span_id: "demo-tool-selection",
-        parent_span_id: null,
-        span_type: "graph_node",
-        span_type_label: "流程节点",
-        display_name: "选择工具",
-        name: "tool_selection",
+        span_id: "demo-gather-1-model",
+        parent_span_id: "demo-gather-1",
+        span_type: "model_call",
+        span_type_label: "模型调用",
+        display_name: "模型调用：取证：选择工具",
+        name: "gather",
         status: "success",
-        latency_ms: 62,
-        input_summary: { intent_route: "needs_tools" },
-        output_summary: { selected_tools: ["search_news"] },
-        metadata: { demo: true }
+        latency_ms: 1170,
+        input_summary: { message_count: 2 },
+        output_summary: {},
+        metadata: { demo: true, node: "gather", provider: "demo", model: "gpt-demo" }
       },
       {
-        span_id: "demo-tool-worker",
-        parent_span_id: null,
-        span_type: "graph_node",
-        span_type_label: "流程节点",
-        display_name: "规划工具调用",
-        name: "tool_worker",
-        status: "success",
-        latency_ms: 760,
-        input_summary: { selected_tools: ["search_news"] },
-        output_summary: { pending_tool_count: 1 },
-        metadata: { demo: true }
-      },
-      {
-        span_id: "demo-tool-policy",
-        parent_span_id: null,
-        span_type: "graph_node",
-        span_type_label: "流程节点",
-        display_name: "工具策略检查",
-        name: "tool_policy",
-        status: "success",
-        latency_ms: 90,
-        input_summary: { pending_tool_count: 1 },
-        output_summary: { allowed: true },
-        metadata: { demo: true }
-      },
-      {
-        span_id: "demo-tool-executor",
+        span_id: "demo-run-tool",
         parent_span_id: null,
         span_type: "graph_node",
         span_type_label: "流程节点",
         display_name: "执行工具",
-        name: "tool_executor",
+        name: "run_tool",
         status: "success",
         latency_ms: 1530,
-        input_summary: { pending_tool_count: 1 },
-        output_summary: { tool_result_count: 1, evidence_count: 6 },
+        input_summary: {},
+        output_summary: {},
         metadata: { demo: true }
       },
       {
         span_id: "demo-tool-news",
-        parent_span_id: "demo-tool-executor",
+        parent_span_id: "demo-run-tool",
         span_type: "tool_call",
         span_type_label: "工具执行",
         display_name: "工具执行：search_news",
         name: "search_news",
         status: "success",
         latency_ms: 1520,
-        input_summary: { query: "OpenAI news May 2026 timeline" },
+        input_summary: { tool: "search_news", args: { query: "OpenAI", days: 60 } },
         output_summary: {
-          result_count: 6,
-          urls: [
+          status: "ok",
+          evidence_urls: [
             "https://example.com/openai-timeline",
             "https://example.com/ai-market-news"
-          ]
+          ],
+          diagnostics: {}
         },
         metadata: { demo: true }
       },
       {
-        span_id: "demo-evidence-normalizer",
+        span_id: "demo-collect",
         parent_span_id: null,
         span_type: "graph_node",
         span_type_label: "流程节点",
-        display_name: "归一化证据",
-        name: "evidence_normalizer",
+        display_name: "登记证据",
+        name: "collect",
         status: "success",
-        latency_ms: 34,
-        input_summary: { tool_result_count: 1 },
-        output_summary: { evidence_count: 6, brief_chars: 420 },
+        latency_ms: 12,
+        input_summary: {},
+        output_summary: {},
         metadata: { demo: true }
       },
       {
-        span_id: "demo-loop-decider",
+        span_id: "demo-gather-2",
         parent_span_id: null,
         span_type: "graph_node",
         span_type_label: "流程节点",
-        display_name: "判断是否继续调用工具",
-        name: "tool_loop_decider",
+        display_name: "取证：选择工具",
+        name: "gather",
         status: "success",
-        latency_ms: 12,
-        input_summary: { evidence_count: 6, tool_round: 1 },
-        output_summary: { next_step: "enough_evidence" },
+        latency_ms: 960,
+        input_summary: {},
+        output_summary: {},
+        metadata: { demo: true }
+      },
+      {
+        span_id: "demo-gather-2-model",
+        parent_span_id: "demo-gather-2",
+        span_type: "model_call",
+        span_type_label: "模型调用",
+        display_name: "模型调用：取证：选择工具",
+        name: "gather",
+        status: "success",
+        latency_ms: 950,
+        input_summary: { message_count: 4 },
+        output_summary: {},
+        metadata: { demo: true, node: "gather", provider: "demo", model: "gpt-demo" }
+      },
+      {
+        span_id: "demo-route",
+        parent_span_id: null,
+        span_type: "graph_node",
+        span_type_label: "流程节点",
+        display_name: "路由",
+        name: "route",
+        status: "success",
+        latency_ms: 4,
+        input_summary: {},
+        output_summary: {},
+        metadata: { demo: true }
+      },
+      {
+        span_id: "demo-synthesize",
+        parent_span_id: null,
+        span_type: "graph_node",
+        span_type_label: "流程节点",
+        display_name: "综合",
+        name: "synthesize",
+        status: "success",
+        latency_ms: 2270,
+        input_summary: {},
+        output_summary: {},
         metadata: { demo: true }
       },
       {
         span_id: "demo-final-synthesizer",
-        parent_span_id: null,
-        span_type: "graph_node",
-        span_type_label: "流程节点",
-        display_name: "生成最终回答",
-        name: "final_synthesizer",
-        status: "success",
-        latency_ms: 2270,
-        input_summary: { evidence_count: 6 },
-        output_summary: { final_text_chars: 860 },
-        metadata: { demo: true }
-      },
-      {
-        span_id: "demo-model-summary",
-        parent_span_id: "demo-final-synthesizer",
+        parent_span_id: "demo-synthesize",
         span_type: "model_call",
         span_type_label: "模型调用",
-        display_name: "模型调用：总结时间线",
-        name: "timeline_summary_model",
+        display_name: "模型调用：生成最终回答",
+        name: "final_synthesizer",
         status: "success",
-        latency_ms: 2270,
-        input_summary: { instruction: "按时间线合并新闻证据" },
-        output_summary: { format: "timeline", bullets: 5 },
-        metadata: { provider: "demo", model: "gpt-demo" }
+        latency_ms: 2260,
+        input_summary: { message_count: 2 },
+        output_summary: {},
+        metadata: { demo: true, node: "final_synthesizer", provider: "demo", model: "gpt-demo" }
       },
       {
-        span_id: "demo-output-guard",
+        span_id: "demo-finalize",
         parent_span_id: null,
         span_type: "graph_node",
         span_type_label: "流程节点",
-        display_name: "输出检查",
-        name: "output_guard",
+        display_name: "校验引用",
+        name: "finalize",
         status: "success",
         latency_ms: 24,
-        input_summary: { text_chars: 860, valid_url_count: 6 },
-        output_summary: { guarded_text_chars: 858 },
+        input_summary: {},
+        output_summary: {},
         metadata: { demo: true }
       }
     ]
@@ -285,20 +268,49 @@ const demoDetailsByRequestId = {
   }
 };
 const demoModelIoBySpanId = {
-  "demo-model-summary": {
+  "demo-gather-1-model": {
     provider: "demo",
     model: "gpt-demo",
-    node: "timeline_summary_model",
+    node: "gather",
+    input_messages: [
+      { role: "system", content: "你是新闻问答的取证助手。" },
+      { role: "user", content: "梳理最近两个月 OpenAI 时间线" }
+    ],
+    raw_output: {
+      content: "",
+      tool_calls: [{ name: "search_news", args: { query: "OpenAI", days: 60 } }]
+    },
+    token_usage: {
+      input_tokens: 420,
+      output_tokens: 36,
+      total_tokens: 456
+    }
+  },
+  "demo-gather-2-model": {
+    provider: "demo",
+    model: "gpt-demo",
+    node: "gather",
+    input_messages: [
+      { role: "system", content: "你是新闻问答的取证助手。" },
+      { role: "user", content: "梳理最近两个月 OpenAI 时间线" }
+    ],
+    raw_output: { content: "证据已足够，进入综合。" },
+    token_usage: {
+      input_tokens: 1210,
+      output_tokens: 18,
+      total_tokens: 1228
+    }
+  },
+  "demo-final-synthesizer": {
+    provider: "demo",
+    model: "gpt-demo",
+    node: "final_synthesizer",
     input_messages: [
       { role: "system", content: "你是新闻时间线整理助手。" },
       { role: "user", content: "请根据证据整理 OpenAI 最近两个月时间线。" }
     ],
     raw_output: {
       content: "演示输出：OpenAI 动态主要集中在产品更新、公司治理、市场竞争和安全讨论。"
-    },
-    parsed_output: {
-      summary: "这是本地演示数据，用于查看 Trace Console 手机端交互。",
-      timeline_items: 5
     },
     token_usage: {
       input_tokens: 186,
@@ -370,10 +382,13 @@ function buildLogicalSteps(spans) {
     else if (primary?.span_type === "tool_call") kind = "tool";
     const hasError =
       isErrorStatus(span.status) || children.some((c) => isErrorStatus(c.status));
+    // Navigator segments: gather (model call), tool execution, synthesis (model call).
+    // Graph nodes without a model or tool call are listed only when they failed.
+    if (kind === "plumbing" && !hasError) continue;
     const anchor = primary || span;
-    const repeatKey = span.name || span.span_id;
-    const repeatIndex = (repeatByName.get(repeatKey) || 0) + 1;
-    repeatByName.set(repeatKey, repeatIndex);
+    const title = navigatorStepTitle(span, primary);
+    const repeatIndex = (repeatByName.get(title) || 0) + 1;
+    repeatByName.set(title, repeatIndex);
     steps.push({
       id: String(anchor.span_id),
       anchor,
@@ -382,7 +397,7 @@ function buildLogicalSteps(spans) {
       secondary,
       kind,
       hasError,
-      title: navigatorStepTitle(span),
+      title,
       status: span.status,
       latency_ms: span.latency_ms,
       repeat_index: repeatIndex,
@@ -403,8 +418,8 @@ function computeStepSignal(graphNode, primary, secondary, kind) {
   if (g.next_step) return g.next_step;
   if (kind === "tool" && primary) {
     const o = primary.output_summary || {};
-    const n = o.result_count ?? o.evidence_count;
-    if (typeof n === "number") return `命中 ${n}`;
+    const n = o.result_count ?? o.evidence_count ?? o.evidence_urls?.length;
+    return typeof n === "number" ? `${primary.name} · 命中 ${n}` : primary.name;
   }
   for (const child of secondary || []) {
     const o = child.output_summary || {};
@@ -451,8 +466,11 @@ function closestGraphNodeAncestor(span, byId) {
   return null;
 }
 
-function navigatorStepTitle(span) {
-  return span?.display_name || span?.name || span?.span_id || "执行步骤";
+function navigatorStepTitle(graphNode, primary) {
+  if (primary?.span_type === "tool_call") return "工具执行";
+  if (primary?.span_type === "model_call" && primary.name === "gather") return "取证";
+  if (primary?.span_type === "model_call" && primary.name === "final_synthesizer") return "综合";
+  return graphNode?.display_name || graphNode?.name || graphNode?.span_id || "执行步骤";
 }
 
 function setError(error) {
@@ -1110,37 +1128,7 @@ onBeforeUnmount(() => {
 
         <template v-else>
           <template v-for="step in spanNavigatorSteps" :key="step.id">
-            <details
-              v-if="step.kind === 'plumbing' && !step.hasError"
-              :id="`span-detail-${step.id}`"
-              class="span-detail-card plumbing"
-              :class="{ active: step.id === activeSpan?.span_id }"
-              :data-span-id="step.anchor.span_id"
-              :data-span-type="step.anchor.span_type"
-            >
-              <summary class="plumbing-summary">
-                <span class="plumbing-name">{{ step.title }}</span>
-                <span v-if="step.repeat_index > 1" class="span-repeat">{{ step.repeat_index }}</span>
-                <span v-if="step.signal" class="plumbing-signal">{{ step.signal }}</span>
-                <span class="plumbing-latency">{{ formatLatency(step.latency_ms) }}</span>
-              </summary>
-              <JsonBlock
-                v-if="!step.secondary.length"
-                title="输出摘要"
-                :value="step.graphNode.output_summary"
-                :open="false"
-              />
-              <JsonBlock
-                v-for="child in step.secondary"
-                :key="child.span_id"
-                :title="`${childTypeLabel(child)} · ${child.name}`"
-                :value="child.output_summary"
-                :open="false"
-              />
-            </details>
-
             <article
-              v-else
               :id="`span-detail-${step.id}`"
               class="span-detail-card"
               :class="[`span-kind-${step.kind}`, { active: step.id === activeSpan?.span_id }]"

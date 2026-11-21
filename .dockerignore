@@ -3,8 +3,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 .git/
-.env
-agent/.env
+**/.env
 
 trace_dashboard/node_modules/
 trace_dashboard/dist/

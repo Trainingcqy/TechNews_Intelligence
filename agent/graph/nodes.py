@@ -1,561 +1,175 @@
-"""Node implementations for the custom LangGraph agent."""
+"""Nodes of the turn graph: the gathering loop, routing, synthesis and finalization."""
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from datetime import datetime
 from functools import wraps
-from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
-from langgraph.types import interrupt
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langgraph.graph import END
+from langgraph.types import Send
 
-from agent.graph.checkpointer import get_checkpointer
-
-from agent.clarification import (
-    build_clarification_payload,
-    infer_clarification_reason,
+from agent import prompts
+from agent.citations import NOT_FOUND_TEXT, clean_direct_reply, contains_cjk, finalize_answer
+from agent.config import BEIJING
+from agent.context import build_context
+from agent.trace import trace_span
+from agent.llm import call_text, call_with_tools, coerce_to_text
+from agent.retrieval.corpus import corpus_info
+from agent.tools.registry import (
+    PreparedCall,
+    ToolOutcome,
+    ToolPayload,
+    commit_call,
+    prepare_call,
+    run_call,
+    tool_schemas,
 )
-from agent.context_manager import (
-    active_question,
-    build_context_curator_messages,
-    build_context_pack,
-    build_history_manifest,
-    context_tool_profile_enabled,
-    normalize_context_curator_result,
-    render_context_for_prompt,
-    should_use_context_curator,
-)
-from agent.core.evidence import extract_urls, normalize_url_for_match
-from agent.core.runtime_factories import build_default_registry, build_default_tool_runtime
-from agent.core.tool_contracts import ToolEnvelope
-from agent.core.tool_runtime import (
-    ToolRuntime,
-    ToolRuntimeContext,
-    format_tool_results_for_final_synthesis,
-)
-from agent.core.trace import trace_span
-from agent.memory_policy import build_llm_input_messages
-from agent.tool_policy import evaluate_pending_tool_calls
+from agent.types import Answer, Evidence, EvidenceFound, Progress
+from services.urls import extract_urls, url_key
 
-from .evidence_flow import (
-    _empty_evidence_fallback_calls,
-    _fulltext_calls_from_evidence,
-    _normalize_evidence,
-    _requires_evidence,
-    _should_read_after_search,
-)
-from .intent_heuristics import _heuristic_intent, _merge_intent
-from .message_history import (
-    _history_to_messages,
-    _human_texts,
-    _load_thread_memory_summary_safe,
-    _recent_context_snippet,
-)
-from .model_io import _invoke_json_model, _invoke_text_model
-from .output_guard import _fallback_final_text
-from .prompts import (
-    _FINAL_SYSTEM_PROMPT,
-    _INTENT_ROUTER_SYSTEM_PROMPT,
-    _TOOL_WORKER_SYSTEM_PROMPT,
-)
-from .state import AgentGraphState, GraphModelHandle, GraphModels, GraphRuntimeConfig
-from .stream import emit_graph_evidence, emit_graph_progress, evidence_status_items
-from .tool_planning import (
-    _emit_tool_running_status,
-    _heuristic_tool_calls,
-    _normalize_tool_calls,
-    _select_tools,
-    _tool_schema_brief,
-)
+from .state import TurnRuntime
+
+CALL_LIMIT_TEXT = "已超过单步调用上限，本次调用未执行。"
 
 
-@dataclass
-class GraphDependencies:
-    models: GraphModels
-    tool_runtime: ToolRuntime
-    config: GraphRuntimeConfig
+def _traced(fn):
+    @wraps(fn)
+    def wrapped(state, config):
+        with trace_span("graph_node", fn.__name__):
+            return fn(state, config)
+
+    return wrapped
 
 
-def _graph_node_span(name: str):
-    def _decorator(func):
-        @wraps(func)
-        def _wrapped(self: "GraphNodeRunner", state: AgentGraphState) -> dict[str, Any]:
-            with trace_span(
-                "graph_node",
-                name,
-                input_summary=_graph_state_summary(state),
-                metadata={"node": name},
-            ) as span:
-                result = func(self, state)
-                span.set_output(_graph_update_summary(result))
-                return result
-
-        return _wrapped
-
-    return _decorator
+def _runtime(config) -> TurnRuntime:
+    return config["configurable"]["runtime"]
 
 
-def _graph_state_summary(state: AgentGraphState) -> dict[str, Any]:
-    context_pack = state.get("context_pack") or {}
+def _today() -> str:
+    return f"{datetime.now(BEIJING):%Y-%m-%d}"
+
+
+@_traced
+def prepare(state, config) -> dict:
+    runtime = _runtime(config)
+    question = state["question"]
+    context = build_context(state["history"], runtime.registry, runtime.config)
+    runtime.tool_state.user_urls = context.user_urls | {url_key(url) for url in extract_urls(question)}
+    system = prompts.GATHER_SYSTEM_PROMPT.format(today=_today(), corpus=corpus_info(), follows="")
+    runtime.emit(Progress("understanding", "正在理解问题"))
     return {
-        "user_message_chars": len(str(state.get("user_message") or "")),
-        "history_count": len(state.get("history") or []),
-        "llm_input_count": len(state.get("llm_input_messages") or []),
-        "context_strategy": ((context_pack.get("trim_report") or {}).get("strategy") if isinstance(context_pack, dict) else None),
-        "selected_tools": list(state.get("selected_tools") or []),
-        "pending_tool_count": len(state.get("pending_tool_calls") or []),
-        "tool_result_count": len(state.get("tool_results") or []),
-        "tool_round": int(state.get("tool_round") or 0),
-        "evidence_count": len(state.get("evidence_urls") or state.get("valid_urls") or []),
-        "next_step": state.get("next_step"),
+        "context_messages": context.messages,
+        "messages": [SystemMessage(system), *context.messages, HumanMessage(question)],
+        "step": 0,
     }
 
 
-def _graph_update_summary(update: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(update, dict):
-        return {"type": type(update).__name__}
-    context_pack = update.get("context_pack") if isinstance(update.get("context_pack"), dict) else {}
-    return {
-        "keys": sorted(update.keys()),
-        "intent_route": (update.get("intent") or {}).get("route") if isinstance(update.get("intent"), dict) else None,
-        "context_strategy": ((context_pack.get("trim_report") or {}).get("strategy") if isinstance(context_pack, dict) else None),
-        "pending_tool_count": len(update.get("pending_tool_calls") or []),
-        "tool_result_count": len(update.get("tool_results") or []),
-        "evidence_count": len(update.get("evidence_urls") or update.get("valid_urls") or []),
-        "final_text_chars": len(str(update.get("final_text") or "")),
-        "next_step": update.get("next_step"),
-    }
+@_traced
+def gather(state, config) -> dict:
+    runtime = _runtime(config)
+    limits = runtime.config
+    if state["step"] >= limits.max_steps:
+        return {"pending": [], "rejected": []}
+    reply = call_with_tools(runtime.models[0], state["messages"], tool_schemas(), node="gather")
+    if not reply.tool_calls:
+        return {"direct_text": coerce_to_text(reply.content), "pending": [], "rejected": []}
 
-
-def _route_progress_copy(route: str) -> tuple[str, str]:
-    """Return user-facing progress copy for the resolved intent route."""
-    if route == "direct_answer":
-        return "正在组织回答", "无需检索直接回答"
-    if route == "needs_clarification":
-        return "正在确认分析范围", "需要补充信息"
-    if route == "needs_tools":
-        return "正在规划检索", "需要调用工具获取证据"
-    return "正在理解问题", ""
-
-
-def _synthesis_progress_copy(route: str) -> tuple[str, str]:
-    """Return final-generation progress copy for the resolved intent route."""
-    if route == "needs_tools":
-        return "正在生成分析", "输出结论、依据"
-    if route == "needs_clarification":
-        return "正在确认分析范围", "需要补充信息"
-    return "正在生成回答", "输出回答"
-
-
-def _citable_urls_for_state(state: AgentGraphState, context_pack_text: str) -> list[str]:
-    """URLs the model may cite: this turn's evidence plus context-pack sources.
-
-    The guard/decorate layer only renders sources the model actually cites, so
-    widening the allowlist to match what was shown in the prompt lets legitimate
-    carried-over citations survive without inflating the source list.
-    """
-    citable: list[str] = []
-    seen: set[str] = set()
-    for url in list(state.get("evidence_urls") or state.get("valid_urls") or []) + extract_urls(context_pack_text):
-        url = str(url or "").strip()
-        if not url:
+    pending: list[PreparedCall] = []
+    rejected: list[ToolOutcome] = []
+    for index, call in enumerate(reply.tool_calls):
+        if index >= limits.max_calls_per_step:
+            rejected.append(ToolOutcome(index=index, call_id=call["id"], name=call["name"], ok=False,
+                                        gather_text=CALL_LIMIT_TEXT, error=CALL_LIMIT_TEXT))
             continue
-        norm = normalize_url_for_match(url) or url
-        if norm in seen:
-            continue
-        seen.add(norm)
-        citable.append(url)
-    return citable
-
-
-class GraphNodeRunner:
-    def __init__(self, deps: GraphDependencies) -> None:
-        self.deps = deps
-        self.registry = build_default_registry()
-
-    @_graph_node_span("prepare_context")
-    def prepare_context(self, state: AgentGraphState) -> dict[str, Any]:
-        emit_graph_progress("understanding", "正在理解问题", detail="")
-        user_message = str(state.get("user_message") or "")
-        history = list(state.get("history") or [])
-        thread_id = str(state.get("thread_id") or "").strip()
-        memory_summary = _load_thread_memory_summary_safe(thread_id)
-        with trace_span(
-            "context",
-            "history_manifest_builder",
-            input_summary={"history_count": len(history), "thread_id": thread_id},
-            metadata={"node": "prepare_context"},
-        ) as context_span:
-            history_manifest = build_history_manifest(history)
-            context_span.set_output(
-                {
-                    "turn_count": len(history_manifest),
-                    "memory_summary_available": bool(memory_summary),
-                }
-            )
-        curator_result: dict[str, Any] | None = None
-        curator_error = ""
-        curator_used = should_use_context_curator(
-            user_message=user_message,
-            history_manifest=history_manifest,
-            memory_summary=memory_summary,
-        )
-        if curator_used:
-            raw_curator_result = _invoke_json_model(
-                self.deps.models.context_curator,
-                node="context_curator",
-                messages=build_context_curator_messages(
-                    user_message=user_message,
-                    history_manifest=history_manifest,
-                    memory_summary=memory_summary,
-                ),
-            )
-            curator_result = normalize_context_curator_result(
-                raw_curator_result,
-                history_manifest,
-                memory_summary,
-            )
-            if not isinstance(curator_result, dict):
-                curator_error = "empty_or_invalid_curator_output"
-        context_pack = build_context_pack(
-            user_message=user_message,
-            history=history,
-            history_manifest=history_manifest,
-            memory_summary=memory_summary,
-            curator_result=curator_result,
-            curator_used=curator_used,
-            curator_error=curator_error,
-        )
-        with trace_span(
-            "context",
-            "context_pack_builder",
-            input_summary={"curator_used": curator_used, "manifest_turn_count": len(history_manifest)},
-            metadata={"node": "prepare_context"},
-        ) as context_span:
-            context_span.set_output(
-                {
-                    "strategy": (context_pack.get("trim_report") or {}).get("strategy"),
-                    "selected_turn_count": len(context_pack.get("selected_turns") or []),
-                    "selected_evidence_count": len(context_pack.get("selected_evidence_urls") or []),
-                    "depends_on_history": context_pack.get("depends_on_history"),
-                }
-            )
-        context_prompt = render_context_for_prompt(context_pack)
-        llm_input = build_llm_input_messages(
-            [
-                HumanMessage(
-                    content=(
-                        f"Current user message:\n{user_message}\n\n"
-                        f"Context pack:\n{context_prompt}"
-                    )
-                )
-            ]
-        )
-        return {
-            "context_pack": context_pack,
-            "llm_input_messages": llm_input,
-            "tool_results": list(state.get("tool_results") or []),
-            "tool_round": int(state.get("tool_round") or 0),
-            "max_tool_rounds": int(state.get("max_tool_rounds") or self.deps.config.max_tool_rounds),
-        }
-
-    @_graph_node_span("intent_router")
-    def intent_router(self, state: AgentGraphState) -> dict[str, Any]:
-        user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
-        context_snippet = render_context_for_prompt(state.get("context_pack"))
-        intent = _heuristic_intent(user_message)
-        model_intent = _invoke_json_model(
-            self.deps.models.intent_router,
-            node="intent_router",
-            messages=[
-                SystemMessage(content=_INTENT_ROUTER_SYSTEM_PROMPT),
-                HumanMessage(
-                    content=(
-                        f"Recent conversation context:\n{context_snippet}\n\n"
-                        f"Current user message:\n{user_message}\n\n"
-                        "Return JSON only."
-                    )
-                ),
-            ],
-        )
-        if isinstance(model_intent, dict):
-            intent = _merge_intent(intent, model_intent)
-        title, detail = _route_progress_copy(str(intent.get("route") or ""))
-        emit_graph_progress("understanding", title, detail=detail)
-        return {
-            "intent": intent,
-        }
-
-    @_graph_node_span("tool_selection")
-    def tool_selection(self, state: AgentGraphState) -> dict[str, Any]:
-        intent = state.get("intent") or {}
-        selected = _select_tools(intent)
-        emit_graph_progress("selecting_tools", "正在调用工具")
-        return {
-            "selected_tools": selected,
-        }
-
-    @_graph_node_span("tool_worker")
-    def tool_worker(self, state: AgentGraphState) -> dict[str, Any]:
-        selected_tools = list(state.get("selected_tools") or [])
-        user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
-        tool_profile = "tool" if context_tool_profile_enabled() else "full"
-        context_snippet = render_context_for_prompt(state.get("context_pack"), tool_profile)
-        tool_results = list(state.get("tool_results") or [])
-        existing_calls = _normalize_tool_calls({"tool_calls": state.get("pending_tool_calls") or []})
-        if existing_calls:
-            emit_graph_progress("selecting_tools", "正在调用工具")
-            return {
-                "pending_tool_calls": existing_calls,
-            }
-        schema_brief = _tool_schema_brief(selected_tools)
-        model_plan = _invoke_json_model(
-            self.deps.models.tool_worker,
-            node="tool_worker",
-            messages=[
-                SystemMessage(content=_TOOL_WORKER_SYSTEM_PROMPT),
-                HumanMessage(
-                    content=(
-                        f"Recent conversation context:\n{context_snippet}\n\n"
-                        f"Current user message:\n{user_message}\n\n"
-                        f"Selected tools:\n{schema_brief}\n\n"
-                        f"Already executed tools: {[item.tool for item in tool_results]}\n"
-                        "Return JSON only."
-                    )
-                ),
-            ],
-        )
-        calls = _normalize_tool_calls(model_plan)
-        if not calls:
-            calls = _heuristic_tool_calls(
-                user_message=user_message,
-                intent=state.get("intent") or {},
-                selected_tools=selected_tools,
-                tool_results=tool_results,
-            )
-        emit_graph_progress("selecting_tools", "正在调用工具")
-        return {
-            "pending_tool_calls": calls,
-        }
-
-    @_graph_node_span("tool_policy")
-    def tool_policy(self, state: AgentGraphState) -> dict[str, Any]:
-        selected_tools = set(state.get("selected_tools") or [])
-        input_schemas = {name: self.registry.input_schema(name) for name in selected_tools}
-        user_messages = _human_texts(state.get("llm_input_messages") or [])
-        previous_tool_calls = [item.tool for item in state.get("tool_results") or []]
-        decision = evaluate_pending_tool_calls(
-            list(state.get("pending_tool_calls") or []),
-            allowed_tool_names=selected_tools,
-            input_schemas=input_schemas,
-            evidence_urls=state.get("evidence_urls") or [],
-            user_messages=user_messages,
-            previous_tool_calls=previous_tool_calls,
-        )
-        with trace_span(
-            "guard",
-            "tool_policy",
-            input_summary={
-                "pending_tool_count": len(state.get("pending_tool_calls") or []),
-                "selected_tools": sorted(selected_tools),
-                "previous_tool_calls": previous_tool_calls,
-            },
-            metadata={"node": "tool_policy"},
-        ) as guard_span:
-            guard_span.set_output(
-                {
-                    "allowed": decision.allowed,
-                    "reason": decision.reason,
-                    "details": decision.details or {},
-                }
-            )
-            if not decision.allowed:
-                guard_span.status = "blocked"
-        if decision.allowed:
-            return {}
-
-        clarification = build_clarification_payload(
-            str(state.get("user_message") or ""),
-            reason=infer_clarification_reason(str(state.get("user_message") or "")),
-            context={"policy_reason": decision.reason, "policy_details": decision.details or {}},
-        ).to_dict()
-        return {
-            "clarification": clarification,
-        }
-
-    @_graph_node_span("tool_executor")
-    def tool_executor(self, state: AgentGraphState) -> dict[str, Any]:
-        results = list(state.get("tool_results") or [])
-        evidence_urls = list(state.get("evidence_urls") or [])
-        seen_urls = {normalize_url_for_match(url) for url in evidence_urls}
-        for call in state.get("pending_tool_calls") or []:
-            name = str(call.get("name") or "").strip()
-            args = dict(call.get("args") or {})
-            _emit_tool_running_status(name, args)
-            envelope = self.deps.tool_runtime.execute(
-                name,
-                args,
-                ToolRuntimeContext(trace=True, emit_progress_events=True),
-            )
-            results.append(envelope)
-            for item in envelope.evidence or []:
-                normalized = normalize_url_for_match(item.url)
-                if normalized and normalized not in seen_urls:
-                    evidence_urls.append(item.url)
-                    seen_urls.add(normalized)
-            emit_graph_evidence(envelope, limit=self.deps.config.max_evidence_events)
-
-        return {
-            "tool_results": results,
-            "evidence_urls": evidence_urls,
-            "tool_round": int(state.get("tool_round") or 0) + 1,
-            "pending_tool_calls": [],
-        }
-
-    @_graph_node_span("evidence_normalizer")
-    def evidence_normalizer(self, state: AgentGraphState) -> dict[str, Any]:
-        results = list(state.get("tool_results") or [])
-        with trace_span(
-            "postprocess",
-            "evidence_normalizer",
-            input_summary={"tool_result_count": len(results)},
-            metadata={"node": "evidence_normalizer"},
-        ) as post_span:
-            evidence_urls, brief = _normalize_evidence(results)
-            post_span.set_output({"evidence_count": len(evidence_urls), "brief_chars": len(brief)})
-        items = evidence_status_items(results, limit=self.deps.config.max_status_items)
-        if items:
-            emit_graph_progress("retrieving", f"已找到 {len(evidence_urls)} 篇相关报道", items=items)
-        emit_graph_progress("analyzing", "正在整理信息")
-        return {
-            "evidence_urls": evidence_urls,
-            "valid_urls": evidence_urls,
-            "evidence_brief": brief,
-        }
-
-    @_graph_node_span("tool_loop_decider")
-    def tool_loop_decider(self, state: AgentGraphState) -> dict[str, Any]:
-        results = list(state.get("tool_results") or [])
-        evidence_urls = list(state.get("evidence_urls") or [])
-        max_rounds = int(state.get("max_tool_rounds") or self.deps.config.max_tool_rounds)
-        tool_round = int(state.get("tool_round") or 0)
-        if not evidence_urls and _requires_evidence(state):
-            fallback_calls = _empty_evidence_fallback_calls(state)
-            if tool_round < max_rounds and fallback_calls:
-                next_step = "more_tools"
-                return {
-                    "next_step": next_step,
-                    "pending_tool_calls": fallback_calls,
-                }
-            next_step = "insufficient_evidence"
-        elif tool_round < max_rounds and _should_read_after_search(results, state):
-            next_step = "more_tools"
-            read_calls = _fulltext_calls_from_evidence(evidence_urls, state)
-            return {
-                "next_step": next_step,
-                "pending_tool_calls": read_calls,
-            }
+        prepared = prepare_call(index, call, state=runtime.tool_state, config=limits)
+        if isinstance(prepared, PreparedCall):
+            pending.append(prepared)
+            runtime.emit(_progress(prepared))
         else:
-            next_step = "enough_evidence"
-        return {
-            "next_step": next_step,
-        }
+            rejected.append(prepared)
+    return {"messages": [*state["messages"], reply], "pending": pending, "rejected": rejected,
+            "tools_called": True}
 
-    @_graph_node_span("final_synthesizer")
-    def final_synthesizer(self, state: AgentGraphState) -> dict[str, Any]:
-        intent = state.get("intent") or {}
-        title, detail = _synthesis_progress_copy(str(intent.get("route") or ""))
-        emit_graph_progress("synthesizing", title, detail=detail)
-        results = list(state.get("tool_results") or [])
-        user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
-        context_pack_text = render_context_for_prompt(state.get("context_pack"))
-        context = format_tool_results_for_final_synthesis(results)
-        evidence_brief = str(state.get("evidence_brief") or "")
-        text = _invoke_text_model(
-            self.deps.models.final_synthesizer,
-            node="final_synthesizer",
-            messages=[
-                SystemMessage(content=_FINAL_SYSTEM_PROMPT),
-                HumanMessage(
-                    content=(
-                        f"User question:\n{user_message}\n\n"
-                        f"Conversation context pack:\n{context_pack_text}\n\n"
-                        f"Intent:\n{json.dumps(state.get('intent') or {}, ensure_ascii=False)}\n\n"
-                        f"Evidence brief:\n{evidence_brief}\n\n"
-                        f"Tool results:\n{context}\n\n"
-                        "Write the final answer now."
-                    )
-                ),
-            ],
-        )
-        if not text:
-            text = _fallback_final_text(user_message, state)
-        return {
-            "final_text": text,
-            "citable_urls": _citable_urls_for_state(state, context_pack_text),
-        }
 
-    @_graph_node_span("clarification_response")
-    def clarification_response(self, state: AgentGraphState) -> dict[str, Any]:
-        payload = state.get("clarification")
-        if not isinstance(payload, dict):
-            payload = build_clarification_payload(str(state.get("user_message") or "")).to_dict()
-        with trace_span(
-            "guard",
-            "clarification_response",
-            input_summary={"reason": payload.get("reason")},
-            metadata={"node": "clarification_response"},
-        ) as guard_span:
-            guard_span.set_output({"question_chars": len(str(payload.get("question") or ""))})
-        emit_graph_progress("clarification_required", "需要补充信息", detail=str(payload.get("question") or ""))
+def after_gather(state) -> list[Send] | str:
+    if state["pending"]:
+        return [Send("run_tool", {"step": state["step"], "call": call}) for call in state["pending"]]
+    return "collect" if state["rejected"] else "route"
 
-        clarify_count = int(state.get("clarify_count") or 0)
 
-        # Legacy mode (no checkpointer) or already clarified once this run:
-        # do not interrupt — return the clarification and terminate, as before.
-        if get_checkpointer() is None or clarify_count >= 1:
-            return {
-                "clarification": payload if clarify_count == 0 else None,
-                "final_text": (
-                    str(payload.get("question") or "")
-                    if clarify_count == 0
-                    else "补充后仍无法确定，请换一个更具体的问法。"
-                ),
-                "valid_urls": [],
-                "clar_route": "end",
-            }
+@_traced
+def run_tool(arg: dict, config) -> dict:
+    runtime = _runtime(config)
+    call = arg["call"]
+    payload = run_call(call, registry=runtime.registry, state=runtime.tool_state)
+    return {"payloads": {(arg["step"], call.index): payload}}
 
-        # HIL mode: pause for the user's reply (interrupt), then continue to answer.
-        reply = interrupt(payload)
-        reply_text = reply if isinstance(reply, str) else str((reply or {}).get("text") or reply or "")
-        clarified_question = reply_text.strip() or str(
-            payload.get("original_question") or state.get("user_message") or ""
-        )
-        return {
-            "user_message": clarified_question,
-            "clarification": None,
-            "clarified": True,
-            "clarify_count": clarify_count + 1,
-            "clar_route": "answer",
-            "intent": {},
-            "selected_tools": [],
-            "pending_tool_calls": [],
-            "tool_results": [],
-            "evidence_urls": [],
-            "evidence_brief": "",
-            "next_step": "",
-            "tool_round": 0,
-        }
 
-    @_graph_node_span("insufficient_evidence_response")
-    def insufficient_evidence_response(self, state: AgentGraphState) -> dict[str, Any]:
-        text = (
-            "目前没有找到足够可靠的相关新闻证据支撑这个分析结论。"
-            "请缩小时间范围、补充更具体的实体或提供相关 URL 后我再继续。"
-        )
-        emit_graph_progress("analyzing", "正在整理信息", detail="当前证据不足")
-        return {
-            "final_text": text,
-            "valid_urls": [],
-        }
+@_traced
+def collect(state, config) -> dict:
+    runtime = _runtime(config)
+    step = state["step"]
+    current = [payload for (payload_step, _), payload in state.get("payloads", {}).items() if payload_step == step]
+    messages = list(state["messages"])
+    for item in sorted([*current, *state["rejected"]], key=lambda item: item.index):
+        if isinstance(item, ToolPayload):
+            runtime.tool_names.append(item.name)
+            item = commit_call(item, registry=runtime.registry, state=runtime.tool_state, config=runtime.config)
+        messages.append(ToolMessage(item.gather_text, tool_call_id=item.call_id))
+        for evidence in item.new_evidence:
+            runtime.emit(_evidence_found(evidence))
+    return {"messages": messages, "step": step + 1, "pending": [], "rejected": []}
+
+
+@_traced
+def route(state, config) -> dict:
+    runtime = _runtime(config)
+    question = state["question"]
+    if not state.get("tools_called"):
+        return {"answer": Answer(status="direct", text=clean_direct_reply(state.get("direct_text", ""), question))}
+    if not runtime.registry.citable_ids():
+        return {"answer": Answer(status="not_found", text=NOT_FOUND_TEXT["zh" if contains_cjk(question) else "en"])}
+    return {}
+
+
+def after_route(state) -> str:
+    return END if "answer" in state else "synthesize"
+
+
+@_traced
+def synthesize(state, config) -> dict:
+    runtime = _runtime(config)
+    runtime.emit(Progress("synthesizing", "正在生成回答"))
+    user = prompts.render_final_user(state["question"], runtime.registry, runtime.config.synthesis_evidence_chars)
+    messages = [SystemMessage(prompts.FINAL_SYSTEM_PROMPT), *state["context_messages"], HumanMessage(user)]
+    return {"raw_answer": call_text(runtime.models[1], messages, node="final_synthesizer")}
+
+
+@_traced
+def finalize(state, config) -> dict:
+    runtime = _runtime(config)
+    return {"answer": finalize_answer(state["raw_answer"], runtime.registry, state["question"])}
+
+
+def _progress(call: PreparedCall) -> Progress:
+    if call.name == "read_articles":
+        return Progress("reading", "正在读取正文")
+    args = call.args
+    if args.start_date is None:
+        window = f"最近 {args.days} 天"
+    elif args.end_date is None:
+        window = f"{args.start_date} 至今"
+    else:
+        window = f"{args.start_date} 至 {args.end_date}"
+    subject = args.query or args.topic
+    return Progress("retrieving", "正在检索相关新闻", f"{subject} {window}" if subject else window)
+
+
+def _evidence_found(evidence: Evidence) -> EvidenceFound:
+    if evidence.doc == "discussion":
+        discussion = evidence.discussion
+        return EvidenceFound(evidence.eid, discussion.title, "HackerNews 讨论", discussion.url, "")
+    article = evidence.article
+    return EvidenceFound(evidence.eid, article.title, article.publisher, article.url,
+                         f"{article.published_at.astimezone(BEIJING):%Y-%m-%d}")

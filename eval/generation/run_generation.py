@@ -5,14 +5,13 @@ and the evidence URL set the answer is grounded in (valid_urls), then fetches ea
 evidence URL's title + summary from the DB so the faithfulness judge has the
 content the answer should be supported by.
 
-Prerequisite: n8n ingestion paused (stable DB snapshot).
+Prerequisite: ingest paused (docker compose stop ingest), so the DB is a stable snapshot.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 import uuid
@@ -24,17 +23,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 from eval.eval_retry import call_with_retry  # noqa: E402
+from services.urls import url_key  # noqa: E402
 
-
-def _load_env() -> None:
-    env_path = PROJECT_ROOT / "agent" / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
-    if not str(os.getenv("AGENT_MODEL_PROVIDER", "")).strip():
-        os.environ["AGENT_MODEL_PROVIDER"] = "vertex"
+# Answer.status -> record status. "direct" is a reply without retrieval (greeting or a clarifying
+# question), so it is skipped for faithfulness like the former clarification bucket.
+_STATUS_BUCKETS = {
+    "answered": "success",
+    "direct": "clarification",
+    "insufficient": "refusal",
+    "not_found": "refusal",
+    "blocked": "refusal",
+    "error": "error",
+}
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -67,11 +70,11 @@ def _read_done(path: Path) -> set[str]:
     return done
 
 
-def _confirm_n8n_paused() -> bool:
+def _confirm_ingest_paused() -> bool:
     print("=" * 60)
-    print("PREREQUISITE: n8n ingestion must be paused (stable DB snapshot).")
+    print("PREREQUISITE: ingest must be paused (docker compose stop ingest) for a stable DB snapshot.")
     print("=" * 60)
-    return input("Confirm n8n workflows are paused? [y/N] ").strip().lower() == "y"
+    return input("Confirm ingest is paused? [y/N] ").strip().lower() == "y"
 
 
 def _fetch_evidence(urls: list[str], db_cursor_fn: Any) -> list[dict[str, Any]]:
@@ -79,15 +82,19 @@ def _fetch_evidence(urls: list[str], db_cursor_fn: Any) -> list[dict[str, Any]]:
         return []
     with db_cursor_fn() as (_, cur):
         cur.execute(
-            "SELECT url, title, COALESCE(title_cn,'') AS title_cn, COALESCE(summary,'') AS summary "
-            "FROM tech_news WHERE url = ANY(%s)",
-            (list(urls),),
+            "SELECT url_key, title, COALESCE(title_zh,'') AS title_cn, COALESCE(summary,'') AS summary "
+            "FROM news.article WHERE url_key = ANY(%s)",
+            ([url_key(u) for u in urls],),
         )
-        rows = {r[0]: {"url": r[0], "title": r[1], "title_cn": r[2], "summary": r[3]} for r in cur.fetchall()}
+        rows = {r[0]: {"title": r[1], "title_cn": r[2], "summary": r[3]} for r in cur.fetchall()}
     # preserve answer's url order; include not-found urls with empty content
     out: list[dict[str, Any]] = []
     for u in urls:
-        out.append(rows.get(u, {"url": u, "title": "", "title_cn": "", "summary": "(not found in DB)"}))
+        found = rows.get(url_key(u))
+        if found is None:
+            out.append({"url": u, "title": "", "title_cn": "", "summary": "(not found in DB)"})
+        else:
+            out.append({"url": u, **found})
     return out
 
 
@@ -103,7 +110,7 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Override the final_synthesizer system prompt (ablation). Reads the file "
-        "and monkeypatches agent.graph.nodes._FINAL_SYSTEM_PROMPT before running.",
+        "and replaces agent.prompts.FINAL_SYSTEM_PROMPT before running.",
     )
     parser.add_argument(
         "--sleep-seconds",
@@ -116,10 +123,10 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    _load_env()
+    load_env()
 
-    if not args.skip_confirm and not _confirm_n8n_paused():
-        print("Aborted: n8n not confirmed paused.")
+    if not args.skip_confirm and not _confirm_ingest_paused():
+        print("Aborted: ingest not confirmed paused.")
         return 1
 
     queries_path = args.queries.resolve()
@@ -138,8 +145,7 @@ def main() -> int:
     if done:
         print(f"Resume: {len(done)} case(s) already done; skipping them.")
 
-    from agent import AgentGenerationError, generate_response_eval_payload  # noqa: E402
-    from agent.clarification import ClarificationRequiredError  # noqa: E402
+    from agent import run_turn  # noqa: E402
     from services.db import db_cursor  # noqa: E402
 
     if args.synth_prompt_file:
@@ -148,8 +154,8 @@ def main() -> int:
             print(f"Synth prompt file not found: {prompt_path}")
             return 1
         weak_prompt = prompt_path.read_text(encoding="utf-8").strip()
-        import agent.graph.nodes as _nodes  # noqa: E402
-        _nodes._FINAL_SYSTEM_PROMPT = weak_prompt
+        import agent.prompts as _prompts  # noqa: E402
+        _prompts.FINAL_SYSTEM_PROMPT = weak_prompt
         print("=" * 60)
         print(f"ABLATION: final_synthesizer prompt OVERRIDDEN from {prompt_path.name}")
         print(f"  ({len(weak_prompt)} chars) — grounding constraints removed for this run.")
@@ -170,67 +176,35 @@ def main() -> int:
         thread_id = f"eval_g3_{case_id}_{run_token}"
         print(f"[{idx}/{len(pending)}] {case_id}: {question} ...", flush=True)
         try:
-            payload = call_with_retry(
-                lambda: generate_response_eval_payload(
-                    [],
-                    question,
-                    request_id=request_id,
-                    thread_id=thread_id,
-                    case_id=case_id,
-                    experiment_group="g3_generation",
-                    include_trace_summary=False,
-                ),
+            result = call_with_retry(
+                lambda: run_turn(question, [], request_id=request_id, thread_id=thread_id),
                 label=f"{case_id} gen",
             )
-            answer = str(payload.get("text") or "")
-            valid_urls = [str(u).strip() for u in (payload.get("valid_urls") or []) if str(u).strip()]
-            evidence = _fetch_evidence(valid_urls, db_cursor)
+            bucket = _STATUS_BUCKETS[result.status]
             record = {
                 "case_id": case_id,
                 "question": question,
-                "answer": answer,
-                "evidence_urls": valid_urls,
-                "evidence": evidence,
                 "request_id": request_id,
-                "status": "success",
+                "status": bucket,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             }
-            print(f"  -> answer_chars={len(answer)} evidence={len(evidence)}")
-            success += 1
-        except ClarificationRequiredError as exc:
-            record = {
-                "case_id": case_id,
-                "question": question,
-                "status": "clarification",
-                "note": str(exc),
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-            }
-            print("  -> clarification (skipped for faithfulness)")
-            skipped += 1
-        except AgentGenerationError as exc:
-            code = getattr(exc, "code", "") or ""
-            if code == "graph_inline_citation_missing":
-                # Evidence was retrieved but the (hardened) synthesizer produced no
-                # citable URL, so the body-URL guard blocked it. This is a correct
-                # refusal, not a failure — bucket as refusal so it doesn't inflate error.
-                record = {
-                    "case_id": case_id,
-                    "question": question,
-                    "status": "refusal",
-                    "code": code,
-                    "note": str(exc),
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                }
-                print("  -> refusal/no-data (correct refusal, no citable URL; skipped for faithfulness)")
+            if bucket == "success":
+                answer = result.text
+                valid_urls = [s.url for s in result.sources]
+                evidence = _fetch_evidence(valid_urls, db_cursor)
+                record.update(answer=answer, evidence_urls=valid_urls, evidence=evidence)
+                print(f"  -> answer_chars={len(answer)} evidence={len(evidence)}")
+                success += 1
+            elif bucket == "clarification":
+                record.update(code=result.status, note=result.text)
+                print("  -> clarification (skipped for faithfulness)")
+                skipped += 1
+            elif bucket == "refusal":
+                record.update(code=result.status, note=result.text)
+                print(f"  -> refusal ({result.status}; skipped for faithfulness)")
                 refused += 1
             else:
-                record = {
-                    "case_id": case_id,
-                    "question": question,
-                    "status": "error",
-                    "error_message": f"{type(exc).__name__}[{code}]: {exc}",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                }
+                record["error_message"] = f"{result.status}[{result.error_code}]: {result.text}"
                 print(f"  -> ERROR: {record['error_message']}")
                 error += 1
         except Exception as exc:  # noqa: BLE001

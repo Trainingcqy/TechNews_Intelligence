@@ -8,20 +8,17 @@ RUN npm ci
 COPY trace_dashboard/ ./
 RUN npm run build
 
-FROM python:3.11-slim AS python-runtime
+FROM python:3.12-slim AS python-runtime
 
 WORKDIR /app
 
-COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-# uv + external fetch MCP server (consumed as an MCP client over stdio)
-RUN pip install --no-cache-dir uv && uv tool install mcp-server-fetch
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY agent/ ./agent/
 COPY app/ ./app/
 COPY services/ ./services/
 COPY ingest/ ./ingest/
-COPY eval/ ./eval/
 
 CMD ["python", "-m", "app.bot"]
 

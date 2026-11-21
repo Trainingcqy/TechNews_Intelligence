@@ -7,10 +7,7 @@ import json
 import sys
 from typing import Any
 
-try:
-    from .server import InProcessMCPServer, build_newsdb_server
-except ImportError:  # pragma: no cover - direct script fallback
-    from server import InProcessMCPServer, build_newsdb_server  # type: ignore[no-redef]
+from .server import InProcessMCPServer, build_newsdb_server
 
 
 def _jsonrpc_result(request_id: Any, result: Any) -> dict[str, Any]:
@@ -77,13 +74,13 @@ def _handle_request(server: InProcessMCPServer, request: dict[str, Any]) -> dict
         if not isinstance(arguments, dict):
             arguments = {}
 
-        envelope = server.call_tool(tool_name, arguments)
+        result = server.call_tool(tool_name, arguments)
         return _jsonrpc_result(
             request_id,
             {
-                "structuredContent": envelope.to_dict(),
-                "content": [{"type": "text", "text": envelope.to_json()}],
-                "isError": envelope.status == "error",
+                "structuredContent": result,
+                "content": [{"type": "text", "text": result["text"]}],
+                "isError": result["status"] == "error",
             },
         )
 

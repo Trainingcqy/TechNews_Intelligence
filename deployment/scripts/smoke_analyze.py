@@ -29,7 +29,7 @@ from ingest.fetch import clean_body  # noqa: E402
 from ingest.reader import parse_reader_response  # noqa: E402
 from ingest.sources import load_sources, resolve_publisher  # noqa: E402
 from services.llm_provider import build_chat_model  # noqa: E402
-from services.script_env import _load_env_file  # noqa: E402
+from services.script_env import load_env  # noqa: E402
 
 FULL_PER_SOURCE = 2
 EXCERPT_SOURCES = ("techcrunch_feed", "google_ai_blog", "aws_ml_blog", "nvidia_dev_blog")
@@ -190,10 +190,10 @@ def run(items: list[store.AnalyzeItem], model, config: IngestConfig) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--env-file", default="agent/.env")
+    parser.add_argument("--env-file", default=".env")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    _load_env_file(args.env_file)
+    load_env(args.env_file)
     config = IngestConfig.from_env()
     model = build_chat_model(provider=config.analyze_provider, model_name=config.analyze_model, temperature=0)
     with _readonly_cursor() as cur:

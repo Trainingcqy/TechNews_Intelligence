@@ -21,6 +21,11 @@ project_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+import services.script_env  # noqa: E402
+
+# Tests never read the developer's .env, which holds real keys and the production database address.
+services.script_env.load_env = lambda path=None: None
+
 # Ignore known upstream deprecation warning noise from LangGraph/LangChain.
 warnings.filterwarnings("ignore", message=".*AgentStatePydantic has been moved.*")
 
@@ -114,7 +119,6 @@ def tmp_path(request: pytest.FixtureRequest) -> Iterator[Path]:
 @pytest.fixture()
 def agent_dependency_stubs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Provide lightweight stubs for DB-related optional dependencies."""
-    monkeypatch.setenv("AGENT_DYNAMIC_CLARIFICATION_ENABLED", "false")
     if "services" not in sys.modules:
         try:
             importlib.import_module("services")

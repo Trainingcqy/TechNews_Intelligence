@@ -208,7 +208,7 @@ def test_get_run_builds_span_tree_with_chinese_labels(trace_api_mod, monkeypatch
                     "span-root",
                     None,
                     "graph_node",
-                    "intent_router",
+                    "gather",
                     "success",
                     1,
                     2,
@@ -226,7 +226,7 @@ def test_get_run_builds_span_tree_with_chinese_labels(trace_api_mod, monkeypatch
                     "span-child",
                     "span-root",
                     "model_call",
-                    "intent_router",
+                    "gather",
                     "success",
                     2,
                     5,
@@ -249,9 +249,32 @@ def test_get_run_builds_span_tree_with_chinese_labels(trace_api_mod, monkeypatch
 
     assert response.status_code == 200
     tree = response.json()["span_tree"]
-    assert tree[0]["display_name"] == "判断问题类型"
-    assert tree[0]["children"][0]["display_name"] == "模型调用：判断问题类型"
+    assert tree[0]["display_name"] == "取证：选择工具"
+    assert tree[0]["children"][0]["display_name"] == "模型调用：取证：选择工具"
     assert tree[0]["children"][0]["span_type_label"] == "模型调用"
+
+
+def test_node_name_labels(trace_api_mod) -> None:  # noqa: ANN001
+    graph_node_labels = {
+        "prepare": "准备上下文",
+        "gather": "取证：选择工具",
+        "run_tool": "执行工具",
+        "collect": "登记证据",
+        "route": "路由",
+        "synthesize": "综合",
+        "finalize": "校验引用",
+    }
+    for name, label in graph_node_labels.items():
+        assert trace_api_mod._display_name("graph_node", name) == label
+    assert trace_api_mod._display_name("model_call", "final_synthesizer") == "模型调用：生成最终回答"
+    assert trace_api_mod._display_name("tool_call", "read_articles") == "工具执行：read_articles"
+    assert trace_api_mod.SPAN_NAME_LABELS["search_news"] == "检索新闻"
+    assert trace_api_mod.SPAN_NAME_LABELS["read_articles"] == "读取正文"
+
+
+def test_historical_node_names_have_no_chinese_label(trace_api_mod) -> None:  # noqa: ANN001
+    assert trace_api_mod._display_name("graph_node", "intent_router") == "流程节点：intent_router"
+    assert trace_api_mod._display_name("model_call", "intent_router") == "模型调用：intent_router"
 
 
 def test_model_io_endpoint_returns_full_payload(trace_api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001

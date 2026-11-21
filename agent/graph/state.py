@@ -1,77 +1,46 @@
-"""State and runtime contracts for the custom LangGraph agent."""
+"""State of the turn graph and the runtime objects its nodes share."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Callable, TypedDict
 
 from langchain_core.messages import BaseMessage
 
-from agent.core.tool_contracts import ToolEnvelope
+from agent.config import AgentConfig
+from agent.evidence import EvidenceRegistry
+from agent.llm import ModelHandle
+from agent.tools.registry import PreparedCall, ToolOutcome, ToolPayload, TurnState
+from agent.types import Answer, Event
 
-IntentRoute = Literal["direct_answer", "needs_clarification", "needs_tools"]
+
+def merge_payloads(left: dict, right: dict) -> dict:
+    return {**left, **right}
 
 
-class AgentGraphState(TypedDict, total=False):
-    request_id: str
-    thread_id: str | None
-    user_message: str
+class TurnGraphState(TypedDict, total=False):
+    question: str
     history: list[dict]
-    llm_input_messages: list[BaseMessage]
-    context_pack: dict[str, Any]
-
-    intent: dict[str, Any]
-    selected_tools: list[str]
-    pending_tool_calls: list[dict[str, Any]]
-    tool_results: list[ToolEnvelope]
-    tool_round: int
-    max_tool_rounds: int
-
-    evidence_urls: list[str]
-    evidence_brief: str
-    final_text: str
-    valid_urls: list[str]
-    citable_urls: list[str]
-
-    clarification: dict[str, Any] | None
-
-    next_step: str
-
-    # Human-in-the-loop clarification (interrupt/resume) bookkeeping.
-    clarified: bool
-    clarify_count: int
-    clar_route: str
+    context_messages: list[BaseMessage]  # 历史对话，prepare 写入，综合时复用
+    messages: list[BaseMessage]  # 取证循环的消息序列
+    step: int
+    pending: list[PreparedCall]  # 本步通过校验、待执行的调用
+    rejected: list[ToolOutcome]  # 本步在校验阶段被拒绝的调用
+    payloads: Annotated[dict[tuple[int, int], ToolPayload], merge_payloads]  # 键为步数与调用序号
+    tools_called: bool
+    direct_text: str
+    raw_answer: str
+    answer: Answer
 
 
 @dataclass
-class AgentRunResult:
-    text: str
-    urls: list[str]
-    citable_urls: list[str] | None = None
-    clarification: dict[str, Any] | None = None
-    trace_summary: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class GraphModelHandle:
-    role: str
-    provider: str
-    model: str
-    client: Any | None
-    fallback: bool = False
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class GraphModels:
-    context_curator: GraphModelHandle
-    intent_router: GraphModelHandle
-    tool_worker: GraphModelHandle
-    final_synthesizer: GraphModelHandle
-
-
-@dataclass(frozen=True)
-class GraphRuntimeConfig:
-    max_tool_rounds: int = 2
-    max_evidence_events: int = 3
-    max_status_items: int = 3
+class TurnRuntime:
+    registry: EvidenceRegistry
+    tool_state: TurnState
+    config: AgentConfig
+    models: tuple[ModelHandle, ModelHandle] | None  # run_turn 在 try 内构建
+    emit: Callable[[Event], None]
+    user_key: str | None
+    follows: list[Any]  # prepare 写入；三期启用前恒为空
+    tool_names: list[str]  # 已执行的工具名，按调用顺序
+    followed_queries: list[str]

@@ -28,6 +28,13 @@
     const sendBtn = document.getElementById('send-btn');
     const clearBtn = document.getElementById('clear-btn');
     const logoutBtn = document.getElementById('logout-btn');
+    const followBtn = document.getElementById('follow-btn');
+    const followPanel = document.getElementById('follow-panel');
+    const followCloseBtn = document.getElementById('follow-close-btn');
+    const followForm = document.getElementById('follow-form');
+    const followInput = document.getElementById('follow-input');
+    const followStatus = document.getElementById('follow-status');
+    const followList = document.getElementById('follow-list');
     const quotaDisplay = document.getElementById('quota-display');
     const quotaOverlay = document.getElementById('quota-overlay');
     const inputBarInner = document.querySelector('.input-bar-inner');
@@ -271,6 +278,8 @@
         localStorage.removeItem('agent_token');
         localStorage.removeItem('agent_thread_id');
         history = [];
+        followPanel.hidden = true;
+        followList.innerHTML = '';
         setQuotaInputLocked(false);
         showAuth();
         setStatus('Token 无效或已过期，请重新获取', 'error');
@@ -727,6 +736,106 @@
         }
     }
 
+    // == Follows ==
+    function setFollowStatus(msg, type = '') {
+        followStatus.textContent = msg;
+        followStatus.className = 'status-msg ' + type;
+    }
+
+    function renderFollows(follows) {
+        followList.innerHTML = '';
+        if (!follows.length) {
+            setFollowStatus('还没有关注项');
+            return;
+        }
+        setFollowStatus('');
+        for (const follow of follows) {
+            const li = document.createElement('li');
+            li.className = 'follow-item';
+            const label = document.createElement('span');
+            label.className = 'follow-query';
+            label.textContent = follow.query;
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'icon-btn';
+            removeBtn.title = '删除';
+            removeBtn.innerHTML = '<span class="material-symbols-outlined">close</span>';
+            removeBtn.addEventListener('click', () => removeFollow(follow.follow_id));
+            li.append(label, removeBtn);
+            followList.appendChild(li);
+        }
+    }
+
+    async function loadFollows() {
+        try {
+            const res = await apiFetch('/follows');
+            if (res.status === 401) {
+                handleInvalidToken();
+                return;
+            }
+            if (!res.ok) {
+                setFollowStatus('关注列表加载失败', 'error');
+                return;
+            }
+            const data = await res.json();
+            renderFollows(Array.isArray(data.follows) ? data.follows : []);
+        } catch {
+            setFollowStatus('网络错误，请检查连接', 'error');
+        }
+    }
+
+    async function removeFollow(followId) {
+        try {
+            const res = await apiFetch('/follows/' + encodeURIComponent(followId), { method: 'DELETE' });
+            if (res.status === 401) {
+                handleInvalidToken();
+                return;
+            }
+        } catch {
+            setFollowStatus('网络错误，请检查连接', 'error');
+            return;
+        }
+        loadFollows();
+    }
+
+    followForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const query = followInput.value.trim();
+        if (!query) return;
+        try {
+            const res = await apiFetch('/follows', {
+                method: 'POST',
+                body: JSON.stringify({ query }),
+            });
+            if (res.status === 401) {
+                handleInvalidToken();
+                return;
+            }
+            if (res.status === 409) {
+                setFollowStatus('关注项已达上限 20 个', 'error');
+                return;
+            }
+            if (!res.ok) {
+                setFollowStatus('添加失败', 'error');
+                return;
+            }
+        } catch {
+            setFollowStatus('网络错误，请检查连接', 'error');
+            return;
+        }
+        followInput.value = '';
+        loadFollows();
+    });
+
+    followBtn.addEventListener('click', () => {
+        followPanel.hidden = !followPanel.hidden;
+        if (!followPanel.hidden) loadFollows();
+    });
+
+    followCloseBtn.addEventListener('click', () => {
+        followPanel.hidden = true;
+    });
+
     // == Clear / Logout ==
     clearBtn.addEventListener('click', async () => {
         const prevThreadId = threadId;
@@ -750,6 +859,8 @@
         localStorage.removeItem('agent_token');
         localStorage.removeItem('agent_thread_id');
         history = [];
+        followPanel.hidden = true;
+        followList.innerHTML = '';
         renderEmptyChatState();
         setQuotaInputLocked(false);
         showAuth();

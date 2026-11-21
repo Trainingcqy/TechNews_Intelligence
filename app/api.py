@@ -6,22 +6,25 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from services.script_env import load_env
 
 load_env()
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import EmailStr
 
+from agent import memory
 from app import rate_limit, security
 from app.schemas import (
     AccessRequest,
     ChatRequest,
     ChatResponse,
+    FollowRequest,
     QuotaResponse,
     SubscriptionRequest,
     SubscriptionResponse,
@@ -62,6 +65,10 @@ _bearer_scheme = HTTPBearer()
 
 def _verify_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> dict:
     return access_token_service.verify_token(credentials.credentials)
+
+
+def _user_key(token_info: dict) -> str:
+    return "email:" + token_info["email"]
 
 
 @app.get("/health")
@@ -180,3 +187,27 @@ def get_history(thread_id: str, token_info: dict = Depends(_verify_token)):
 def delete_history(thread_id: str, token_info: dict = Depends(_verify_token)):
     chat_service.delete_thread_or_404(thread_id, token_id=int(token_info["id"]))
     return {"status": "deleted", "thread_id": thread_id}
+
+
+@app.get("/follows")
+def get_follows(token_info: dict = Depends(_verify_token)):
+    follows = memory.list_follows(_user_key(token_info), memory.MAX_FOLLOWS)
+    return {"follows": [asdict(follow) for follow in follows]}
+
+
+@app.post("/follows")
+def add_follow(body: FollowRequest, token_info: dict = Depends(_verify_token)):
+    try:
+        follow = memory.add_follow(_user_key(token_info), body.query)
+    except memory.FollowLimitError:
+        raise HTTPException(status_code=409, detail="follow_limit_reached") from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="follow_query_blank") from None
+    return asdict(follow)
+
+
+@app.delete("/follows/{follow_id}")
+def delete_follow(follow_id: int, token_info: dict = Depends(_verify_token)):
+    if not memory.remove_follow(_user_key(token_info), follow_id):
+        raise HTTPException(status_code=404, detail="follow_not_found")
+    return {"status": "deleted", "follow_id": follow_id}

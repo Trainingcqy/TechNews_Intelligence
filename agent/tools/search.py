@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import TYPE_CHECKING
 
 from agent.config import BEIJING
-from agent.evidence import PUBLISHER_KIND_LABELS
+from agent.evidence import PUBLISHER_KIND_LABELS, seen_note
 from agent.retrieval.search import SearchResult, search_stories
 from agent.types import StoryHit, StoryStats
 
@@ -40,7 +41,8 @@ def commit_search_news(args: SearchNewsArgs, result: SearchResult, *, registry) 
         related = [registry.add_article(article, "listed") for article in hit.related]
         discussion = registry.add_discussion(hit.discussion) if hit.discussion else None
         leads.append(lead)
-        lines.extend(_render_hit(hit, lead.eid, [e.eid for e in related], discussion.eid if discussion else None))
+        lines.extend(_render_hit(hit, lead.eid, [e.eid for e in related], discussion.eid if discussion else None,
+                                 registry.seen_dates.get(hit.stats.story_id)))
     if result.weak_match:
         lines.append("提示：最相关的结果匹配度偏低，可能不切题。")
     return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text="\n".join(lines),
@@ -64,7 +66,8 @@ def _scope(args: SearchNewsArgs) -> str:
     return "，".join(parts)
 
 
-def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], discussion_eid: str | None) -> list[str]:
+def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], discussion_eid: str | None,
+                seen: date | None) -> list[str]:
     lead = hit.lead
     lines = [f"[{lead_eid}] {lead.title}"]
     if lead.title_zh:
@@ -74,7 +77,7 @@ def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], discussio
         meta.append("、".join(lead.topics))
     if lead.kind:
         meta.append(lead.kind)
-    lines.append(INDENT + " · ".join(meta) + "｜" + _render_stats(hit.stats))
+    lines.append(INDENT + " · ".join(meta) + "｜" + _render_stats(hit.stats) + seen_note(seen))
     lines.append(f"{INDENT}摘要：{lead.summary}")
     if hit.related:
         others = [

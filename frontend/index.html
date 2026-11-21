@@ -15,7 +15,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=20260523a">
+    <link rel="stylesheet" href="style.css?v=20261121a">
 </head>
 
 <body class="agent-page">
@@ -100,6 +100,24 @@
 
     <!-- ===== Chat View ===== -->
     <main id="chat-view" class="view">
+        <aside id="follow-panel" class="follow-panel" hidden>
+            <div class="follow-panel-head">
+                <h2 class="follow-panel-title">关注列表</h2>
+                <button id="follow-close-btn" class="icon-btn" type="button" title="关闭">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <form id="follow-form" class="follow-form">
+                <div class="input-group">
+                    <input type="text" id="follow-input" placeholder="添加关注的公司、产品或话题" required>
+                </div>
+                <button type="submit" class="icon-btn" title="添加">
+                    <span class="material-symbols-outlined">add</span>
+                </button>
+            </form>
+            <p id="follow-status" class="status-msg"></p>
+            <ul id="follow-list" class="follow-list"></ul>
+        </aside>
         <div class="chat-container chat-empty">
             <!-- Chat Header -->
             <div class="chat-header">
@@ -107,6 +125,9 @@
                     <span id="quota-display" class="quota-badge">剩余 --/-- 次</span>
                 </div>
                 <div class="chat-header-actions">
+                    <button id="follow-btn" class="icon-btn" title="关注列表">
+                        <span class="material-symbols-outlined">bookmark</span>
+                    </button>
                     <button id="clear-btn" class="icon-btn" title="清空对话">
                         <span class="material-symbols-outlined">delete_sweep</span>
                     </button>
@@ -146,7 +167,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="theme.js?v=20260501a"></script>
-    <script src="app.js?v=20260514a"></script>
+    <script src="app.js?v=20261121a"></script>
 </body>
 
 </html>

@@ -14,6 +14,10 @@ class ChatRequest(BaseModel):
     thread_id: str | None = None
 
 
+class FollowRequest(BaseModel):
+    query: str
+
+
 class SourceItem(BaseModel):
     n: int
     url: str

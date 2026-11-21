@@ -296,6 +296,27 @@ CREATE TABLE IF NOT EXISTS public.thread_evidence_index (
         ON DELETE CASCADE
 );
 
+-- 11b. User memory: follows and seen stories
+CREATE TABLE IF NOT EXISTS public.user_follow (
+    follow_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_key        TEXT NOT NULL,
+    query           TEXT NOT NULL,
+    active          BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_checked_at TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_follow_query
+    ON public.user_follow (user_key, LOWER(query));
+
+CREATE TABLE IF NOT EXISTS public.user_story_seen (
+    user_key      TEXT NOT NULL,
+    story_id      BIGINT NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_key, story_id)
+);
+
 -- 12. Agent request traces
 CREATE TABLE IF NOT EXISTS public.agent_runs (
     id BIGSERIAL PRIMARY KEY,

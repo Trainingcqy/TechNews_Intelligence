@@ -26,6 +26,19 @@ import services.script_env  # noqa: E402
 # Tests never read the developer's .env, which holds real keys and the production database address.
 services.script_env.load_env = lambda path=None: None
 
+import psycopg2  # noqa: E402
+import psycopg2.pool  # noqa: E402
+
+
+def _no_database(*args, **kwargs):
+    raise RuntimeError("unit tests must not connect to the database")
+
+
+# The configured database is the production one; a test that tries to connect fails instead of reaching it.
+psycopg2.connect = _no_database
+psycopg2.pool.SimpleConnectionPool = _no_database
+psycopg2.pool.ThreadedConnectionPool = _no_database
+
 # Ignore known upstream deprecation warning noise from LangGraph/LangChain.
 warnings.filterwarnings("ignore", message=".*AgentStatePydantic has been moved.*")
 

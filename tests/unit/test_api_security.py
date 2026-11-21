@@ -684,6 +684,8 @@ def test_chat_allows_owner_thread_and_persists_turn(api_mod, monkeypatch: pytest
         "run_turn",
         lambda *_a, **_k: api_mod.chat_service.Answer(status="answered", text="ok"),
     )
+    recorded: list[tuple] = []
+    monkeypatch.setattr(api_mod.chat_service.memory, "record_turn", lambda *args: recorded.append(args))
 
     client = TestClient(api_mod.app)
     try:
@@ -701,3 +703,69 @@ def test_chat_allows_owner_thread_and_persists_turn(api_mod, monkeypatch: pytest
     assert len(append_calls) == 2
     assert append_calls[0][1] == 1
     assert append_calls[1][1] == 1
+    assert [user_key for user_key, _ in recorded] == ["email:token-a@example.com"]
+
+
+def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    from agent.memory import Follow, FollowLimitError
+
+    memory = api_mod.memory
+    calls: list[tuple] = []
+    follow = Follow(follow_id=5, query="Anthropic 上市", last_checked_at=None)
+
+    def _add(user_key, query):  # noqa: ANN001
+        calls.append(("add", user_key, query))
+        if query == "full":
+            raise FollowLimitError("full")
+        if not query.strip():
+            raise ValueError("blank")
+        return follow
+
+    monkeypatch.setattr(memory, "list_follows", lambda user_key, limit: calls.append(("list", user_key, limit)) or [follow])
+    monkeypatch.setattr(memory, "add_follow", _add)
+    monkeypatch.setattr(memory, "remove_follow", lambda user_key, follow_id: calls.append(("remove", user_key, follow_id)) or follow_id == 5)
+    api_mod.app.dependency_overrides[api_mod._verify_token] = lambda: {"id": 1, "email": "a@example.com"}  # pylint: disable=protected-access
+
+    client = TestClient(api_mod.app)
+    try:
+        listed = client.get("/follows")
+        added = client.post("/follows", json={"query": "Anthropic 上市"})
+        full = client.post("/follows", json={"query": "full"})
+        blank = client.post("/follows", json={"query": "  "})
+        removed = client.delete("/follows/5")
+        missing = client.delete("/follows/6")
+    finally:
+        api_mod.app.dependency_overrides.clear()
+        client.close()
+
+    item = {"follow_id": 5, "query": "Anthropic 上市", "last_checked_at": None}
+    assert (listed.status_code, listed.json()) == (200, {"follows": [item]})
+    assert (added.status_code, added.json()) == (200, item)
+    assert (full.status_code, full.json()) == (409, {"detail": "follow_limit_reached"})
+    assert (blank.status_code, blank.json()) == (422, {"detail": "follow_query_blank"})
+    assert (removed.status_code, removed.json()) == (200, {"status": "deleted", "follow_id": 5})
+    assert (missing.status_code, missing.json()) == (404, {"detail": "follow_not_found"})
+    assert calls == [
+        ("list", "email:a@example.com", 20),
+        ("add", "email:a@example.com", "Anthropic 上市"),
+        ("add", "email:a@example.com", "full"),
+        ("add", "email:a@example.com", "  "),
+        ("remove", "email:a@example.com", 5),
+        ("remove", "email:a@example.com", 6),
+    ]
+
+
+def test_follow_list_failure_is_an_error_not_an_empty_list(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    def _broken(user_key, limit):  # noqa: ANN001
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(api_mod.memory, "list_follows", _broken)
+    api_mod.app.dependency_overrides[api_mod._verify_token] = lambda: {"id": 1, "email": "a@example.com"}  # pylint: disable=protected-access
+    client = TestClient(api_mod.app, raise_server_exceptions=False)
+    try:
+        response = client.get("/follows")
+    finally:
+        api_mod.app.dependency_overrides.clear()
+        client.close()
+
+    assert response.status_code == 500

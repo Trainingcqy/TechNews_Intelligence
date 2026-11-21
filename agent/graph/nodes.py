@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+from datetime import date, datetime
 from functools import wraps
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END
 from langgraph.types import Send
 
-from agent import prompts
+from agent import memory, prompts
 from agent.citations import NOT_FOUND_TEXT, clean_direct_reply, contains_cjk, finalize_answer
 from agent.config import BEIJING
 from agent.context import build_context
@@ -27,6 +28,8 @@ from agent.tools.registry import (
 )
 from agent.types import Answer, Evidence, EvidenceFound, Progress
 from services.urls import extract_urls, url_key
+
+logger = logging.getLogger(__name__)
 
 from .state import TurnRuntime
 
@@ -47,7 +50,11 @@ def _runtime(config) -> TurnRuntime:
 
 
 def _today() -> str:
-    return f"{datetime.now(BEIJING):%Y-%m-%d}"
+    return f"{_today_date():%Y-%m-%d}"
+
+
+def _today_date() -> date:
+    return datetime.now(BEIJING).date()
 
 
 @_traced
@@ -56,7 +63,16 @@ def prepare(state, config) -> dict:
     question = state["question"]
     context = build_context(state["history"], runtime.registry, runtime.config)
     runtime.tool_state.user_urls = context.user_urls | {url_key(url) for url in extract_urls(question)}
-    system = prompts.GATHER_SYSTEM_PROMPT.format(today=_today(), corpus=corpus_info(), follows="")
+    follows = ""
+    if runtime.user_key:
+        try:
+            runtime.follows = memory.list_follows(runtime.user_key, memory.MAX_FOLLOWS)
+        except Exception:  # noqa: BLE001
+            # A memory failure must not fail the turn; it runs without follows.
+            logger.exception("follow lookup failed")
+            runtime.follows = []
+        follows = memory.render_follows(runtime.follows, _today_date())
+    system = prompts.GATHER_SYSTEM_PROMPT.format(today=_today(), corpus=corpus_info(), follows=follows)
     runtime.emit(Progress("understanding", "正在理解问题"))
     return {
         "context_messages": context.messages,
@@ -112,9 +128,13 @@ def collect(state, config) -> dict:
     step = state["step"]
     current = [payload for (payload_step, _), payload in state.get("payloads", {}).items() if payload_step == step]
     messages = list(state["messages"])
+    if runtime.user_key:
+        story_ids = [hit.stats.story_id for p in current if p.ok and p.name == "search_news" for hit in p.data.hits]
+        runtime.registry.seen_dates.update(memory.seen_story_dates(runtime.user_key, story_ids))
     for item in sorted([*current, *state["rejected"]], key=lambda item: item.index):
         if isinstance(item, ToolPayload):
             runtime.tool_names.append(item.name)
+            _record_followed(runtime, item)
             item = commit_call(item, registry=runtime.registry, state=runtime.tool_state, config=runtime.config)
         messages.append(ToolMessage(item.gather_text, tool_call_id=item.call_id))
         for evidence in item.new_evidence:
@@ -150,6 +170,15 @@ def synthesize(state, config) -> dict:
 def finalize(state, config) -> dict:
     runtime = _runtime(config)
     return {"answer": finalize_answer(state["raw_answer"], runtime.registry, state["question"])}
+
+
+def _record_followed(runtime: TurnRuntime, payload: ToolPayload) -> None:
+    if not (payload.ok and payload.name == "search_news" and payload.args.query):
+        return
+    query = payload.args.query.lower()
+    for follow in runtime.follows:
+        if follow.query.lower() == query and follow.query not in runtime.followed_queries:
+            runtime.followed_queries.append(follow.query)
 
 
 def _progress(call: PreparedCall) -> Progress:

@@ -18,7 +18,7 @@ from telegram.ext import (
     filters,
 )
 
-from agent import run_turn
+from agent import memory, run_turn
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
 from services.script_env import load_env
 
@@ -443,9 +443,78 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/status - 查看机器人状态（管理员）\n"
         "/settings - 查看或修改当前设置（管理员）\n"
         "/quota <token> - 查询 API Token 配额（管理员）\n"
+        "/follow <检索词> - 添加关注项\n"
+        "/unfollow <序号> - 删除关注项\n"
+        "/follows - 查看关注项\n"
         "/clear - 清空对话历史\n"
         "/help - 查看帮助"
     )
+
+
+def _user_key(update: Update) -> str:
+    return "tg:" + str(update.effective_chat.id)
+
+
+def _render_follow_list(follows: list[memory.Follow]) -> str:
+    if not follows:
+        return "还没有关注项。用 /follow <检索词> 添加。"
+    lines = ["关注项："]
+    lines.extend(f"{i}. {follow.query}" for i, follow in enumerate(follows, 1))
+    return "\n".join(lines)
+
+
+async def follow_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = _extract_command_arg(update.message.text or "")
+    if not query:
+        await update.message.reply_text("用法：/follow <检索词>")
+        return
+    try:
+        follow = await asyncio.to_thread(memory.add_follow, _user_key(update), query)
+    except memory.FollowLimitError:
+        await update.message.reply_text(f"关注项已达上限 {memory.MAX_FOLLOWS} 个，请先用 /unfollow 删除。")
+        return
+    except Exception as e:
+        logger.error(f"添加关注项失败: {e}")
+        await update.message.reply_text("添加关注项失败，请稍后重试。")
+        return
+    await update.message.reply_text(f"已关注：{follow.query}")
+
+
+async def unfollow_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    arg = _extract_command_arg(update.message.text or "")
+    try:
+        index = int(arg)
+    except ValueError:
+        await update.message.reply_text("用法：/unfollow <序号>，序号见 /follows")
+        return
+    user_key = _user_key(update)
+    try:
+        follows = await asyncio.to_thread(memory.list_follows, user_key, memory.MAX_FOLLOWS)
+    except Exception as e:
+        logger.error(f"读取关注项失败: {e}")
+        await update.message.reply_text("读取关注项失败，请稍后重试。")
+        return
+    if not 1 <= index <= len(follows):
+        await update.message.reply_text("序号不存在。\n" + _render_follow_list(follows))
+        return
+    follow = follows[index - 1]
+    try:
+        await asyncio.to_thread(memory.remove_follow, user_key, follow.follow_id)
+    except Exception as e:
+        logger.error(f"删除关注项失败: {e}")
+        await update.message.reply_text("删除关注项失败，请稍后重试。")
+        return
+    await update.message.reply_text(f"已取消关注：{follow.query}")
+
+
+async def follows_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        follows = await asyncio.to_thread(memory.list_follows, _user_key(update), memory.MAX_FOLLOWS)
+    except Exception as e:
+        logger.error(f"读取关注项失败: {e}")
+        await update.message.reply_text("读取关注项失败，请稍后重试。")
+        return
+    await update.message.reply_text(_render_follow_list(follows))
 
 
 async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -677,6 +746,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         history_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         conversation_histories[chat_id] = _trim_history(history, max_turns=history_limit)
+        if answer.status == "answered":
+            await asyncio.to_thread(memory.record_turn, _user_key(update), answer)
 
         # 删除“正在分析”，发送最终回复
         try:
@@ -709,6 +780,9 @@ async def _post_init(app) -> None:
         BotCommand("status", "查看系统状态(管理员)"),
         BotCommand("settings", "查看或修改当前设置"),
         BotCommand("quota", "查询 token 配额(管理员)"),
+        BotCommand("follow", "添加关注项"),
+        BotCommand("unfollow", "删除关注项"),
+        BotCommand("follows", "查看关注项"),
         BotCommand("clear", "清空对话历史"),
         BotCommand("help", "帮助"),
     ]
@@ -739,6 +813,9 @@ def main():
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("settings", settings))
     app.add_handler(CommandHandler("quota", quota))
+    app.add_handler(CommandHandler("follow", follow_cmd))
+    app.add_handler(CommandHandler("unfollow", unfollow_cmd))
+    app.add_handler(CommandHandler("follows", follows_cmd))
     app.add_handler(CommandHandler("clear", clear))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

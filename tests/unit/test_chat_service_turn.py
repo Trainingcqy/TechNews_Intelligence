@@ -32,7 +32,7 @@ def _parse(chunk: str) -> tuple[str, dict]:
 @pytest.fixture()
 def env(monkeypatch: pytest.MonkeyPatch):
     state = types.SimpleNamespace(
-        answer=None, events=[], refunds=0, notices=0, appended=[], loads=[], run_turn_calls=[]
+        answer=None, events=[], refunds=0, notices=0, appended=[], loads=[], run_turn_calls=[], recorded=[]
     )
 
     def _run_turn(question, history=None, *, on_event=None, **kwargs):
@@ -50,6 +50,9 @@ def env(monkeypatch: pytest.MonkeyPatch):
         state.appended.append((thread_id, token_id, message, metadata))
         return {"id": len(state.appended)}
 
+    def _record_turn(user_key, answer):
+        state.recorded.append((user_key, answer, len(state.appended)))
+
     def _refund(_token):
         state.refunds += 1
 
@@ -61,6 +64,7 @@ def env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(chat_service, "load_history_for_token", _load_history)
     monkeypatch.setattr(chat_service, "append_message_for_token", _append)
     monkeypatch.setattr(chat_service, "create_thread", lambda **_k: {"thread_id": "thread-new"})
+    monkeypatch.setattr(chat_service.memory, "record_turn", _record_turn)
     monkeypatch.setattr(
         quota, "reserve_quota_or_notify_403", lambda _t: {"remaining": 4, "quota": 10, "tier": 0, "unlimited": False}
     )
@@ -93,6 +97,7 @@ def test_chat_counts_quota_only_for_answered(env, status: str) -> None:  # noqa:
             asyncio.run(chat_service.handle_chat_request(request, TOKEN, "req-1"))
         assert (exc_info.value.status_code, exc_info.value.detail) == (503, "正文 [1]")
         assert (env.refunds, env.notices) == (1, 0)
+        assert env.recorded == []
         return
 
     response = asyncio.run(chat_service.handle_chat_request(request, TOKEN, "req-1"))
@@ -101,6 +106,8 @@ def test_chat_counts_quota_only_for_answered(env, status: str) -> None:  # noqa:
     assert (env.refunds, env.notices) == ((0, 1) if answered else (1, 0))
     assert response.kind == status
     assert response.remaining == (4 if answered else 5)
+    # Recorded only for an answered turn, and after both messages are persisted.
+    assert env.recorded == ([("email:user@example.com", env.answer, 2)] if answered else [])
     assert [item.model_dump() for item in response.sources] == [asdict(SOURCE)]
 
 

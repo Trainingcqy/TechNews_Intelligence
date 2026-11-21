@@ -41,6 +41,6 @@ class TurnRuntime:
     models: tuple[ModelHandle, ModelHandle] | None  # run_turn 在 try 内构建
     emit: Callable[[Event], None]
     user_key: str | None
-    follows: list[Any]  # prepare 写入；三期启用前恒为空
+    follows: list[Any]  # prepare 写入，元素为 agent.memory.Follow；没有 user_key 时为空
     tool_names: list[str]  # 已执行的工具名，按调用顺序
     followed_queries: list[str]

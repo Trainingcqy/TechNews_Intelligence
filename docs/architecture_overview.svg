@@ -117,19 +117,21 @@
     <text x="46" y="504">检索</text>
     <text x="46" y="548">工具</text>
     <text x="46" y="592">编排</text>
-    <text x="46" y="636">上下文</text>
+    <text x="46" y="636">记忆</text>
   </g>
   <g font-size="12" fill="#8b949e">
     <text x="104" y="504">retrieval/</text>
     <text x="104" y="548">tools/</text>
     <text x="104" y="592">graph/</text>
-    <text x="104" y="636">context.py</text>
+    <text x="104" y="628">context.py</text>
+    <text x="104" y="645">memory.py</text>
   </g>
   <g font-size="14" fill="#f0f6fc">
     <text x="210" y="504">全文、向量、精确三路召回 → RRF 融合 → 重排 → 按故事归并 → 排序</text>
     <text x="210" y="548">search_news　read_articles → 证据登记表，编号 E1、E2……</text>
     <text x="210" y="592">prepare → gather ⇄ run_tool → collect → synthesize → finalize</text>
-    <text x="210" y="636">线程上下文：最近 4 轮对话；历史来源重新登记为证据</text>
+    <text x="210" y="628">线程上下文：最近 4 轮对话；历史来源重新登记为证据</text>
+    <text x="210" y="645">关注表 user_follow；阅读记录 user_story_seen。只决定检索参数，不进入证据</text>
   </g>
 
   <!-- ===== CHANNELS ===== -->

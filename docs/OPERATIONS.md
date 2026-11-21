@@ -130,6 +130,8 @@ bash deployment/scripts/db/apply_schema.sh
 - `sql/infrastructure/schema/news_schema.sql`
 - `sql/infrastructure/views/view_dashboard_news.sql`
 
+`schema_ddl.sql` 中的 `public.user_follow` 和 `public.user_story_seen` 保存用户的关注项与阅读记录，随该脚本创建，没有 seed。
+
 Seed 脚本：
 
 ```bash

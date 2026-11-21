@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent import Answer, EvidenceFound, Final, Progress, run_turn
-from agent import prompts
+from agent import memory, prompts
 from agent.citations import BLOCKED_TEXT, ERROR_TEXT, NOT_FOUND_TEXT
 from agent.config import AgentConfig
 from agent.graph import nodes
 from agent.llm import ModelHandle
+from agent.memory import Follow
 from agent.retrieval.search import SearchResult
 from agent.tools import read, registry
 from agent.types import Article, Source, StoryHit, StoryStats
@@ -212,3 +213,78 @@ def test_model_call_failure(turn):
     assert r.answer == expected
     assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
     assert (r.trace["final_status"], r.trace["error_code"]) == ("error", "model_timeouterror")
+
+
+FOLLOWS = [
+    Follow(follow_id=1, query="Genie 4", last_checked_at=datetime(2026, 11, 9, 17, 0, tzinfo=timezone.utc)),
+    Follow(follow_id=2, query="具身智能", last_checked_at=None),
+]
+
+
+def test_followed_turn_reads_memory(turn, monkeypatch):
+    lookups: list[tuple] = []
+    monkeypatch.setattr(nodes.memory, "list_follows",
+                        lambda user_key, limit: lookups.append(("list", user_key, limit)) or FOLLOWS)
+    monkeypatch.setattr(nodes.memory, "seen_story_dates",
+                        lambda user_key, ids: lookups.append(("seen", user_key, ids)) or {5: date(2026, 11, 10)})
+
+    def search(args):
+        if args.query == "具身智能":
+            raise RuntimeError("search failed")
+        hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), discussion=None, match_score=0.9)]
+        return SearchResult(hits=hits if (args.query or "").lower() == "genie 4" else [], weak_match=False, meta={})
+
+    monkeypatch.setattr(registry, "run_search_news", search)
+    gather = FakeChat([
+        _calls(("c1", "search_news", {"query": "genie 4", "days": 7}), ("c2", "search_news", {"query": "具身智能"}),
+               ("c3", "search_news", {"query": "GENIE 4", "days": 30}), ("c4", "search_news", {"topic": "ai"})),
+        _calls(("c5", "read_articles", {"ids": ["E1"]})),
+        DONE,
+    ])
+    final = FakeChat([ANSWERED])
+
+    answer = run_turn("我关注的有什么新进展", user_key="tg:1", request_id="r1", config=AgentConfig(),
+                      models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
+
+    # A failed search does not count as checking a follow; a follow hit twice is recorded once.
+    assert answer.followed_queries == ("Genie 4",)
+    assert answer.story_ids == (5,)
+    assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5, 5]), ("seen", "tg:1", [])]
+    system = gather.calls[0][0]
+    assert system == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
+        today=nodes._today(), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, nodes._today_date())))
+    assert "- Genie 4，上次查看 2026-11-10，距今" in system.content
+    first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
+    assert "｜同一故事 1 篇报道、1 个发布方，此前已在 11-10 的回答中提及\n" in first_result.content
+    assert ('5. A story marked "此前已在 MM-DD 的回答中提及" was already shown to the user; mention it only briefly '
+            'unless there is '
+            'a new development.') in final.calls[0][0].content
+    brief = final.calls[0][-1].content
+    assert "同一故事：1 篇报道，1 个发布方，首次 2026-11-12，最近 2026-11-12，此前已在 11-10 的回答中提及\n" in brief
+
+
+def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
+    def broken(user_key, limit):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(nodes.memory, "list_follows", broken)
+    monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda user_key, ids: {})
+    gather = FakeChat([_search("Genie 4"), DONE])
+    final = FakeChat([ANSWERED])
+
+    answer = run_turn("我关注的有什么新进展", user_key="tg:1", request_id="r1", config=AgentConfig(),
+                      models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
+
+    assert answer.status == "answered"
+    assert gather.calls[0][0] == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
+        today=nodes._today(), corpus=CORPUS, follows=""))
+
+
+def test_turn_without_user_key_skips_memory(turn, monkeypatch):
+    monkeypatch.setattr(nodes.memory, "list_follows", lambda *_a: pytest.fail("memory read without user_key"))
+    monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda *_a: pytest.fail("memory read without user_key"))
+
+    r = turn([_search("Genie 4"), DONE], [ANSWERED])
+
+    assert r.answer == _answered(tool_calls=("search_news",))
+    assert "此前已在" not in r.final.calls[0][-1].content

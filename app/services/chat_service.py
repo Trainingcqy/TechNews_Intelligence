@@ -9,7 +9,7 @@ from typing import AsyncIterator, Callable
 
 from fastapi import HTTPException
 
-from agent import Answer, EvidenceFound, Final, Progress, run_turn
+from agent import Answer, EvidenceFound, Final, Progress, memory, run_turn
 from app import streaming
 from app.schemas import ChatRequest, ChatResponse, SourceItem
 from app.services import quota_service
@@ -171,6 +171,8 @@ def run_agent_turn(
             answer=answer,
             request_id=turn.request_id,
         )
+    if answer.status == "answered":
+        memory.record_turn(turn.user_key, answer)
     return answer
 
 

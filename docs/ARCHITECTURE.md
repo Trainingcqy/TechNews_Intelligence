@@ -137,6 +137,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 | 旧采集链路（不再更新） | `tech_news`, `tech_news_failed`, `jina_raw_logs`, `news_embeddings`, `news_search_index`, `source_registry`, `system_logs` |
 | 实体 | `entity_registry`, `entity_alias`, `entity_alias_candidate`, `news_entity_mentions` |
 | 订阅与访问 | `subscribers`, `access_tokens` |
+| 用户记忆 | `user_follow`, `user_story_seen` |
 | 对话 | `conversation_threads`, `conversation_messages` |
 | Trace | `agent_runs`, `agent_trace_spans`, `agent_model_io` |
 
@@ -169,10 +170,10 @@ flowchart TD
 
 | 节点 | 并行 | 职责 |
 | --- | --- | --- |
-| `prepare` | 否 | 构建线程上下文并登记历史来源；记录当前问题和历史中出现过的地址；组装取证消息序列 |
+| `prepare` | 否 | 构建线程上下文并登记历史来源；记录当前问题和历史中出现过的地址；读取用户的关注项；组装取证消息序列 |
 | `gather` | 否 | 调用取证模型；对返回的工具调用逐个执行 `prepare_call`；发出进度事件 |
 | `run_tool` | 是，每个调用一个分支 | 执行 `run_call`，只读取，不写登记表，不发事件 |
-| `collect` | 否 | 按调用序号对结果执行 `commit_call`，登记证据并追加 `ToolMessage`；发出证据事件；步数加一 |
+| `collect` | 否 | 查询本步检索结果中的故事的阅读记录；按调用序号对结果执行 `commit_call`，登记证据并追加 `ToolMessage`；记录命中关注项的检索；发出证据事件；步数加一 |
 | `route` | 否 | 按代码规则决定直接回复、未找到或进入综合 |
 | `synthesize` | 否 | 调用综合模型 |
 | `finalize` | 否 | 解析状态、校验并重编号引用、生成来源列表 |
@@ -214,7 +215,17 @@ flowchart TD
 
 ## 上下文记忆
 
-多轮对话的上下文由 `agent/context.py` 在请求内构建，不写入任何摘要或记忆表。
+记忆分三类：
+
+| 类别 | 内容 | 存储 |
+| --- | --- | --- |
+| 工作记忆 | 线程内最近几轮对话和上一轮的来源 | 不新增表，`agent/context.py` 在请求内构建 |
+| 情景记忆 | 用户在哪天的回答里看过哪些故事 | `public.user_story_seen` |
+| 语义记忆 | 用户长期关注的对象 | `public.user_follow` |
+
+### 线程上下文
+
+线程上下文由 `agent/context.py` 在请求内构建，不写入任何摘要。
 
 历史消息由渠道层持久化，格式为：
 
@@ -234,6 +245,33 @@ flowchart TD
 6. 数据库查询失败时跳过登记，消息照常返回。
 
 追问中的指代，例如"第二条详细说说""那家公司后来呢"，由取证模型根据对话上下文在填写工具参数时消解。线程上下文只按轮数截断，不做长会话摘要。历史中已有证据但本轮没有调用工具时，回答仍是 `direct`：历史来源只在本轮调用了工具时才进入综合。
+
+### 用户记忆
+
+**约束**：记忆只决定检索参数，不进入证据块。关注项决定检索什么、从何时检索起；阅读记录决定一个故事是否标为"此前已提及"。回答中的事实只能来自本轮检索到的库内文章。模型没有写记忆的工具，关注项只经渠道层的显式入口增删，见"交互入口"。
+
+**用户标识** `user_key`：Web 取 `email:` 加访问令牌对应的邮箱，Telegram 取 `tg:` 加 chat id。CLI 和 MCP 没有用户标识，不启用记忆：`run_turn` 的 `user_key` 为空时，`prepare` 与 `collect` 不读取记忆。
+
+**存储**：表定义在 `sql/infrastructure/schema/schema_ddl.sql`。
+
+| 表 | 字段 | 约束 |
+| --- | --- | --- |
+| `public.user_follow` | `follow_id`、`user_key`、`query`、`active`、`created_at`、`last_checked_at` | `(user_key, LOWER(query))` 唯一 |
+| `public.user_story_seen` | `user_key`、`story_id`、`first_seen_at`、`last_seen_at` | 主键 `(user_key, story_id)` |
+
+`agent/memory.py` 提供 `list_follows`、`add_follow`、`remove_follow`、`seen_story_dates`、`record_turn`、`render_follows`。每个用户的有效关注项上限为 `MAX_FOLLOWS`（20 个）：`add_follow` 超出时抛 `FollowLimitError`，检索词为空白时抛 `ValueError`。`remove_follow` 只把 `active` 置为假；同一检索词（忽略大小写）再次添加时恢复原行，保留原来的 `last_checked_at`。
+
+**写入路径**：
+
+- `record_turn`：渠道层在回答状态为 `answered` 时调用。它把 `Answer.story_ids`（被引用来源所属的故事）写入 `user_story_seen`，已有的行更新 `last_seen_at`；把 `Answer.followed_queries` 对应的关注项的 `last_checked_at` 更新为当前时间。
+- `followed_queries` 在 `collect` 中判定：执行成功且填了 `query` 的 `search_news`，其 `query` 与某个关注项忽略大小写后相等，即记入该关注项的原文，同一关注项只记一次；零结果的检索同样计入。
+
+**读取路径**：
+
+- `prepare` 读取用户的全部有效关注项（最多 20 个，按添加时间排序），经 `render_follows` 生成取证提示词中的 `{follows}`。每个关注项列出上次查看的日期和距今天数，没有查看过的写"尚未查看过"；末尾说明用户问"我关注的有什么新进展"一类问题时，对每个关注项各发一次 `search_news`：`query` 填关注项原文，`days` 填距上次查看的天数，最少 1，尚未查看过的填 14，最多 30。没有关注项时 `{follows}` 为空。
+- `collect` 在提交 `search_news` 结果之前，用 `seen_story_dates` 查出本步结果中的故事此前是否出现在该用户的回答里，写入证据登记表的 `seen_dates`。日期取 `last_seen_at` 的北京日期。标注的呈现见"证据登记表"。
+
+**失败处理**：记忆查询失败时按没有记忆处理，不让整轮对话失败。`prepare` 捕获 `list_follows` 的异常后按没有关注项继续；`seen_story_dates` 与 `record_turn` 自身捕获异常并记录日志，前者返回空字典。`list_follows` 本身会抛出异常，Web 的关注项接口因此返回 500，而不是空列表。
 
 ## 工具体系
 
@@ -268,6 +306,7 @@ Agent 有两个工具，定义在 `agent/tools/registry.py`：
 - **级别只升不降**：`listed`（只列出）、`summary`（有摘要）、`fulltext`（有正文）。只有 `summary` 和 `fulltext` 的证据可以被引用。
 - **作用域**：一次 `run_turn` 一个实例，不跨请求保存，跨轮稳定的标识是地址。
 - **写入只发生在单线程节点**：登记和升级只由 `prepare` 和 `collect` 调用，并行分支只读。
+- **阅读记录标注**：`seen_dates` 保存故事编号到用户此前看到它的日期，由 `collect` 在用户有标识时写入。带统计行的证据在行末追加"，此前已在 MM-DD 的回答中提及"，`search_news` 返回给取证模型的文本和综合证据块都从 `seen_dates` 读取；没有统计行的证据不带标注。综合提示词的 Coverage Statements 要求，标注过的故事只简要带过，除非有新进展。
 
 `search_news` 的提交按结果顺序登记：每个故事的代表文章以 `summary` 级别登记并附带故事统计；同故事的其他报道以 `listed` 级别登记；故事有入库的讨论时，讨论以 `listed` 级别登记。`read_articles` 读到正文后把证据升为 `fulltext`，被读取的讨论和只列出的报道由此成为可引用证据。
 
@@ -297,7 +336,7 @@ Agent 有两个工具，定义在 `agent/tools/registry.py`：
 `agent/citations.py` 负责综合输出的解析与校验：
 
 - `split_status` 解析首行 `STATUS`。
-- `resolve_citations` 删除模型自带的数字引用 `[1]`，展开 `[E1, E2]` 为 `[E1][E2]`，删除正文中的原始地址，把可引用的 `[E…]` 按首次出现的顺序映射为 `[1]`、`[2]`……，删除不在可引用集合中的编号，并生成 `Source` 列表和被引用来源所属的故事编号。
+- `resolve_citations` 删除模型自带的数字引用 `[1]`，展开 `[E1, E2]` 为 `[E1][E2]`，删除正文中的原始地址，把可引用的 `[E…]` 按首次出现的顺序映射为 `[1]`、`[2]`……，删除不在可引用集合中的编号，并生成 `Source` 列表和被引用来源所属的故事编号，后者进入 `Answer.story_ids`，供 `record_turn` 写入阅读记录。
 - `finalize_answer` 按下表给出回答：
 
 | 条件 | 结果 |
@@ -333,13 +372,21 @@ Agent 产生的 span 类型：
 
 | 入口 | 实现 | 说明 |
 | --- | --- | --- |
-| Web/API | `app/api.py` | Token 校验、限流、额度、对话线程；`/chat` 同步返回，`/chat-stream` 以 SSE 推送 `progress`、`evidence` 事件和最终的 `final`。 |
+| Web/API | `app/api.py` | Token 校验、限流、额度、对话线程；`/chat` 同步返回，`/chat-stream` 以 SSE 推送 `progress`、`evidence` 事件和最终的 `final`；`/follows` 接口管理关注项。 |
 | Trace Console | `app/trace_api.py` + `trace_dashboard/` | 管理员 token 访问链路追踪面板。 |
-| Telegram Bot | `app/bot.py` | Telegram 对话入口，按 chat_id 维护会话。 |
+| Telegram Bot | `app/bot.py` | Telegram 对话入口，按 chat_id 维护会话；`/follow`、`/unfollow`、`/follows` 命令管理关注项。 |
 | CLI | `app/cli.py` | 本地命令行入口，在进程内维护对话历史。 |
 | MCP | `agent/mcp/stdio_server.py` | MCP stdio 服务，暴露 `search_news`、`read_articles` 两个工具和资源 `news://corpus`；每次调用新建登记表，返回中带证据的地址。 |
 
 渠道层负责鉴权、额度、持久化和渲染，不解析回答文本。只有 `answered` 计额度，其余状态退还。状态为 `error` 的一轮不写入对话历史。
+
+Web 和 Telegram 向 `run_turn` 传入 `user_key`，回答为 `answered` 时调用 `memory.record_turn`；CLI 和 MCP 不启用记忆。关注项只经下列显式入口增删，每个用户的有效关注项上限为 20 个：
+
+| 渠道 | 入口 |
+| --- | --- |
+| Web | `GET /follows` 返回 `{"follows": [...]}`，读库失败时返回 500。`POST /follows`，请求体为 `{"query": "..."}`，返回该关注项；超过上限返回 409 `follow_limit_reached`，检索词为空白返回 422 `follow_query_blank`。`DELETE /follows/{follow_id}` 返回 `{"status": "deleted", "follow_id": ...}`，关注项不存在时返回 404 `follow_not_found`。鉴权与 `/chat` 相同，`user_key` 由访问令牌得到 |
+| Telegram | `/follow <检索词>`、`/unfollow <序号>`、`/follows`。序号是 `/follows` 列表中从 1 开始的编号，列表按添加时间排序；读不到关注项时回复读取失败 |
+| 前端 | 聊天头部的关注按钮在左侧展开关注列表，可添加和删除 |
 
 ## 工程文件映射
 
@@ -353,6 +400,7 @@ Agent 产生的 span 类型：
 | `agent/evidence.py` | 证据登记表与证据块渲染。 |
 | `agent/citations.py` | 引用校验、回答状态、固定文案。 |
 | `agent/context.py` | 线程上下文。 |
+| `agent/memory.py` | 用户记忆：关注项的增删查，阅读记录的读写，关注项提示文本。 |
 | `agent/llm.py` | 模型构建与调用，调用写入 Trace。 |
 | `agent/prompts.py` | 取证与综合的提示词。 |
 | `agent/types.py`、`agent/config.py` | 数据类与 `AgentConfig`。 |
@@ -363,7 +411,7 @@ Agent 产生的 span 类型：
 | `services/script_env.py` | 读取仓库根目录的 `.env`。 |
 | `services/agent_trace_store.py` | Trace 持久化到 PostgreSQL。 |
 | `services/conversations.py` | 对话线程与消息。 |
-| `app/api.py` | Web/API、流式输出、token 配额和订阅接口。 |
+| `app/api.py` | Web/API、流式输出、token 配额、订阅和关注项接口。 |
 | `app/trace_api.py` | Trace Console 后端 API。 |
 | `trace_dashboard/` | Trace Console 前端。 |
 | `eval/` | 离线评测、验收与统计脚本，`legacy/` 存放归档的评测。 |

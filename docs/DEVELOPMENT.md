@@ -153,7 +153,7 @@ pytest tests/unit -q
 ```bash
 pytest tests/unit/test_graph_turn.py tests/unit/test_graph_parallel.py -q
 pytest tests/unit/test_tools_registry.py tests/unit/test_read_articles.py tests/unit/test_evidence_registry.py -q
-pytest tests/unit/test_citations.py tests/unit/test_context.py -q
+pytest tests/unit/test_citations.py tests/unit/test_context.py tests/unit/test_memory.py -q
 pytest tests/unit/test_search_stories.py tests/unit/test_stories.py tests/unit/test_rerank_flow.py -q
 pytest tests/unit/test_agent_trace.py tests/unit/test_agent_trace_store.py -q
 pytest tests/unit/test_ingest_store.py tests/unit/test_ingest_stories.py tests/unit/test_ingest_monitor.py -q
@@ -206,7 +206,7 @@ CI 步骤：
 | 路径 | 说明 |
 | --- | --- |
 | `ingest/` | 采集管线：来源定义 `sources.toml`、六个处理阶段、监控、旧表回填与重标。 |
-| `agent/` | Agent 运行时：`turn.py`（入口 `run_turn`）、`graph/`（编排）、`tools/`（两个工具）、`retrieval/`（检索）、证据登记表、引用校验、线程上下文、Trace、MCP。 |
+| `agent/` | Agent 运行时：`turn.py`（入口 `run_turn`）、`graph/`（编排）、`tools/`（两个工具）、`retrieval/`（检索）、证据登记表、引用校验、线程上下文、用户记忆、Trace、MCP。 |
 | `app/` | API、Trace API、Telegram Bot、CLI。 |
 | `services/` | DB、对话线程、Trace Store、邮件、模型工厂、地址归一、领域与类型词表。 |
 | `trace_dashboard/` | Vue3 Trace Console。 |

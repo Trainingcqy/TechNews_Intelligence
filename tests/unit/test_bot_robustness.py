@@ -218,15 +218,17 @@ def _handle(bot_mod, chat_id: int, text: str, fake_run_turn, thinking, send_repl
         patch.object(bot_mod, "_send_reply", new=send_reply or AsyncMock()),
         patch.object(bot_mod.asyncio, "to_thread", new=AsyncMock(side_effect=_to_thread)),
         patch.object(bot_mod, "run_turn", side_effect=fake_run_turn),
+        patch.object(bot_mod.memory, "record_turn") as record_turn,
     ):
         asyncio.run(bot_mod.handle_message(update, types.SimpleNamespace(bot=None)))
+    return record_turn
 
 
 def test_handle_message_error_answer_not_pollute_history(bot_mod) -> None:  # noqa: ANN001
     thinking = _ThinkingMessage()
     send_reply = AsyncMock()
 
-    _handle(
+    record_turn = _handle(
         bot_mod,
         999,
         "analyze AI trend in recent 10 days",
@@ -238,6 +240,7 @@ def test_handle_message_error_answer_not_pollute_history(bot_mod) -> None:  # no
     assert bot_mod.conversation_histories.get(999, []) == []
     assert thinking.edits == ["抱歉，当前模型服务暂时不可用。"]
     send_reply.assert_not_awaited()
+    record_turn.assert_not_called()
 
 
 def test_handle_message_appends_model_message_format_and_passes_history(bot_mod) -> None:  # noqa: ANN001
@@ -254,8 +257,8 @@ def test_handle_message_appends_model_message_format_and_passes_history(bot_mod)
         return answers[len(calls) - 1]
 
     send_reply = AsyncMock()
-    _handle(bot_mod, chat_id, "问题一", _fake_run_turn, _ThinkingMessage(), send_reply)
-    _handle(bot_mod, chat_id, "问题二", _fake_run_turn, _ThinkingMessage(), send_reply)
+    first = _handle(bot_mod, chat_id, "问题一", _fake_run_turn, _ThinkingMessage(), send_reply)
+    second = _handle(bot_mod, chat_id, "问题二", _fake_run_turn, _ThinkingMessage(), send_reply)
 
     first_model = {
         "role": "model",
@@ -273,3 +276,79 @@ def test_handle_message_appends_model_message_format_and_passes_history(bot_mod)
     assert [item["role"] for item in history] == ["user", "model", "user", "model"]
     assert history[3] == {"role": "model", "parts": [{"text": "第二轮"}], "status": "insufficient", "sources": []}
     assert [call.args[1] for call in send_reply.await_args_list] == answers
+    first.assert_called_once_with("tg:1001", answers[0])
+    second.assert_not_called()
+
+
+def _command(bot_mod, handler, text: str):  # noqa: ANN001
+    message = _FakeMessage()
+    message.text = text
+    update = types.SimpleNamespace(effective_chat=types.SimpleNamespace(id=42), message=message)
+
+    async def _to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    with patch.object(bot_mod.asyncio, "to_thread", new=AsyncMock(side_effect=_to_thread)):
+        asyncio.run(handler(update, types.SimpleNamespace(bot=None)))
+    return [reply for reply, _ in message.calls]
+
+
+def _follow(follow_id: int, query: str):
+    from agent.memory import Follow
+
+    return Follow(follow_id=follow_id, query=query, last_checked_at=None)
+
+
+def test_follow_command_adds_follow_for_chat(bot_mod) -> None:  # noqa: ANN001
+    with patch.object(bot_mod.memory, "add_follow", return_value=_follow(3, "Anthropic 上市")) as add:
+        replies = _command(bot_mod, bot_mod.follow_cmd, "/follow  Anthropic 上市 ")
+
+    add.assert_called_once_with("tg:42", "Anthropic 上市")
+    assert replies == ["已关注：Anthropic 上市"]
+
+
+def test_follow_command_without_query_and_over_limit(bot_mod) -> None:  # noqa: ANN001
+    with patch.object(bot_mod.memory, "add_follow", side_effect=bot_mod.memory.FollowLimitError("full")) as add:
+        assert _command(bot_mod, bot_mod.follow_cmd, "/follow") == ["用法：/follow <检索词>"]
+        add.assert_not_called()
+        assert _command(bot_mod, bot_mod.follow_cmd, "/follow 具身智能") == [
+            "关注项已达上限 20 个，请先用 /unfollow 删除。"
+        ]
+
+
+def test_follows_command_lists_with_ordinals(bot_mod) -> None:  # noqa: ANN001
+    follows = [_follow(7, "Anthropic 上市"), _follow(9, "具身智能")]
+    with patch.object(bot_mod.memory, "list_follows", return_value=follows) as list_follows:
+        replies = _command(bot_mod, bot_mod.follows_cmd, "/follows")
+
+    list_follows.assert_called_once_with("tg:42", 20)
+    assert replies == ["关注项：\n1. Anthropic 上市\n2. 具身智能"]
+    with patch.object(bot_mod.memory, "list_follows", return_value=[]):
+        assert _command(bot_mod, bot_mod.follows_cmd, "/follows") == ["还没有关注项。用 /follow <检索词> 添加。"]
+
+
+def test_follow_list_failure_is_reported_not_shown_as_empty(bot_mod) -> None:  # noqa: ANN001
+    with (
+        patch.object(bot_mod.memory, "list_follows", side_effect=RuntimeError("database unavailable")),
+        patch.object(bot_mod.memory, "remove_follow") as remove,
+    ):
+        assert _command(bot_mod, bot_mod.follows_cmd, "/follows") == ["读取关注项失败，请稍后重试。"]
+        assert _command(bot_mod, bot_mod.unfollow_cmd, "/unfollow 1") == ["读取关注项失败，请稍后重试。"]
+        remove.assert_not_called()
+
+
+def test_unfollow_command_removes_by_ordinal(bot_mod) -> None:  # noqa: ANN001
+    follows = [_follow(7, "Anthropic 上市"), _follow(9, "具身智能")]
+    with (
+        patch.object(bot_mod.memory, "list_follows", return_value=follows),
+        patch.object(bot_mod.memory, "remove_follow", return_value=True) as remove,
+    ):
+        assert _command(bot_mod, bot_mod.unfollow_cmd, "/unfollow 2") == ["已取消关注：具身智能"]
+        remove.assert_called_once_with("tg:42", 9)
+        remove.reset_mock()
+        for text in ("/unfollow 3", "/unfollow 0"):
+            assert _command(bot_mod, bot_mod.unfollow_cmd, text) == [
+                "序号不存在。\n关注项：\n1. Anthropic 上市\n2. 具身智能"
+            ]
+        assert _command(bot_mod, bot_mod.unfollow_cmd, "/unfollow x") == ["用法：/unfollow <序号>，序号见 /follows"]
+        remove.assert_not_called()

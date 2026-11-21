@@ -17,7 +17,6 @@ class AgentConfig:
     history_answer_chars: int = 1500
     synthesis_evidence_chars: int = 60000
     gather_read_preview_chars: int = 800
-    max_follows_in_prompt: int = 10
 
 
 def load_config() -> AgentConfig:

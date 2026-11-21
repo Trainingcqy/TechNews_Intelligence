@@ -51,6 +51,7 @@
 | **G6 RGB 拒答** | `eval/rgb/` | 只给干扰文档时会不会冒充证据？ | 误归因率 |
 | **验收问题集** | `eval/acceptance/` | 真实问题上，工具使用、引用、角色归属是否符合预期？ | 逐条人工判断；状态分布、步数、耗时、token |
 | **效率** | `eval/trace_query.py` | 各节点耗时与并行收益 | 节点耗时与 token 的中位数；并行收益 |
+| **追踪型验收集** | `eval/tracking/` | 盘点、追踪、对照三类任务是否达标？ | 召回率、完整率、顺序、"自上次以来"、角色覆盖；归属与评论表述由人工判断 |
 
 ---
 
@@ -154,6 +155,14 @@ Agent 评测遵循同一条 5 步流水线；差异只在"造什么题、捕获�
 - **运行**：`run_acceptance.py` 对每条调用 `run_turn`，记录状态、工具调用序列、步数、来源数、耗时、token：`run_turn` 返回后只读查询 Trace 表，步数是 `collect` span 的个数，token 取 `agent_runs.token_usage`，工具参数取 `tool_call` span 的 `input_summary.args`。输出 `runs/acceptance.jsonl` 和 `report.md`，可断点续跑，`error` 的条目续跑时重跑。
 - **人工判断**：`report.md` 的表中留空五列，逐条判断：该调用工具的问题是否调用了工具（统计 `direct` 状态下的事实性问题数）；多对象问题是否每个对象各检索了一次；没有具体对象的问题是否走了按重要性的浏览；回答里的引用是否支持对应的句子（抽查引用精确率）；官方说法和社区评论是否按综合提示词的 Source Roles 归属。
 - **已知风险**：取证模型可能不调用工具就回答事实问题。代码无法从语义上识别，由提示词约束，在验收问题集上统计发生次数。
+
+#### 追踪型验收集
+
+- **验收集**：`eval/tracking/` 下的 `inventory.jsonl`（盘点）、`tracking.jsonl`（追踪）、`contrast.jsonl`（对照），各 10 条，由使用者依据库内数据手工构造。每行一个 JSON 对象，`case_id` 必填，不超过 40 字符。盘点给 `question` 与 `expected_story_ids`，即人工筛到该领域的 Techmeme 头条在库内对应的故事；追踪给 `question` 与按时间排列的 `progress`（每项 `article_id`、`label`），可选的 `follow_query`、`checked_at`、`followup_question` 三项一起给出时做"自上次以来"的检查；对照给 `question` 与 `story_id`。
+- **运行**：`run_tracking.py run` 对每条用空历史调用 `run_turn`，把回答的来源按 `url_key` 对回库内文章，讨论按讨论页地址对回被讨论文章的故事。"自上次以来"的检查用评测专用的 `user_key` `eval:tracking` 建一个关注项，查看时间设为 `checked_at` 的北京零点，带这个 `user_key` 提问，前后都删除这个 `user_key` 的关注项；这是脚本唯一的写库操作。输出 `runs/<验收集>.jsonl` 与 `report.md`，可断点续跑，`error` 的用例续跑时重跑。
+- **指标**：盘点的召回率是期望故事中被引用来源覆盖的比例，非事件类条目数是被引用文章中 `tutorial`、`opinion`、`promo` 的篇数，列表行都要带 `[n]`。追踪的完整率是有同故事来源被引用的进展比例；顺序要求被覆盖的进展在正文中首次被引用的位置按时间递增；"自上次以来"要求被引用的进展来源中没有早于 `checked_at` 的。对照的三个角色只看目标故事内的被引用来源，要同时有官方发布方、媒体和讨论。召回率与完整率按全部条目汇总，其余按用例计。
+- **人工判断**：对照组的归属是否正确、是否把评论表述为事实，填在 `contrast_sheet.md` 中，`y` 表示有问题；`run_tracking.py score` 统计后刷新 `report.md`，重跑时保留已填的判断。
+- **通过条件**：召回率不低于 70%，非事件类条目为 0，全部带引用；完整率不低于 80%，顺序全部正确，"自上次以来"不混入旧进展；角色覆盖不低于 90%，归属错误为 0，评论被表述为事实为 0。未达标的项对应设计方案中的扩展项。
 
 #### 效率
 
@@ -266,4 +275,12 @@ python eval/rgb/run_rgb_rejection.py --limit 0 --provider deepseek --model deeps
 ```powershell
 python eval/acceptance/run_acceptance.py                               # -> runs/acceptance.jsonl + report.md
 python eval/trace_query.py --node-stats --since 2026-11-01             # 节点耗时与并行收益；日期为示例，按实际起点填写
+```
+
+### 追踪型验收集
+
+```powershell
+python eval/tracking/run_tracking.py run --set inventory --only-case-id i01   # 冒烟：只跑一条盘点用例
+python eval/tracking/run_tracking.py run                                      # 三组全部；-> runs/*.jsonl + report.md + contrast_sheet.md
+python eval/tracking/run_tracking.py score                                    # 填完 contrast_sheet.md 后统计人工判断
 ```

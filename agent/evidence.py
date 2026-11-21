@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from agent.config import BEIJING
 from agent.types import Article, Discussion, Evidence, StoryStats
 from services.urls import url_key
@@ -21,6 +23,7 @@ class EvidenceRegistry:
     def __init__(self) -> None:
         self._items: dict[str, Evidence] = {}
         self._eid_by_key: dict[tuple[str, str], str] = {}
+        self.seen_dates: dict[int, date] = {}  # 故事编号到用户此前看到它的日期，collect 写入
 
     def add_article(self, article: Article, level: str, stats: StoryStats | None = None) -> Evidence:
         key = ("article", url_key(article.url))
@@ -75,18 +78,18 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> str:
     with_body = [e.eid for e in citable if e.level == "fulltext"]
     while True:
         shown = set(with_body)
-        text = "\n\n".join(_render(e, e.eid in shown, article_eids) for e in citable)
+        text = "\n\n".join(_render(e, e.eid in shown, article_eids, registry.seen_dates) for e in citable)
         if len(text) <= max_chars or not with_body:
             return text
         with_body.pop()
 
 
-def _render(evidence: Evidence, with_body: bool, article_eids: dict[int, str]) -> str:
+def _render(evidence: Evidence, with_body: bool, article_eids: dict[int, str], seen_dates: dict[int, date]) -> str:
     if evidence.doc == "discussion":
         lines = _render_discussion(evidence, article_eids)
         body_label = "评论节选"
     else:
-        lines = _render_article(evidence)
+        lines = _render_article(evidence, seen_dates)
         body_label = "正文"
     if with_body:
         text = evidence.fulltext or ""
@@ -98,7 +101,7 @@ def _render(evidence: Evidence, with_body: bool, article_eids: dict[int, str]) -
     return "\n".join(lines)
 
 
-def _render_article(evidence: Evidence) -> list[str]:
+def _render_article(evidence: Evidence, seen_dates: dict[int, date]) -> list[str]:
     article = evidence.article
     lines = [f"[{evidence.eid}] 标题：{article.title}"]
     if article.title_zh:
@@ -113,7 +116,7 @@ def _render_article(evidence: Evidence) -> list[str]:
         meta.append(f"类型：{article.kind}")
     lines.append("｜".join(meta))
     if evidence.stats is not None:
-        lines.append(_render_stats(evidence.stats))
+        lines.append(_render_stats(evidence.stats) + seen_note(seen_dates.get(evidence.stats.story_id)))
     lines.append(f"摘要：{article.summary}")
     if article.body_level != "full":
         lines.append("本文没有入库正文，摘要只依据标题和摘录生成")
@@ -132,6 +135,10 @@ def _render_stats(stats: StoryStats) -> str:
     parts.append(f"首次 {stats.first_at.astimezone(BEIJING):%Y-%m-%d}")
     parts.append(f"最近 {stats.last_at.astimezone(BEIJING):%Y-%m-%d}")
     return "同一故事：" + "，".join(parts)
+
+
+def seen_note(seen: date | None) -> str:
+    return f"，此前已在 {seen:%m-%d} 的回答中提及" if seen else ""
 
 
 def _render_discussion(evidence: Evidence, article_eids: dict[int, str]) -> list[str]:

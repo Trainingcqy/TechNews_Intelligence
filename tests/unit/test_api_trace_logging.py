@@ -50,6 +50,7 @@ def _stub_conversation_memory(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(api_mod.chat_service, "create_thread", _create_thread)
     monkeypatch.setattr(api_mod.chat_service, "load_history_for_token", _load_history_for_token)
     monkeypatch.setattr(api_mod.chat_service, "append_message_for_token", _append_message_for_token)
+    monkeypatch.setattr(api_mod.chat_service.memory, "record_turn", lambda *_a: None)
 
 
 def test_chat_logs_and_forwards_trace_request_id(

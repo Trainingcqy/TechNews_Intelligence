@@ -18,7 +18,7 @@ TechNews Intelligence 是面向科技新闻的自动化情报系统。采集管�
 - 文本处理：feed 自带全文，否则经 Jina Reader 获取正文；模型一次调用生成中文标题、摘要、领域标签和文章类型；摘要生成向量；报道同一事件的文章归并为故事；HackerNews 讨论以原文存储。
 - 混合检索：词法、pgvector 语义、实体别名精确三路召回 + RRF 融合，Jina Reranker 重排，结果按故事归并。
 - Agent 分析：基于 LangGraph StateGraph 编排。取证模型调用 `search_news`、`read_articles` 两个工具，一步内的多个调用并行执行；证据登记表为每份材料编号；综合模型按编号引用，代码校验引用并生成来源列表。
-- 上下文：带入最近几轮对话，历史回答的来源重新登记为证据。
+- 上下文与记忆：带入最近几轮对话，历史回答的来源重新登记为证据；Web 与 Telegram 用户的关注项和阅读记录只决定检索参数和"此前已提及"标注，不进入证据。
 - 可观测性：`agent_runs`、`agent_trace_spans`、`agent_model_io` 记录请求摘要、执行链路和完整模型输入输出。
 - 采集监控：渠道连续失败触发告警邮件；每日统计契约指标，超出滚动基线时告警。
 - 多入口交互：Web API、Telegram Bot、本地 CLI、MCP stdio 共用同一套检索与工具层。
@@ -29,7 +29,7 @@ TechNews Intelligence 是面向科技新闻的自动化情报系统。采集管�
 | 模块 | 说明 |
 | --- | --- |
 | `ingest/` | 采集管线：来源定义、发现、取正文、摘要与分类、向量、故事归并、HackerNews 讨论、监控。 |
-| `agent/` | Agent 编排、两个工具、检索、证据登记表、引用校验、线程上下文、Trace、MCP 适配。 |
+| `agent/` | Agent 编排、两个工具、检索、证据登记表、引用校验、线程上下文、用户记忆、Trace、MCP 适配。 |
 | `app/` | FastAPI 主服务、Trace Console 服务、Telegram Bot、本地 CLI。 |
 | `services/` | PostgreSQL 连接、对话线程、Trace 持久化、邮件、模型工厂、地址归一、领域与类型词表。 |
 | `trace_dashboard/` | Vue3/Vite Trace 可视化面板。 |

@@ -32,7 +32,7 @@ def fake_build(monkeypatch):
 
 def test_build_models_defaults(fake_build) -> None:
     gather, final = build_models()
-    assert (gather.role, gather.provider, gather.model) == ("gather", "deepseek", "deepseek-v4-flash")
+    assert (gather.role, gather.provider, gather.model) == ("gather", "deepseek", "deepseek-flash")
     assert (final.role, final.provider, final.model) == ("final", "vertex", "gemini-3.1-pro-preview")
     assert [c["temperature"] for c in fake_build] == [0.1, 0.1]
 

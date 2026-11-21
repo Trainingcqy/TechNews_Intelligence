@@ -267,7 +267,7 @@ python eval/generation/judge_faithfulness.py --results eval/generation/runs/gene
 # 生产综合模型与生产提示词
 python eval/rgb/run_rgb_rejection.py --limit 0
 # 指定合成模型与另外的判官，避免自评；只给供应商时取其默认模型，要指定模型名时再加 --model、--judge-model
-python eval/rgb/run_rgb_rejection.py --limit 0 --provider deepseek --model deepseek-v4-flash --judge-provider vertex --judge-model gemini-3.1-pro-preview --output eval/rgb/runs/rgb_deepseek.jsonl --report eval/rgb/runs/rgb_deepseek.md
+python eval/rgb/run_rgb_rejection.py --limit 0 --provider deepseek --model deepseek-flash --judge-provider vertex --judge-model gemini-3.1-pro-preview --output eval/rgb/runs/rgb_deepseek.jsonl --report eval/rgb/runs/rgb_deepseek.md
 ```
 
 ### 验收问题集

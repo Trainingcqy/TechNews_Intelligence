@@ -39,10 +39,10 @@ cp .env.example .env
 
 | 变量 | 默认 | 含义 |
 | --- | --- | --- |
-| `AGENT_GATHER_PROVIDER`, `AGENT_GATHER_MODEL` | `deepseek`, `deepseek-v4-flash` | 取证模型，须支持工具调用。 |
+| `AGENT_GATHER_PROVIDER`, `AGENT_GATHER_MODEL` | `deepseek`, `deepseek-flash` | 取证模型，须支持工具调用。 |
 | `AGENT_FINAL_PROVIDER`, `AGENT_FINAL_MODEL` | `vertex`, `gemini-3.1-pro-preview` | 综合模型；评测的判官也用它。 |
 | `AGENT_MAX_STEPS`, `AGENT_HISTORY_TURNS`, `AGENT_TEMPERATURE` | `3`, `4`, `0.1` | 取证循环的最大步数（1 到 6）、带入上下文的历史轮数、两个模型的温度。 |
-| `INGEST_ANALYZE_PROVIDER`, `INGEST_ANALYZE_MODEL` | `deepseek`, `deepseek-v4-flash` | 采集分析模型。 |
+| `INGEST_ANALYZE_PROVIDER`, `INGEST_ANALYZE_MODEL` | `deepseek`, `deepseek-flash` | 采集分析模型。 |
 | `INGEST_<字段名大写>` | 见 [部署与运维](OPERATIONS.md) | `IngestConfig` 的任一字段，例如 `INGEST_FETCH_WORKERS`。 |
 | `VERTEX_LOCATION` | `global` | Vertex 区域。 |
 | `DEEPSEEK_BASE_URL`, `DEEPSEEK_TIMEOUT_SEC` | `https://api.deepseek.com`, `120` | OpenAI 兼容接口的地址与超时秒数。 |

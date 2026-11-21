@@ -95,7 +95,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 - **discover**：feed 用 `feedparser` 解析，站点地图按路径片段和 `<lastmod>` 过滤，HackerNews 取 Algolia 首页接口。渠道设了 `body_from_feed` 且 feed 自带的正文不短于 1,500 字符时，新文章入库时直接写入正文并置为 `fetched`；HackerNews 自发帖的地址指向评论页，不经过 Reader，正文不短于 200 字符时直接写入。渠道 `config` 可设 `body_from_feed`、`lookback_days`（默认 3 天）、`url_pattern`、`max_path_segments`、`discussion_after_hours`、`discussion_min_comments`。请求带上次保存的 `ETag` 和 `Last-Modified`。渠道连续失败 3 次时向 `ADMIN_EMAIL` 发告警邮件。参照渠道走同一套轮询，条目写入 `reference_headline`，不进入后续阶段。
 - **fetch**：经 Jina Reader 获取正文，写入前去掉图片标记，把 Markdown 链接替换为链接文字，并去掉 NUL 字符。
-- **analyze**：输入是标题、发布方和正文的前 30,000 字符，默认模型为 `deepseek-v4-flash`，输出经 `services/taxonomy.py` 的词表校验。校验失败时在同一次尝试内带着错误信息重发一次。
+- **analyze**：输入是标题、发布方和正文的前 30,000 字符，默认模型为 `deepseek-flash`，输出经 `services/taxonomy.py` 的词表校验。校验失败时在同一次尝试内带着错误信息重发一次。
 - **embed**：模型 `jina-embeddings-v3`，输入为中文摘要，所有摘要都是中文，中英文报道因此落在同一向量空间。
 - **link**：最近邻在时间窗内精确排序，不经过向量索引。故事是单一事件，跨度上限在代码里执行；最近邻的编号和相似度无论是否达到阈值都记录。
 - **discuss**：取评论树中有正文的顶层评论，按后代评论数降序取前 30 条，每条截取前 800 字符，以原文存储，不由模型总结。
@@ -201,7 +201,7 @@ flowchart TD
 
 | 角色 | 职责 | 默认提供方与模型 | 变量 |
 | --- | --- | --- | --- |
-| gather | 取证：决定调用哪个工具、什么参数，不撰写最终回答 | DeepSeek，`deepseek-v4-flash` | `AGENT_GATHER_PROVIDER`、`AGENT_GATHER_MODEL` |
+| gather | 取证：决定调用哪个工具、什么参数，不撰写最终回答 | DeepSeek，`deepseek-flash` | `AGENT_GATHER_PROVIDER`、`AGENT_GATHER_MODEL` |
 | final | 综合：依据证据块撰写回答；评测的判官也使用它 | Vertex AI，`gemini-3.1-pro-preview` | `AGENT_FINAL_PROVIDER`、`AGENT_FINAL_MODEL` |
 
 供应商只认 `gemini_api`、`vertex`、`deepseek` 三个名字，模型经 `services/llm_provider.py` 构建。取证模型须支持工具调用。

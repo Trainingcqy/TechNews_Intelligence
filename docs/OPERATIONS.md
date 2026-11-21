@@ -82,10 +82,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 | 变量 | 默认 | 含义 |
 | --- | --- | --- |
-| `AGENT_GATHER_PROVIDER`, `AGENT_GATHER_MODEL` | `deepseek`, `deepseek-v4-flash` | 取证模型，须支持工具调用。 |
+| `AGENT_GATHER_PROVIDER`, `AGENT_GATHER_MODEL` | `deepseek`, `deepseek-flash` | 取证模型，须支持工具调用。 |
 | `AGENT_FINAL_PROVIDER`, `AGENT_FINAL_MODEL` | `vertex`, `gemini-3.1-pro-preview` | 综合模型；评测的判官也用它。 |
 | `AGENT_MAX_STEPS`, `AGENT_HISTORY_TURNS`, `AGENT_TEMPERATURE` | `3`, `4`, `0.1` | 取证循环的最大步数（1 到 6）、带入上下文的历史轮数、两个模型的温度。 |
-| `INGEST_ANALYZE_PROVIDER`, `INGEST_ANALYZE_MODEL` | `deepseek`, `deepseek-v4-flash` | 采集分析模型。 |
+| `INGEST_ANALYZE_PROVIDER`, `INGEST_ANALYZE_MODEL` | `deepseek`, `deepseek-flash` | 采集分析模型。 |
 | `INGEST_<字段名大写>` | 见下表 | `IngestConfig` 的任一字段，例如 `INGEST_FETCH_WORKERS`。 |
 | `VERTEX_LOCATION` | `global` | Vertex 区域。 |
 | `DEEPSEEK_BASE_URL`, `DEEPSEEK_TIMEOUT_SEC` | `https://api.deepseek.com`, `120` | OpenAI 兼容接口的地址与超时秒数。 |
@@ -98,7 +98,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `TRACE_DASHBOARD_ADMIN_EMAIL` | 同 `ADMIN_EMAIL` | Trace Console 接口返回的管理员邮箱。 |
 | `BOT_SESSION_MAX_CHATS`, `BOT_SESSION_TTL_SEC`, `BOT_RATE_TRACK_MAX_CHATS`, `BOT_RATE_WINDOW_SEC`, `BOT_RATE_LIMIT`, `BOT_AUTO_DELETE_SEC`, `BOT_SEND_RETRY_ATTEMPTS`, `BOT_SEND_RETRY_BASE_SEC` | 见 `app/bot.py` | Telegram Bot 的会话缓存、限流、消息自动删除和发送重试。 |
 | `API_RATE_LIMIT`, `API_RATE_TRACK_MAX_IPS`, `APPROVE_LINK_TTL_SEC`, `SMTP_HOST`, `SMTP_PORT` | 见 `app/rate_limit.py`、`app/security.py`、`services/mail.py` | 接口限流、审批链接有效期、发信服务器。 |
-| `DEEPSEEK_ENTITY_MODEL`, `DEEPSEEK_ENTITY_ESCALATION_MODEL`, `DEEPSEEK_ENTITY_TIMEOUT_SEC` | `deepseek-v4-flash`, `deepseek-v4-pro`, `30` | 实体别名脚本，读仓库根目录的 `.env`。 |
+| `DEEPSEEK_ENTITY_MODEL`, `DEEPSEEK_ENTITY_ESCALATION_MODEL`, `DEEPSEEK_ENTITY_TIMEOUT_SEC` | `deepseek-flash`, `deepseek-v4-pro`, `30` | 实体别名脚本，读仓库根目录的 `.env`。 |
 
 模型变量的规则：每个用途只认自己的 `<用途>_PROVIDER` 和 `<用途>_MODEL`。供应商只认 `gemini_api`、`vertex`、`deepseek` 三个名字；没有给模型名时，取 `services/llm_provider.py` 中 `DEFAULT_MODELS` 的供应商默认值。`gemini_api` 调 Google AI Studio 上的 Gemini，`vertex` 调 Vertex AI 上的 Gemini，`deepseek` 调 OpenAI 兼容接口；`DEEPSEEK_BASE_URL` 指向其他兼容服务时同样可用，但所有选 `deepseek` 的用途共用一个地址和 key。采集分析只适配 OpenAI 兼容的客户端：失败分类按 openai 的异常类型，`max_tokens` 只发给 `ChatOpenAI`；`response_format` 对 `vertex` 和 `gemini_api` 的效果未验证，供应商换成这两个时把 `INGEST_ANALYZE_JSON_MODE` 设为 `false`。向量模型 `jina-embeddings-v3` 写死在 `ingest/embed.py` 与 `agent/retrieval/embeddings.py`，两处必须一致。
 
@@ -113,7 +113,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `fetch_max_attempts`, `analyze_max_attempts`, `embed_max_attempts` | `5`, `3`, `5` | 各阶段的最大尝试次数。 |
 | `backoff_minutes` | `10,60,360,1440` | 失败后等待的分钟数，超出表长时取最后一项。 |
 | `analyze_body_chars` | `30000` | 送入分析的正文字符数上限。 |
-| `analyze_provider`, `analyze_model` | `deepseek`, `deepseek-v4-flash` | 同 `INGEST_ANALYZE_PROVIDER`、`INGEST_ANALYZE_MODEL`。 |
+| `analyze_provider`, `analyze_model` | `deepseek`, `deepseek-flash` | 同 `INGEST_ANALYZE_PROVIDER`、`INGEST_ANALYZE_MODEL`。 |
 | `analyze_json_mode` | `true` | 请求 `response_format: json_object`。解析与校验在两种模式下相同。 |
 
 ## 数据库结构与 Seed

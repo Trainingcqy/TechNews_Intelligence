@@ -12,7 +12,7 @@ import requests
 
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEEPSEEK_ENTITY_MODEL = "deepseek-v4-flash"
+DEEPSEEK_ENTITY_MODEL = "deepseek-flash"
 DEEPSEEK_ENTITY_ESCALATION_MODEL = "deepseek-v4-pro"
 
 REVIEW_REQUIRED_ALIASES = {

@@ -64,7 +64,7 @@ def test_adjudicate_alias_parses_deepseek_json(monkeypatch) -> None:
 
     def _fake_post(_url, *, headers=None, json=None, timeout=None):
         assert headers["Authorization"] == "Bearer fake-key"
-        assert json["model"] == "deepseek-v4-flash"
+        assert json["model"] == "deepseek-flash"
         assert timeout == 30.0
         return _FakeResponse(
             {

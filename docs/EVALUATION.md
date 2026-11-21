@@ -50,7 +50,7 @@
 | **G3 生成忠实度** | `eval/generation/` | 答案是否被证据支撑、是否幻觉？ | Faithfulness(1-5) / 幻觉率 / 地址泄漏 |
 | **G6 RGB 拒答** | `eval/rgb/` | 只给干扰文档时会不会冒充证据？ | 误归因率 |
 | **验收问题集** | `eval/acceptance/` | 真实问题上，工具使用、引用、角色归属是否符合预期？ | 逐条人工判断；状态分布、步数、耗时、token |
-| **效率** | `eval/trace_query.py` | 各节点耗时与并行收益 | 节点耗时与 token 的中位数；并行收益 |
+| **效率** | `eval/trace_query.py`、`eval/retrieval/sql_latency.py` | 各节点耗时与并行收益；混合检索的 SQL 耗时随时间窗的变化 | 节点耗时与 token 的中位数；并行收益；`days=14`、`days=365` 的 SQL 耗时中位数 |
 | **追踪型验收集** | `eval/tracking/` | 盘点、追踪、对照三类任务是否达标？ | 召回率、完整率、顺序、"自上次以来"、角色覆盖；归属与评论表述由人工判断 |
 
 ---
@@ -166,6 +166,8 @@ Agent 评测遵循同一条 5 步流水线；差异只在"造什么题、捕获�
 
 #### 效率
 
+`eval/retrieval/sql_latency.py` 测混合检索的 SQL 耗时，是设计方案中向量近似索引扩展项的基线：`days=365` 的中位数超过 1 秒时启用该项。检索词取 `queries.jsonl` 的前 20 条，SQL 与参数由 `fetch_hybrid_rows` 按默认参数的 `search_news` 生成，在 `EXPLAIN (ANALYZE, TIMING OFF)` 下执行，耗时取数据库报告的规划与执行时间之和，不含网络往返。只读；每条检索词请求一次向量。
+
 `eval/trace_query.py --node-stats --since <日期>` 按节点统计耗时和 token 的中位数，并与脚本中记录的改造前中位数对比。起点按北京时间零点；统计 `graph_node`、`model_call`、`tool_call` 三类 span，不筛状态；`gather` 对应改造前的工具规划，意图判断在当前链路没有对应节点。同一输出还统计一步内多个调用时 `run_tool` 各分支耗时之和与该步实际耗时之比，作为并行收益的测量。
 
 ---
@@ -275,6 +277,7 @@ python eval/rgb/run_rgb_rejection.py --limit 0 --provider deepseek --model deeps
 ```powershell
 python eval/acceptance/run_acceptance.py                               # -> runs/acceptance.jsonl + report.md
 python eval/trace_query.py --node-stats --since 2026-11-01             # 节点耗时与并行收益；日期为示例，按实际起点填写
+python eval/retrieval/sql_latency.py                                   # 混合检索 SQL 耗时：days=14 与 365 各 20 条
 ```
 
 ### 追踪型验收集

@@ -279,15 +279,6 @@ bash deployment/scripts/db/build_entity_alias_candidates.sh --apply-schema --day
 
 采集管线的质量由 `ingest` 自带的两个命令检查：`python -m ingest status` 看积压和近 24 小时的失败分类，`python -m ingest monitor` 计算契约指标并与此前 14 天的中位数比较，见「采集管线」。
 
-数据库脚本检查旧表，旧表不再更新后只反映停更前的数据：
-
-```bash
-bash deployment/scripts/db/run_data_quality_checks.sh
-bash deployment/scripts/db/run_data_quality_checks.sh 48
-```
-
-检查项包括最近采集数量、空标题、空摘要、空 URL、重复 URL、向量覆盖情况、来源分布、全文和结构化字段完整性。
-
 ## Trace Console
 
 Trace Console 服务由 `trace` 容器提供。浏览器访问 `trace.trainingcqy.com` 或本地 `http://localhost:8010`，输入 `TRACE_DASHBOARD_TOKEN` 后进入面板。
@@ -311,9 +302,6 @@ bash deployment/scripts/db/apply_seed.sh
 
 # 采集状态
 docker compose run --rm ingest python -m ingest status
-
-# 数据质量检查（旧表）
-bash deployment/scripts/db/run_data_quality_checks.sh
 
 # 查看采集日志
 docker compose logs -f ingest

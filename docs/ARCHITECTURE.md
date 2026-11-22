@@ -128,8 +128,6 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 | 对话 | `conversation_threads`, `conversation_messages` |
 | Trace | `agent_runs`, `agent_trace_spans`, `agent_model_io` |
 
-库中另有切换前采集链路的旧表（`tech_news`、`tech_news_failed`、`jina_raw_logs`、`news_embeddings`、`news_search_index`、`source_registry`）和读取旧表的视图 `view_dashboard_news`。它们已冻结，不由 `sql/` 管理，定义见 tag `v1-n8n`；Metabase 看板经这个视图读取旧数据，分类试标的抽样脚本读取 `tech_news` 和 `news_embeddings`。
-
 数据层约定：
 
 - 检索的精确召回路用 `entity_registry`、`entity_alias` 把查询扩展为别名词项，这两张表由 `sql/seed_entities.sql` 和别名候选脚本维护。

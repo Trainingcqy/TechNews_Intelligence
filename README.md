@@ -2,8 +2,6 @@
   <img src="docs/title.svg" alt="TechNews Intelligence" width="700">
   <br>
   <p align="center">
-    <a href="https://dashboard.trainingcqy.com" style="text-decoration:none"><strong>Metabase 演示</strong></a>
-    &nbsp;&nbsp; | &nbsp;&nbsp;
     <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>智能体交互</strong></a>
   </p>
 </div>

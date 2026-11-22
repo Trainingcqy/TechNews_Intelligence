@@ -26,7 +26,7 @@ cp .env.example .env
 | `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL` | 服务器。ingest 的告警和 api 的额度审批邮件发到 `ADMIN_EMAIL`，发信服务器为代码默认的 `smtp.gmail.com:587` | `SMTP_USER`、`SMTP_PASS` 传给 ingest、api；`ADMIN_EMAIL` 传给 ingest、api、trace |
 | `TRACE_DASHBOARD_TOKEN` | 服务器。Trace Console 的访问 token，本机运行 Trace Console 时同样需要 | trace |
 
-端口变量不填时取 compose 中的默认值：`DB_PORT` 为 `5432`，`METABASE_PORT` 为 `3000`，`API_PORT` 为 `8000`，`TRACE_DASHBOARD_PORT` 为 `8010`。`DB_PORT` 是 postgres 发布到宿主机的端口，绑定在 `127.0.0.1`；本机不填这个变量。
+端口变量不填时取 compose 中的默认值：`DB_PORT` 为 `5432`，`API_PORT` 为 `8000`，`TRACE_DASHBOARD_PORT` 为 `8010`。`DB_PORT` 是 postgres 发布到宿主机的端口，绑定在 `127.0.0.1`；本机不填这个变量。
 
 生成 `APPROVE_LINK_SECRET`、`TRACE_DASHBOARD_TOKEN` 这类随机值：
 
@@ -124,7 +124,7 @@ CI 工作流 `.github/workflows/ci.yml` 在 Python 3.12 上安装依赖，运行
 - 采集、Agent、入口共用的模块在 `common/`。
 - `news` schema 的结构变更写入 `sql/news.sql`，其余表的结构变更写入 `sql/public.sql`。
 - 部署和数据库运维脚本放入 `scripts/`，评测逻辑放入 `eval/`，测试放入 `tests/unit/`。
-- 运行产物（`reports/`、`data/`、缓存、构建产物、虚拟环境）不纳入版本控制。
+- 运行产物（`reports/`、缓存、构建产物、虚拟环境）不纳入版本控制。
 
 ## 部署
 
@@ -134,7 +134,6 @@ Compose 文件是仓库根目录的 `docker-compose.yml`，项目名用 `name: d
 | --- | --- | ---: | --- |
 | `postgres` | `tech_news_db` | `5432` | PostgreSQL + pgvector。 |
 | `ingest` | `tech_news_ingest` | 无 | 采集管线，命令 `python -m ingest loop`。 |
-| `metabase` | `tech_news_bi` | `3000` | BI 看板。 |
 | `api` | `tech_news_api` | `8000` | Web API。 |
 | `trace` | `tech_news_trace` | `8010` | Trace Console。 |
 | `bot` | `tech_news_bot` | 无 | Telegram Bot。 |
@@ -148,7 +147,7 @@ docker compose logs -f ingest
 
 ### 自动部署
 
-`main` 分支推送后，GitHub Actions（`.github/workflows/deploy.yml`）经 SSH 在服务器上部署：拉取代码，拉取 `postgres`、`metabase` 镜像并启动 `postgres`，执行 `bash scripts/db/apply_schema.sh`，构建 `bot`、`api`、`trace`、`ingest`，执行 `docker compose up -d --remove-orphans`，清理镜像，最后检查各服务的状态。PostgreSQL 镜像摘要变化时执行 `REINDEX INDEX unique_url`。自动部署不执行 seed。
+`main` 分支推送后，GitHub Actions（`.github/workflows/deploy.yml`）经 SSH 在服务器上部署：拉取代码，拉取并启动 `postgres`，执行 `bash scripts/db/apply_schema.sh`，构建 `bot`、`api`、`trace`、`ingest`，执行 `docker compose up -d --remove-orphans`，清理镜像，最后检查各服务的状态。PostgreSQL 镜像摘要变化时用 `REINDEX SCHEMA CONCURRENTLY` 重建 `news` 与 `public` 两个 schema 的索引。自动部署不执行 seed。
 
 `up -d` 会重新启动已手动停止的 `ingest`，服务器重启时 `restart: always` 同样会拉起它。需要在 `ingest` 停止的状态下操作（如冻结评测用的数据快照）时，期间不要推送 `main`，也不要重启服务器。
 
@@ -162,21 +161,16 @@ docker compose logs -f ingest
 
 ### Cloudflare Tunnel
 
-三个域名经 Tunnel 指向宿主机端口，API 和 Trace 服务只绑定宿主机本地地址：
+两个域名经 Tunnel 指向宿主机端口，API 和 Trace 服务只绑定宿主机本地地址：
 
 | 域名 | Origin |
 | --- | --- |
 | `agentapi.trainingcqy.com` | `http://localhost:8000` |
 | `trace.trainingcqy.com` | `http://localhost:8010` |
-| `dashboard.trainingcqy.com` | `http://localhost:3000` |
 
 ### Trace Console
 
 浏览器访问 `trace.trainingcqy.com` 或本地 `http://localhost:8010`，输入 `TRACE_DASHBOARD_TOKEN` 后进入面板。面板展示请求列表、span 调用链（流程节点、模型调用、工具执行）、完整的模型输入与原始输出、工具参数与证据地址、错误信息和 raw JSON。
-
-### Metabase
-
-看板基于视图 `view_dashboard_news`，看板查询保存在 Metabase 自己的应用库中。该视图读取切换前的旧表 `tech_news`；视图和旧表都已冻结，不由 `sql/` 管理（定义见 tag `v1-n8n`），看板的数据停在切换日。应用库由 `MB_DB_FILE=/metabase-data/metabase.db` 指定，宿主机的 `data/metabase/` 目录挂载为容器内的 `/metabase-data`，该目录被 git 忽略。
 
 ## 采集运维
 

@@ -5,8 +5,8 @@ __pycache__/
 .git/
 **/.env
 
-trace_dashboard/node_modules/
-trace_dashboard/dist/
-trace_dashboard/.npm-cache/
+web/*/node_modules/
+web/*/dist/
+web/*/.npm-cache/
 
 reports/

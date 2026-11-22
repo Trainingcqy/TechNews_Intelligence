@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 TRACE_STATIC_DIR = Path(
     os.getenv(
         "TRACE_DASHBOARD_STATIC_DIR",
-        str(Path(__file__).resolve().parents[1] / "trace_dashboard" / "dist"),
+        str(Path(__file__).resolve().parents[1] / "web" / "trace" / "dist"),
     )
 )
 
@@ -449,7 +449,7 @@ def _render_missing_dashboard() -> HTMLResponse:
           <head><meta charset="utf-8"><title>Trace Dashboard</title></head>
           <body style="font-family: sans-serif; padding: 32px;">
             <h1>Trace Dashboard build missing</h1>
-            <p>Run <code>npm install</code> and <code>npm run build</code> in <code>trace_dashboard/</code>,
+            <p>Run <code>npm install</code> and <code>npm run build</code> in <code>web/trace/</code>,
             or build the Docker trace image.</p>
           </body>
         </html>

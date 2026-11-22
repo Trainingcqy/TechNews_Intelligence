@@ -40,7 +40,7 @@ skills-lock.json
 CLAUDE.md
 claude.md
 
-# Trace dashboard frontend artifacts
-trace_dashboard/node_modules/
-trace_dashboard/dist/
-trace_dashboard/.npm-cache/
+# Frontend artifacts
+web/*/node_modules/
+web/*/dist/
+web/*/.npm-cache/

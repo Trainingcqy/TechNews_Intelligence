@@ -51,8 +51,8 @@ python -m app.cli
 | `agent/` | Agent：编排、工具、检索、证据与引用、记忆、Trace、MCP |
 | `app/` | Web API、Trace Console 后端、Telegram Bot、CLI |
 | `common/` | 共用模块：数据库连接、模型工厂、地址归一、领域与类型词表 |
-| `frontend/` | 网页对话前端 |
-| `trace_dashboard/` | Trace Console 前端 |
+| `web/chat/` | 网页对话前端 |
+| `web/trace/` | Trace Console 前端 |
 | `eval/` | 评测与验收脚本 |
 | `scripts/` | 数据库、冒烟、实体别名和编码检查脚本 |
 | `sql/` | 表结构与 seed |

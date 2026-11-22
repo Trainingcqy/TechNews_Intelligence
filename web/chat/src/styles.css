@@ -1077,24 +1077,6 @@ body {
     will-change: background-position;
 }
 
-.typing-items {
-    display: grid;
-    gap: 2px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    color: var(--text-tertiary);
-    font-size: 12px;
-    line-height: 1.35;
-}
-
-.typing-items li {
-    max-width: min(560px, 72vw);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 @keyframes thinkingTextSweep {
     0% {
         background-position: 100% 0;
@@ -1117,55 +1099,6 @@ body {
     .typing-msg .typing-detail {
         color: var(--text-tertiary);
     }
-}
-
-/* ===== Quota Exhausted Overlay ===== */
-.quota-overlay {
-    display: none;
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 24px;
-    background: var(--surface-color);
-    border-top: 1px solid var(--border-color);
-    text-align: center;
-    animation: slideUp 0.4s ease;
-    z-index: 10;
-}
-
-.quota-overlay.visible {
-    display: none;
-}
-
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.quota-overlay-icon {
-    font-size: 40px;
-    color: var(--text-tertiary);
-    margin-bottom: 8px;
-}
-
-.quota-overlay-content p {
-    font-size: 15px;
-    font-weight: 500;
-}
-
-.quota-overlay-hint {
-    font-size: 13px;
-    color: var(--text-tertiary);
-    margin-top: 4px;
-    font-weight: 400 !important;
 }
 
 /* ===== Input Bar ===== */

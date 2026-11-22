@@ -1,11 +1,11 @@
-FROM node:20-alpine AS trace-frontend-build
+FROM node:24-alpine AS trace-frontend-build
 
 WORKDIR /frontend
 
-COPY trace_dashboard/package.json trace_dashboard/package-lock.json ./
+COPY web/trace/package.json web/trace/package-lock.json ./
 RUN npm ci
 
-COPY trace_dashboard/ ./
+COPY web/trace/ ./
 RUN npm run build
 
 FROM python:3.12-slim AS python-runtime
@@ -24,6 +24,6 @@ CMD ["python", "-m", "app.bot"]
 
 FROM python-runtime AS trace-runtime
 
-COPY --from=trace-frontend-build /frontend/dist ./trace_dashboard/dist
+COPY --from=trace-frontend-build /frontend/dist ./web/trace/dist
 
 CMD ["uvicorn", "app.trace_api:app", "--host", "0.0.0.0", "--port", "8010"]

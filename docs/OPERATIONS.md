@@ -103,7 +103,14 @@ python -m ingest run                                   # 采集一轮，命令�
 python scripts/smoke/smoke_agent.py      # 取证模型与综合模型各一次调用，不连数据库
 ```
 
-Trace Console 前端在 `trace_dashboard/`，`npm install` 后用 `npm run dev` 开发、`npm run build` 构建。生产环境由 `trace` 容器提供构建产物和 `/trace-api/*` 接口。
+两个前端都是 Vue 3 + Vite 工程，Node 版本为 24，与 Trace 镜像和 Pages 构建一致。在各自目录 `npm install` 后用 `npm run dev` 开发、`npm run build` 构建：
+
+| 目录 | 开发服务器端口 | 请求转发 |
+| --- | --- | --- |
+| `web/chat/` | `5174` | `/api/*` 去掉前缀后转发到 `http://127.0.0.1:8000`（Web API） |
+| `web/trace/` | `5173` | `/trace-api/*` 转发到 `http://127.0.0.1:8010`（Trace Console 后端） |
+
+网页对话前端的构建产物直接请求 `https://agentapi.trainingcqy.com`，由 Cloudflare Pages 发布（见「自动部署」）。Trace Console 的构建产物和 `/trace-api/*` 接口在生产环境由 `trace` 容器提供。
 
 ### 测试与 CI
 
@@ -151,7 +158,7 @@ docker compose logs -f ingest
 
 `up -d` 会重新启动已手动停止的 `ingest`，服务器重启时 `restart: always` 同样会拉起它。需要在 `ingest` 停止的状态下操作（如冻结评测用的数据快照）时，期间不要推送 `main`，也不要重启服务器。
 
-网页对话前端 `frontend/` 由 Cloudflare Pages 从 `main` 分支发布，域名为 `agent.trainingcqy.com`。
+网页对话前端 `web/chat/` 由 Cloudflare Pages 从 `main` 分支构建并发布，域名为 `agent.trainingcqy.com`。Pages 项目的构建设置：根目录 `web/chat`，构建命令 `npm run build`，输出目录 `dist`；Node 版本取 `web/chat/.node-version`。
 
 ### 数据库结构与 Seed
 

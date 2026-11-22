@@ -357,8 +357,8 @@ Agent 产生的 span 类型：
 
 | 入口 | 实现 | 说明 |
 | --- | --- | --- |
-| Web/API | `app/api.py` | Token 校验、限流、额度、对话线程；`/chat` 同步返回，`/chat-stream` 以 SSE 推送 `progress`、`evidence` 事件和最终的 `final`；`/follows` 接口管理关注项。 |
-| Trace Console | `app/trace_api.py` + `trace_dashboard/` | 管理员 token 访问链路追踪面板。 |
+| Web/API | `app/api.py` + `web/chat/` | Token 校验、限流、额度、对话线程；`/chat` 同步返回，`/chat-stream` 以 SSE 推送 `progress`、`evidence` 事件和最终的 `final`；`/follows` 接口管理关注项。 |
+| Trace Console | `app/trace_api.py` + `web/trace/` | 管理员 token 访问链路追踪面板。 |
 | Telegram Bot | `app/bot.py` | Telegram 对话入口，按 chat_id 维护会话；`/follow`、`/unfollow`、`/follows` 命令管理关注项。 |
 | CLI | `app/cli.py` | 本地命令行入口，在进程内维护对话历史。 |
 | MCP | `agent/mcp/stdio_server.py` | MCP stdio 服务，暴露 `search_news`、`read_articles` 两个工具和资源 `news://corpus`；每次调用新建登记表，返回中带证据的地址。 |

@@ -50,5 +50,29 @@ def test_unparseable_returns_none(value):
     assert parse_datetime(value, now=NOW) is None
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0001-01-01T00:00:00Z",
+        "Thu, 01 Jan 1970 00:00:00 GMT",
+        "1970-01-01T08:00:00+08:00",
+        "Tue, 01 Jan 1980 00:00:00 GMT",
+    ],
+)
+def test_placeholders_return_none(value):
+    assert parse_datetime(value, now=NOW) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1970-01-01T00:00:01Z", datetime(1970, 1, 1, 0, 0, 1, tzinfo=UTC)),
+        ("1980-08-28T05:59:38+00:00", datetime(1980, 8, 28, 5, 59, 38, tzinfo=UTC)),
+    ],
+)
+def test_other_early_dates_are_kept(value, expected):
+    assert parse_datetime(value, now=NOW) == expected
+
+
 def test_now_defaults_to_current_time():
     assert parse_datetime("2999-01-01T00:00:00Z") <= datetime.now(UTC)

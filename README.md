@@ -8,7 +8,10 @@
 
 TechNews Intelligence 持续采集中英文科技新闻，并由 Agent 回答关于这些新闻的问题。回答中的事实只来自本轮从库内检索到的文章，正文按编号引用来源，引用由代码校验。
 
-![系统架构](docs/architecture.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img src="docs/architecture-light.svg" alt="系统架构">
+</picture>
 
 ## 主要设计
 
@@ -43,24 +46,9 @@ python -m app.cli
 
 环境变量、部署和运维命令见 [开发与运维](docs/OPERATIONS.md)。
 
-## 目录
-
-| 路径 | 内容 |
-| --- | --- |
-| `ingest/` | 采集管线 |
-| `agent/` | Agent：编排、工具、检索、证据与引用、记忆、Trace、MCP |
-| `app/` | Web API、Trace Console 后端、Telegram Bot、CLI |
-| `common/` | 共用模块：数据库连接、模型工厂、地址归一、领域与类型词表 |
-| `web/chat/` | 网页对话前端 |
-| `web/trace/` | Trace Console 前端 |
-| `eval/` | 评测与验收脚本 |
-| `scripts/` | 数据库、冒烟、实体别名和编码检查脚本 |
-| `sql/` | 表结构与 seed |
-| `tests/` | 单元测试 |
-
 ## 文档
 
-- [系统架构](docs/ARCHITECTURE.md)：数据模型、采集状态机、检索、Agent 图、证据与引用、记忆、Trace。
+- [系统架构](docs/ARCHITECTURE.md)：数据模型、采集状态机、检索、Agent 图、证据与引用、记忆、Trace、工程文件映射。
 - [开发与运维](docs/OPERATIONS.md)：环境变量、本地开发、测试、部署、采集运维、来源维护。
 - [评测](docs/EVALUATION.md)：评测方法、通过条件与运行步骤。
 

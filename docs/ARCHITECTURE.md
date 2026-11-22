@@ -4,7 +4,10 @@ TechNews Intelligence 由采集管线、存储层、Agent 运行时、交互入�
 
 ## 总览
 
-![系统架构](architecture.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="architecture-dark.svg">
+  <img src="architecture-light.svg" alt="系统架构">
+</picture>
 
 ## 数据采集链路
 
@@ -374,6 +377,19 @@ Web 和 Telegram 向 `run_turn` 传入 `user_key`，回答为 `answered` 时调�
 | 前端 | 聊天头部的关注按钮在左侧展开关注列表，可添加和删除 |
 
 ## 工程文件映射
+
+| 路径 | 内容 |
+| --- | --- |
+| `ingest/` | 采集管线 |
+| `agent/` | Agent：编排、工具、检索、证据与引用、记忆、Trace、MCP |
+| `app/` | Web API、Trace Console 后端、Telegram Bot、CLI |
+| `common/` | 共用模块：数据库连接、模型工厂、地址归一、领域与类型词表 |
+| `web/chat/` | 网页对话前端 |
+| `web/trace/` | Trace Console 前端 |
+| `eval/` | 评测与验收脚本 |
+| `scripts/` | 数据库、冒烟、实体别名和编码检查脚本 |
+| `sql/` | 表结构与 seed |
+| `tests/` | 单元测试 |
 
 | 目录/文件 | 内容 |
 | --- | --- |

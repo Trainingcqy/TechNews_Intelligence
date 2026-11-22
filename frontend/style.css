@@ -63,20 +63,6 @@
     --button-on-ink: #ffffff;
     --status-success: #1e8e3e;
     --status-error: #d93025;
-    --subscribe-bg-spot: rgba(205, 229, 247, 0.82);
-    --subscribe-bg-spot-mid: rgba(226, 241, 251, 0.58);
-    --subscribe-bg-wash-a: rgba(235, 246, 253, 0.78);
-    --subscribe-bg-wash-b: rgba(248, 248, 244, 0.96);
-    --subscribe-bg-wash-c: rgba(232, 244, 252, 0.50);
-    --subscribe-diag: rgba(17, 17, 17, 0.28);
-    --subscribe-sheen: rgba(255, 255, 255, 0.34);
-    --subscribe-right-line: rgba(17, 17, 17, 0.10);
-    --subscribe-corner-curve: rgba(17, 17, 17, 0.12);
-    --source-border: rgba(17, 17, 17, 0.34);
-    --source-bg: rgba(248, 248, 244, 0.34);
-    --source-checked-bg: rgba(220, 235, 247, 0.82);
-    --secondary-hover-bg: rgba(220, 235, 247, 0.54);
-    --danger-hover: #7b1d1d;
     --transition-fast: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -135,20 +121,6 @@
         --button-on-ink: #0d1117;
         --status-success: #79c58d;
         --status-error: #ff8d80;
-        --subscribe-bg-spot: rgba(25, 54, 77, 0.76);
-        --subscribe-bg-spot-mid: rgba(20, 42, 60, 0.56);
-        --subscribe-bg-wash-a: rgba(17, 33, 45, 0.88);
-        --subscribe-bg-wash-b: rgba(13, 18, 24, 0.96);
-        --subscribe-bg-wash-c: rgba(25, 44, 60, 0.58);
-        --subscribe-diag: rgba(226, 236, 246, 0.22);
-        --subscribe-sheen: rgba(255, 255, 255, 0.05);
-        --subscribe-right-line: rgba(226, 236, 246, 0.10);
-        --subscribe-corner-curve: rgba(226, 236, 246, 0.13);
-        --source-border: rgba(226, 236, 246, 0.44);
-        --source-bg: rgba(18, 28, 38, 0.48);
-        --source-checked-bg: rgba(24, 48, 68, 0.88);
-        --secondary-hover-bg: rgba(24, 48, 68, 0.72);
-        --danger-hover: #ff9c92;
     }
 }
 
@@ -205,20 +177,6 @@
     --button-on-ink: #0d1117;
     --status-success: #79c58d;
     --status-error: #ff8d80;
-    --subscribe-bg-spot: rgba(25, 54, 77, 0.76);
-    --subscribe-bg-spot-mid: rgba(20, 42, 60, 0.56);
-    --subscribe-bg-wash-a: rgba(17, 33, 45, 0.88);
-    --subscribe-bg-wash-b: rgba(13, 18, 24, 0.96);
-    --subscribe-bg-wash-c: rgba(25, 44, 60, 0.58);
-    --subscribe-diag: rgba(226, 236, 246, 0.22);
-    --subscribe-sheen: rgba(255, 255, 255, 0.05);
-    --subscribe-right-line: rgba(226, 236, 246, 0.10);
-    --subscribe-corner-curve: rgba(226, 236, 246, 0.13);
-    --source-border: rgba(226, 236, 246, 0.44);
-    --source-bg: rgba(18, 28, 38, 0.48);
-    --source-checked-bg: rgba(24, 48, 68, 0.88);
-    --secondary-hover-bg: rgba(24, 48, 68, 0.72);
-    --danger-hover: #ff9c92;
 }
 
 :root[data-theme="light"] {
@@ -725,49 +683,6 @@ body {
     background: var(--swiss-line);
 }
 
-.auth-link-row {
-    margin-top: 18px;
-}
-
-.auth-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    text-decoration: none;
-    color: var(--swiss-ink);
-    font-size: 13px;
-    font-weight: 700;
-    padding: 0 0 3px;
-    border-radius: 0;
-    border-bottom: 1.5px solid var(--swiss-line);
-    transition: background 0.2s, color var(--transition-fast), transform 0.25s;
-}
-
-@media (hover: hover) and (pointer: fine) {
-    .auth-link:hover {
-        background: transparent;
-        border-color: var(--swiss-ink);
-        transform: translateX(3px);
-    }
-}
-
-.auth-link:active {
-    background: transparent;
-    transform: translateX(2px) scale(0.9);
-}
-
-.auth-link .material-symbols-outlined {
-    font-size: 18px;
-}
-
-#auth-view .auth-link-row {
-    text-align: center;
-}
-
-#auth-view .auth-link {
-    justify-content: center;
-}
-
 .status-msg {
     font-size: 13px;
     min-height: 20px;
@@ -781,10 +696,6 @@ body {
 
 .status-msg.error {
     color: var(--status-error);
-}
-
-.status-msg.info {
-    color: var(--primary-blue);
 }
 
 /* ===== Chat View ===== */
@@ -1563,14 +1474,6 @@ body {
 
     #auth-view .auth-card {
         margin: 0 auto;
-    }
-
-    .auth-link-row {
-        text-align: center;
-    }
-
-    .auth-link {
-        justify-content: center;
     }
 
     .auth-title {

@@ -16,7 +16,6 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import EmailStr
 
 from agent import memory
 from app import rate_limit, security
@@ -26,11 +25,8 @@ from app.schemas import (
     ChatResponse,
     FollowRequest,
     QuotaResponse,
-    SubscriptionRequest,
-    SubscriptionResponse,
-    UnsubscribeRequest,
 )
-from app.services import access_token_service, chat_service, subscription_service
+from app.services import access_token_service, chat_service
 from services.db import close_db_pool, init_db_pool
 
 logging.basicConfig(
@@ -74,26 +70,6 @@ def _user_key(token_info: dict) -> str:
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/subscription-options")
-def get_subscription_options():
-    return subscription_service.subscription_options()
-
-
-@app.get("/subscriptions", response_model=SubscriptionResponse)
-def get_subscription(email: EmailStr):
-    return subscription_service.get_subscription_by_email(str(email))
-
-
-@app.post("/subscriptions", response_model=SubscriptionResponse)
-def subscribe_daily_brief(body: SubscriptionRequest):
-    return subscription_service.subscribe_daily_brief(body)
-
-
-@app.post("/subscriptions/unsubscribe")
-def unsubscribe_daily_brief(body: UnsubscribeRequest):
-    return subscription_service.unsubscribe_daily_brief(body)
 
 
 @app.post("/request-access")

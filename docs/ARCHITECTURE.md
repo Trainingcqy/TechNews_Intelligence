@@ -136,12 +136,12 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 | --- | --- |
 | 旧采集链路（不再更新） | `tech_news`, `tech_news_failed`, `jina_raw_logs`, `news_embeddings`, `news_search_index`, `source_registry`, `system_logs` |
 | 实体 | `entity_registry`, `entity_alias`, `entity_alias_candidate`, `news_entity_mentions` |
-| 订阅与访问 | `subscribers`, `access_tokens` |
+| 访问 | `access_tokens` |
 | 用户记忆 | `user_follow`, `user_story_seen` |
 | 对话 | `conversation_threads`, `conversation_messages` |
 | Trace | `agent_runs`, `agent_trace_spans`, `agent_model_io` |
 
-`thread_memory_summaries` 和 `thread_evidence_index` 两张表保留在 schema 中，没有读写方。`view_dashboard_news` 是读旧表的视图，供 Metabase 和实体别名脚本使用。
+`subscribers`、`thread_memory_summaries` 和 `thread_evidence_index` 三张表保留在 schema 中，没有读写方。`view_dashboard_news` 是读旧表的视图，供 Metabase 和实体别名脚本使用。
 
 数据层约定：
 
@@ -411,7 +411,7 @@ Web 和 Telegram 向 `run_turn` 传入 `user_key`，回答为 `answered` 时调�
 | `services/script_env.py` | 读取仓库根目录的 `.env`。 |
 | `services/agent_trace_store.py` | Trace 持久化到 PostgreSQL。 |
 | `services/conversations.py` | 对话线程与消息。 |
-| `app/api.py` | Web/API、流式输出、token 配额、订阅和关注项接口。 |
+| `app/api.py` | Web/API、流式输出、token 配额和关注项接口。 |
 | `app/trace_api.py` | Trace Console 后端 API。 |
 | `trace_dashboard/` | Trace Console 前端。 |
 | `eval/` | 离线评测、验收与统计脚本，`legacy/` 存放归档的评测。 |

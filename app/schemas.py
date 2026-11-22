@@ -44,24 +44,3 @@ class QuotaResponse(BaseModel):
     remaining: int
     status: str
     unlimited: bool = False
-
-
-class SubscriptionRequest(BaseModel):
-    email: EmailStr
-    name: str | None = None
-    sources: list[str] | None = None
-    frequency: str = "daily"
-    timezone: str = "Asia/Shanghai"
-
-
-class UnsubscribeRequest(BaseModel):
-    email: EmailStr
-
-
-class SubscriptionResponse(BaseModel):
-    email: EmailStr
-    name: str | None = None
-    is_active: bool
-    sources: list[str]
-    frequency: str
-    timezone: str

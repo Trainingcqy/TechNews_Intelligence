@@ -57,7 +57,7 @@ cp .env.example .env
 | `VERTEX_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS` | bot、api。综合模型用 Vertex AI。`GOOGLE_APPLICATION_CREDENTIALS` 是服务账号 JSON 的宿主机路径，只读挂载到容器内的 `/run/secrets/gcp-sa.json`，容器内的同名变量在 compose 中固定为这个路径。 |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` | bot。`TELEGRAM_ADMIN_IDS` 是允许执行 `/settings`、`/quota` 的用户 ID，逗号分隔。 |
 | `CORS_ORIGINS`, `API_BASE_URL`, `APPROVE_LINK_SECRET` | api。前端的跨域来源、审批链接使用的公开 API 地址、审批链接的签名密钥。 |
-| `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL` | `SMTP_USER`、`SMTP_PASS` 传给 ingest、api；`ADMIN_EMAIL` 传给 ingest、api、trace。ingest 的告警和 api 的订阅审批邮件发到 `ADMIN_EMAIL`，发信服务器为代码默认的 `smtp.gmail.com:587`。 |
+| `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL` | `SMTP_USER`、`SMTP_PASS` 传给 ingest、api；`ADMIN_EMAIL` 传给 ingest、api、trace。ingest 的告警和 api 的额度审批邮件发到 `ADMIN_EMAIL`，发信服务器为代码默认的 `smtp.gmail.com:587`。 |
 | `TRACE_DASHBOARD_TOKEN` | trace。Trace Console 管理员访问 token。 |
 | `HTTP_PROXY`, `HTTPS_PROXY` | ingest、bot、api。服务器不能直连 DeepSeek、Google、Jina 时填写。 |
 

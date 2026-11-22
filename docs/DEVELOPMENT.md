@@ -210,7 +210,7 @@ CI 步骤：
 | `app/` | API、Trace API、Telegram Bot、CLI。 |
 | `services/` | DB、对话线程、Trace Store、邮件、模型工厂、地址归一、领域与类型词表。 |
 | `trace_dashboard/` | Vue3 Trace Console。 |
-| `frontend/` | 静态落地页与订阅页面。 |
+| `frontend/` | 静态落地页与对话页面。 |
 | `eval/` | 评测与验收脚本、评分、报告生成、Trace 查询；`legacy/` 存放归档的评测。 |
 | `tests/unit/` | 单元测试。 |
 | `tests/fixtures/ingest/` | 采集解析层的录制样本。 |

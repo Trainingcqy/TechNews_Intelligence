@@ -33,7 +33,7 @@ TechNews Intelligence 是面向科技新闻的自动化情报系统。采集管�
 | `app/` | FastAPI 主服务、Trace Console 服务、Telegram Bot、本地 CLI。 |
 | `services/` | PostgreSQL 连接、对话线程、Trace 持久化、邮件、模型工厂、地址归一、领域与类型词表。 |
 | `trace_dashboard/` | Vue3/Vite Trace 可视化面板。 |
-| `frontend/` | 静态落地页与订阅页面。 |
+| `frontend/` | 静态落地页与对话页面。 |
 | `eval/` | 评测与验收脚本、Trace 查询、编码守卫；`legacy/` 存放归档的评测。 |
 | `sql/` | 数据库 schema、视图、seed、分析 SQL。 |
 | `docker-compose.yml`、`.env.example` | 仓库根目录的 Docker Compose 配置与环境变量模板。 |

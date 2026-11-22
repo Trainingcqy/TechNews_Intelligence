@@ -1,10 +1,10 @@
 """Statistics for the taxonomy trial (plan 28.1, "分类试标").
 
-Read-only. Reads the sample written by build_sample.py and, from `news.article`, the labels
+Read-only. Reads the sample `sample.json` and, from `news.article`, the labels
 `python -m ingest relabel` wrote for it (`label_source = 'model'`). Two subcommands:
 
-    python eval/taxonomy/score.py sheet  --sample runs/sample.json --out runs/spot_check.md   # 100-article sheet
-    python eval/taxonomy/score.py report --sample runs/sample.json [--sheet runs/spot_check.md]
+    python eval/taxonomy/score.py sheet  --out runs/spot_check.md   # 100-article sheet
+    python eval/taxonomy/score.py report [--sheet runs/spot_check.md]
 """
 
 from __future__ import annotations
@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("sheet", "report"):
         command = commands.add_parser(name)
-        command.add_argument("--sample", type=Path, default=Path(__file__).parent / "runs" / "sample.json")
+        command.add_argument("--sample", type=Path, default=Path(__file__).parent / "sample.json")
         add_db_args(command)
     commands.choices["sheet"].add_argument("--out", type=Path, default=Path(__file__).parent / "runs" / "spot_check.md")
     commands.choices["sheet"].add_argument("--n", type=int, default=100)

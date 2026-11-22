@@ -60,15 +60,6 @@ KIND_SCOPES: dict[str, str] = {
 
 EVENT_KINDS = ("news", "release", "research")
 
-LEGACY_CATEGORY_MAP: dict[str, tuple[str, ...]] = {
-    "AI": ("ai",),
-    "安全": ("security",),
-    "开发": ("software",),
-    "商业": ("business",),
-    "硬件": (),
-    "生态": (),
-}
-
 
 def validate_topics(topics: list[str]) -> list[str]:
     if not 1 <= len(topics) <= 3:

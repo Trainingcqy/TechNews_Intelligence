@@ -74,10 +74,10 @@ Agent 评测遵循同一条 5 步流水线；差异只在"造什么题、捕获�
 
 数据层的脚本默认从仓库根目录的 `.env` 读取数据库配置，可用 `--env-file` 指定其他文件；对数据库只读。
 
-**分类试标**（`eval/taxonomy/build_sample.py`、`score.py`，标注用 `python -m ingest relabel`）：
+**分类试标**（样本 `eval/taxonomy/sample.json`、`sample_keys.txt`，统计脚本 `score.py`，标注用 `python -m ingest relabel`）：
 
-1. `build_sample.py` 抽样：旧分类每类 50 篇；另从标题含 AI 实验室或模型名的文章中随机抽 200 篇；另取全部相似度不低于 0.94 且相隔不超过 3 天的文章对。输出 `sample.json` 与 `sample_keys.txt`（每行一个 `url_key`）。
-2. `python -m ingest relabel --keys-file sample_keys.txt` 标注这些文章。
+1. 样本取自切换前的旧表：旧分类每类 50 篇；另从标题含 AI 实验室或模型名的文章中随机抽 200 篇；另取全部相似度不低于 0.94 且相隔不超过 3 天的文章对。`sample.json` 记录每篇文章的旧分类、所属分层、文章对和抽样参数，`sample_keys.txt` 每行一个 `url_key`。
+2. `python -m ingest relabel --keys-file eval/taxonomy/sample_keys.txt` 标注这些文章。
 3. `score.py sheet` 生成 100 篇的人工抽检表，`score.py report` 统计下表指标。
 
 | 指标 | 通过条件 |
@@ -201,8 +201,7 @@ python eval/rgb/run_rgb_rejection.py --limit 0
 
 ```bash
 # 分类试标
-python eval/taxonomy/build_sample.py                                   # -> runs/sample.json、runs/sample_keys.txt
-python -m ingest relabel --keys-file eval/taxonomy/runs/sample_keys.txt
+python -m ingest relabel --keys-file eval/taxonomy/sample_keys.txt
 python eval/taxonomy/score.py sheet                                    # -> runs/spot_check.md（人工抽检表）
 python eval/taxonomy/score.py report --sheet eval/taxonomy/runs/spot_check.md
 

@@ -116,7 +116,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 ### 数据库与数据层约定
 
-数据库启用 `vector` 和 `pg_trgm` 扩展。`news` schema 由 `sql/schema/news_schema.sql` 管理，其余表由 `sql/schema/schema_ddl.sql` 管理，两者都由 `scripts/db/apply_schema.sh` 执行。
+数据库启用 `vector` 和 `pg_trgm` 扩展。`news` schema 由 `sql/news.sql` 管理，其余表由 `sql/public.sql` 管理，两者都由 `scripts/db/apply_schema.sh` 执行。
 
 `public` schema 中的表：
 
@@ -133,7 +133,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 数据层约定：
 
-- 检索的精确召回路用 `entity_registry`、`entity_alias` 把查询扩展为别名词项，这两张表由 `sql/seeds/seed_entity_core.sql` 和别名候选脚本维护。
+- 检索的精确召回路用 `entity_registry`、`entity_alias` 把查询扩展为别名词项，这两张表由 `sql/seed_entities.sql` 和别名候选脚本维护。
 - 向量检索只作为候选召回来源，最终回答仍须经证据登记表和引用校验。
 - `agent_model_io` 可能包含完整模型输入输出，只通过 Trace Console 和受控脚本读取，不作为常规业务接口返回。
 
@@ -240,7 +240,7 @@ flowchart TD
 
 **用户标识** `user_key`：Web 取 `email:` 加访问令牌对应的邮箱，Telegram 取 `tg:` 加 chat id。CLI 和 MCP 没有用户标识，不启用记忆：`run_turn` 的 `user_key` 为空时，`prepare` 与 `collect` 不读取记忆。
 
-**存储**：表定义在 `sql/schema/schema_ddl.sql`。
+**存储**：表定义在 `sql/public.sql`。
 
 | 表 | 字段 | 约束 |
 | --- | --- | --- |

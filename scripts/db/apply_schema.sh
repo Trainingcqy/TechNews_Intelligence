@@ -9,8 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMMON_LIB="${SCRIPT_DIR}/common.sh"
-SCHEMA_SQL="${REPO_ROOT}/sql/schema/schema_ddl.sql"
-NEWS_SQL="${REPO_ROOT}/sql/schema/news_schema.sql"
+SCHEMA_SQL="${REPO_ROOT}/sql/public.sql"
+NEWS_SQL="${REPO_ROOT}/sql/news.sql"
 VIEW_SQL="${REPO_ROOT}/sql/views/view_dashboard_news.sql"
 
 usage() {

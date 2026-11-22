@@ -123,7 +123,7 @@ CI 工作流 `.github/workflows/ci.yml` 在 Python 3.12 上安装依赖，运行
 - Agent 编排、工具和检索在 `agent/`，LangGraph 只在 `agent/graph/` 中导入；检索、工具、证据登记表和引用校验不依赖图。
 - 采集管线在 `ingest/`：解析和判定逻辑是不访问网络与数据库的纯函数，HTTP 请求经 `ingest/http.py`，模型调用在 `ingest/analyze.py`，SQL 集中在 `ingest/store.py`。
 - 采集、Agent、入口共用的模块在 `common/`。
-- `news` schema 的结构变更写入 `sql/schema/news_schema.sql`，其余表的结构变更写入 `sql/schema/schema_ddl.sql`。
+- `news` schema 的结构变更写入 `sql/news.sql`，其余表的结构变更写入 `sql/public.sql`。
 - 部署和数据库运维脚本放入 `scripts/`，评测逻辑放入 `eval/`，测试放入 `tests/unit/`。
 - 运行产物（`reports/`、`data/`、缓存、构建产物、虚拟环境）不纳入版本控制。
 
@@ -157,9 +157,9 @@ docker compose logs -f ingest
 
 ### 数据库结构与 Seed
 
-`bash scripts/db/apply_schema.sh` 依次执行 `sql/schema/schema_ddl.sql`、`sql/schema/news_schema.sql`、`sql/views/view_dashboard_news.sql`，可重复执行，由自动部署调用。
+`bash scripts/db/apply_schema.sh` 依次执行 `sql/public.sql`、`sql/news.sql`、`sql/views/view_dashboard_news.sql`，可重复执行，由自动部署调用。
 
-`bash scripts/db/apply_seed.sh` 手动导入实体和别名基础数据，`--seed-file sql/seeds/seed_entity_core.sql` 指定单个文件。来源不走 seed，见「来源维护」。
+`bash scripts/db/apply_seed.sh` 手动导入实体和别名基础数据（`sql/seed_entities.sql`），可重复执行。来源不走 seed，见「来源维护」。
 
 ### Cloudflare Tunnel
 

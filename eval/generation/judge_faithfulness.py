@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.script_env import load_env  # noqa: E402
+from common.script_env import load_env  # noqa: E402
 
 from eval.eval_retry import call_with_retry  # noqa: E402
 
@@ -82,7 +82,7 @@ def _read_done(path: Path) -> set[str]:
 
 
 def _answer_url_leaks(answer: str) -> list[str]:
-    from services.urls import extract_urls  # noqa: E402
+    from common.urls import extract_urls  # noqa: E402
 
     return sorted(set(extract_urls(answer)))
 
@@ -237,7 +237,7 @@ def main() -> int:
 
     if not args.report_only:
         from agent.llm import build_models, coerce_to_text, extract_json_object  # noqa: E402
-        from services.llm_provider import build_chat_model  # noqa: E402
+        from common.llm_provider import build_chat_model  # noqa: E402
 
         # The judge is the production final model, AGENT_FINAL_*.
         final = build_models()[1]

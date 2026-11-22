@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_access_tokens_schema_declares_tier_lifecycle_columns() -> None:
-    ddl = (PROJECT_ROOT / "sql/infrastructure/schema/schema_ddl.sql").read_text(encoding="utf-8")
+    ddl = (PROJECT_ROOT / "sql/schema/schema_ddl.sql").read_text(encoding="utf-8")
 
     assert "quota       INT          NOT NULL DEFAULT 10" in ddl
     assert "status      VARCHAR(20)  NOT NULL DEFAULT 'active',   -- active / pending / capped" in ddl

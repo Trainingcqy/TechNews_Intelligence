@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.script_env import load_env  # noqa: E402
+from common.script_env import load_env  # noqa: E402
 
 MAX_CASE_ID_CHARS = 40  # request_id (eval_acc_<case_id>_<8 hex>) must fit agent_runs.request_id VARCHAR(64)
 
@@ -123,7 +123,7 @@ def _trace_facts(request_id: str, fetch: Callable[[str, tuple], list[tuple]]) ->
 
 
 def _db_fetch(sql: str, params: tuple) -> list[tuple]:
-    from services.db import db_cursor
+    from common.db import db_cursor
 
     with db_cursor() as (_, cur):
         cur.execute(sql, params)

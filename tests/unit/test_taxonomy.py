@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.taxonomy import LEGACY_CATEGORY_MAP, validate_kind, validate_topics
+from common.taxonomy import LEGACY_CATEGORY_MAP, validate_kind, validate_topics
 
 
 @pytest.mark.parametrize("topics", [["general"], ["policy", "ai", "business"]])

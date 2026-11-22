@@ -21,10 +21,10 @@ project_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import services.script_env  # noqa: E402
+import common.script_env  # noqa: E402
 
 # Tests never read the developer's .env, which holds real keys and the production database address.
-services.script_env.load_env = lambda path=None: None
+common.script_env.load_env = lambda path=None: None
 
 import psycopg2  # noqa: E402
 import psycopg2.pool  # noqa: E402
@@ -132,15 +132,15 @@ def tmp_path(request: pytest.FixtureRequest) -> Iterator[Path]:
 @pytest.fixture()
 def agent_dependency_stubs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Provide lightweight stubs for DB-related optional dependencies."""
-    if "services" not in sys.modules:
+    if "common" not in sys.modules:
         try:
-            importlib.import_module("services")
+            importlib.import_module("common")
         except Exception:
-            services_mod = types.ModuleType("services")
-            services_mod.__path__ = []
-            monkeypatch.setitem(sys.modules, "services", services_mod)
+            common_mod = types.ModuleType("common")
+            common_mod.__path__ = []
+            monkeypatch.setitem(sys.modules, "common", common_mod)
 
-    db_mod = types.ModuleType("services.db")
+    db_mod = types.ModuleType("common.db")
     db_mod.get_conn = MagicMock()
     db_mod.put_conn = MagicMock()
     db_mod.init_db_pool = MagicMock()
@@ -148,12 +148,12 @@ def agent_dependency_stubs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     @contextmanager
     def _unconfigured_db_context():
-        raise RuntimeError("services.db test stub is not configured for DB access")
+        raise RuntimeError("common.db test stub is not configured for DB access")
         yield  # pragma: no cover
 
     db_mod.db_cursor = _unconfigured_db_context
     db_mod.db_transaction = _unconfigured_db_context
-    monkeypatch.setitem(sys.modules, "services.db", db_mod)
+    monkeypatch.setitem(sys.modules, "common.db", db_mod)
 
     psycopg2_mod = types.ModuleType("psycopg2")
     psycopg2_extras = types.ModuleType("psycopg2.extras")

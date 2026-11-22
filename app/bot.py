@@ -19,8 +19,8 @@ from telegram.ext import (
 )
 
 from agent import memory, run_turn
-from services.db import init_db_pool, close_db_pool, get_conn, put_conn
-from services.script_env import load_env
+from common.db import init_db_pool, close_db_pool, get_conn, put_conn
+from common.script_env import load_env
 
 load_env()
 

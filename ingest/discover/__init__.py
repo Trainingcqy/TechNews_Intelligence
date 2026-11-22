@@ -17,8 +17,8 @@ from ingest.discover.reference import parse_reference_feed
 from ingest.discover.sitemap import parse_sitemap
 from ingest.models import Candidate
 from ingest.sources import resolve_publisher
-from services.mail import _send
-from services.urls import host_of, url_key
+from common.mail import _send
+from common.urls import host_of, url_key
 
 logger = logging.getLogger(__name__)
 

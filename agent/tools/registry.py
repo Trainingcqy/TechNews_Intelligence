@@ -14,7 +14,7 @@ from agent.trace import trace_span
 from agent.evidence import EvidenceRegistry
 from agent.retrieval.search import SearchResult
 from agent.types import Evidence
-from services.taxonomy import KINDS, TOPICS
+from common.taxonomy import KINDS, TOPICS
 
 from .read import ReadResult, commit_read_articles, run_read_articles
 from .search import commit_search_news, run_search_news

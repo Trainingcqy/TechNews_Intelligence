@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.db import db_cursor  # noqa: E402
+from common.db import db_cursor  # noqa: E402
 
 # Median latency in seconds before the redesign, over requests since 2026-06-01.
 # The intent node (10.0 s) has no counterpart in the new chain.

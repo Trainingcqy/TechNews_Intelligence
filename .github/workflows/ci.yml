@@ -5,9 +5,10 @@ on:
     paths:
       - "agent/**"
       - "app/**"
-      - "services/**"
+      - "common/**"
       - "ingest/**"
       - "eval/**"
+      - "scripts/**"
       - "tests/**"
       - "requirements.txt"
       - "constraints.txt"
@@ -18,9 +19,10 @@ on:
     paths:
       - "agent/**"
       - "app/**"
-      - "services/**"
+      - "common/**"
       - "ingest/**"
       - "eval/**"
+      - "scripts/**"
       - "tests/**"
       - "requirements.txt"
       - "constraints.txt"
@@ -69,9 +71,9 @@ jobs:
             fi
           fi
           sed -i '/^\s*$/d' .tmp/encoding_guard_paths.txt
-          python eval/encoding_guard.py \
+          python scripts/encoding_guard.py \
             --root . \
-            --report eval/reports/encoding_guard/ci.json \
+            --report reports/encoding_guard/ci.json \
             --paths-file .tmp/encoding_guard_paths.txt \
             --github-annotations
 
@@ -84,5 +86,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: encoding-guard-report
-          path: eval/reports/encoding_guard/ci.json
+          path: reports/encoding_guard/ci.json
           if-no-files-found: warn

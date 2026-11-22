@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services import conversations as conv_mod
+from app import conversations as conv_mod
 
 
 class _FakeCursor:

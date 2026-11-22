@@ -5,7 +5,7 @@ import re
 from agent.config import BEIJING
 from agent.evidence import EvidenceRegistry
 from agent.types import Answer, Evidence, Source
-from services.urls import _URL_RE
+from common.urls import _URL_RE
 
 NOT_FOUND_TEXT = {
     "zh": "新闻库中没有找到相关报道。新闻库只收录固定的科技媒体、公司官方渠道和 HackerNews 首页的文章，"

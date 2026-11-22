@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.common import add_db_args, answer_line, configure_stdout, readonly_cursor  # noqa: E402
+from eval.helpers import add_db_args, answer_line, configure_stdout, readonly_cursor  # noqa: E402
 
 SAME, CROSS = "same", "cross"
 LO, HI = 0.75, 0.95

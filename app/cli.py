@@ -2,14 +2,14 @@
 
 from dataclasses import asdict
 
-from services.script_env import load_env
+from common.script_env import load_env
 
 
 def main():
     load_env()
 
     from agent import run_turn
-    from services.db import close_db_pool
+    from common.db import close_db_pool
 
     history: list[dict] = []
 

@@ -16,7 +16,7 @@ from ingest.discuss import run_discuss
 from ingest.embed import run_embed
 from ingest.fetch import run_fetch
 from ingest.stories import link_pending
-from services.db import db_transaction, get_conn, put_conn
+from common.db import db_transaction, get_conn, put_conn
 
 logger = logging.getLogger(__name__)
 

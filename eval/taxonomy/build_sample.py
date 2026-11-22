@@ -29,9 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.common import add_db_args, configure_stdout, parse_time, pct, readonly_cursor  # noqa: E402
-from services.taxonomy import LEGACY_CATEGORY_MAP  # noqa: E402
-from services.urls import url_key  # noqa: E402
+from eval.helpers import add_db_args, configure_stdout, parse_time, pct, readonly_cursor  # noqa: E402
+from common.taxonomy import LEGACY_CATEGORY_MAP  # noqa: E402
+from common.urls import url_key  # noqa: E402
 
 # AI labs and model families; matched case-insensitively on word boundaries in the original title.
 LAB_NAMES = (

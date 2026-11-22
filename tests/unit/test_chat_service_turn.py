@@ -14,7 +14,7 @@ from agent import Answer, Delta, EvidenceFound, Final, Progress
 from agent.types import Source
 from app import streaming
 from app.schemas import ChatRequest
-from app.services import chat_service
+from app import chat_service
 
 SOURCE = Source(
     n=1, url="https://example.com/a", title="Title", title_zh="标题", source="Example", published_at="2026-11-12"

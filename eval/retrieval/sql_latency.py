@@ -27,7 +27,7 @@ from agent.retrieval.hybrid import fetch_hybrid_rows  # noqa: E402
 from agent.retrieval.recall_profile import resolve_recall_profile  # noqa: E402
 from agent.retrieval.search import MAX_ARTICLE_LIMIT, time_window  # noqa: E402
 from agent.tools.registry import SearchNewsArgs  # noqa: E402
-from eval.common import add_db_args, configure_stdout, readonly_cursor  # noqa: E402
+from eval.helpers import add_db_args, configure_stdout, readonly_cursor  # noqa: E402
 
 QUERIES = Path(__file__).with_name("queries.jsonl")
 

@@ -11,8 +11,8 @@ from ingest import store
 from ingest.fetch import clean_body
 from ingest.reader import _EMPTY_BODY_CHARS, parse_reader_response
 from ingest.sources import resolve_publisher
-from services.taxonomy import LEGACY_CATEGORY_MAP
-from services.urls import url_key
+from common.taxonomy import LEGACY_CATEGORY_MAP
+from common.urls import url_key
 
 EMBEDDING_MODEL = "jina-embeddings-v3"
 HN_SOURCE_KEY = "hackernews_frontpage"

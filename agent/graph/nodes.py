@@ -27,7 +27,7 @@ from agent.tools.registry import (
     tool_schemas,
 )
 from agent.types import Answer, Evidence, EvidenceFound, Progress
-from services.urls import extract_urls, url_key
+from common.urls import extract_urls, url_key
 
 logger = logging.getLogger(__name__)
 

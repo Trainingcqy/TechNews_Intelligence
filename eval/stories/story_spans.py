@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.common import add_db_args, answer_line, configure_stdout, parse_time, pct, read_choices, readonly_cursor  # noqa: E402
+from eval.helpers import add_db_args, answer_line, configure_stdout, parse_time, pct, read_choices, readonly_cursor  # noqa: E402
 
 MULTI_EVENT_LIMIT = 0.10
 SIZE_BUCKETS = ((1, 1), (2, 2), (3, 3), (4, 5), (6, 10), (11, None))

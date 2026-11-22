@@ -4,11 +4,11 @@ TechNews Intelligence 由采集管线、存储层、Agent 运行时、交互入�
 
 ## 总览
 
-![系统总览](architecture_overview.svg)
+![系统架构](architecture.svg)
 
 ## 数据采集链路
 
-采集管线是仓库内的 Python 包 `ingest/`，以单进程循环运行，命令为 `python -m ingest loop`，每轮结束后等待 300 秒再开始下一轮。实时 Agent 不依赖它的运行状态：`ingest` 停止时，已入库的文章照常可以检索，只是不再增加。n8n 不再部署，`etl_workflow/` 中的工作流是旧采集链路的导出文件，只作存档。
+采集管线是仓库内的 Python 包 `ingest/`，以单进程循环运行，命令为 `python -m ingest loop`，每轮结束后等待 300 秒再开始下一轮。实时 Agent 不依赖它的运行状态：`ingest` 停止时，已入库的文章照常可以检索，只是不再增加。
 
 ### 来源
 
@@ -47,9 +47,9 @@ TechNews Intelligence 由采集管线、存储层、Agent 运行时、交互入�
 | `channel_poll`、`stage_failure` | 每次轮询的结果；阶段失败记录，只追加 |
 | `reference_headline` | 参照渠道的头条，不进语料 |
 
-- `article.url_key` 是文章去重的键，由 `services/urls.py` 的 `url_key` 生成：主机名转小写并去掉 `www.` 和默认端口，去掉 `utm_` 开头的参数和 `fbclid` 等追踪参数，其余参数按名排序，去掉路径末尾的斜杠。
+- `article.url_key` 是文章去重的键，由 `common/urls.py` 的 `url_key` 生成：主机名转小写并去掉 `www.` 和默认端口，去掉 `utm_` 开头的参数和 `fbclid` 等追踪参数，其余参数按名排序，去掉路径末尾的斜杠。
 - `event_at` 取发布时间，没有发布时间时取首次发现时间。HackerNews 的候选不带发布时间，按首次发现时间计。
-- 领域与类型是两个封闭词表，定义在 `services/taxonomy.py`，版本 1。领域 12 个：`ai`、`software`、`chips`、`devices`、`security`、`mobility`、`space_energy`、`internet`、`science`、`business`、`policy`、`general`，一篇文章 1 到 3 个。类型 9 个：`news`、`release`、`research`、`tutorial`、`opinion`、`project`、`discussion`、`promo`、`other`，一篇文章 1 个。没有指定类型、也没有检索词的浏览只看 `news`、`release`、`research` 三类。
+- 领域与类型是两个封闭词表，定义在 `common/taxonomy.py`，版本 1。领域 12 个：`ai`、`software`、`chips`、`devices`、`security`、`mobility`、`space_energy`、`internet`、`science`、`business`、`policy`、`general`，一篇文章 1 到 3 个。类型 9 个：`news`、`release`、`research`、`tutorial`、`opinion`、`project`、`discussion`、`promo`、`other`，一篇文章 1 个。没有指定类型、也没有检索词的浏览只看 `news`、`release`、`research` 三类。
 
 ### 处理阶段与状态机
 
@@ -95,7 +95,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 - **discover**：feed 用 `feedparser` 解析，站点地图按路径片段和 `<lastmod>` 过滤，HackerNews 取 Algolia 首页接口。渠道设了 `body_from_feed` 且 feed 自带的正文不短于 1,500 字符时，新文章入库时直接写入正文并置为 `fetched`；HackerNews 自发帖的地址指向评论页，不经过 Reader，正文不短于 200 字符时直接写入。渠道 `config` 可设 `body_from_feed`、`lookback_days`（默认 3 天）、`url_pattern`、`max_path_segments`、`discussion_after_hours`、`discussion_min_comments`。请求带上次保存的 `ETag` 和 `Last-Modified`。渠道连续失败 3 次时向 `ADMIN_EMAIL` 发告警邮件。参照渠道走同一套轮询，条目写入 `reference_headline`，不进入后续阶段。
 - **fetch**：经 Jina Reader 获取正文，写入前去掉图片标记，把 Markdown 链接替换为链接文字，并去掉 NUL 字符。
-- **analyze**：输入是标题、发布方和正文的前 30,000 字符，默认模型为 `deepseek-flash`，输出经 `services/taxonomy.py` 的词表校验。校验失败时在同一次尝试内带着错误信息重发一次。
+- **analyze**：输入是标题、发布方和正文的前 30,000 字符，默认模型为 `deepseek-flash`，输出经 `common/taxonomy.py` 的词表校验。校验失败时在同一次尝试内带着错误信息重发一次。
 - **embed**：模型 `jina-embeddings-v3`，输入为中文摘要，所有摘要都是中文，中英文报道因此落在同一向量空间。
 - **link**：最近邻在时间窗内精确排序，不经过向量索引。故事是单一事件，跨度上限在代码里执行；最近邻的编号和相似度无论是否达到阈值都记录。
 - **discuss**：取评论树中有正文的顶层评论，按后代评论数降序取前 30 条，每条截取前 800 字符，以原文存储，不由模型总结。
@@ -106,19 +106,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 - 整轮持有 PostgreSQL advisory lock（键 `0x6E657773`），同一时刻只有一个进程处理文章。拿不到锁时，手动执行的 `run` 以退出码 1 结束，`loop` 跳过本轮。
 - 各阶段的并发、每轮上限、请求超时、重试上限和分析模型是 `IngestConfig` 的字段，环境变量为 `INGEST_` 加字段名大写。
 - monitor 计算最近 24 小时的契约指标：领域或类型为空的篇数、摘要含英文双引号的篇数、摘要超长比例、新增可检索文章数、analyze 失败率、正文降级率、连续失败的渠道。其中摘要超长比例、新增可检索文章数、analyze 失败率、正文降级率四项与此前 14 天的每日中位数比较，基线不足 7 天时不判定。越限时向 `ADMIN_EMAIL` 发邮件。
-
-### 命令
-
-| 命令 | 作用 |
-| --- | --- |
-| `python -m ingest sync-sources` | 把 `sources.toml` 同步到数据库 |
-| `python -m ingest run [--stage <名称>] [--channel <键>]` | 执行一轮，不执行 monitor |
-| `python -m ingest loop [--interval 300]` | 常驻运行 |
-| `python -m ingest status` | 渠道最近一次成功轮询、`ready` 以外各状态的积压数、近 24 小时的失败分组 |
-| `python -m ingest requeue --status failed [--error-kind <类型>]` | 重新入队 |
-| `python -m ingest monitor [--dry-run]` | 计算契约指标并发告警 |
-| `python -m ingest migrate [--dry-run]` | 把旧表回填到 `news` schema |
-| `python -m ingest relabel [--limit N] [--keys-file <文件>]` | 对已有摘要的文章重标领域与类型 |
+- 管理命令见 [开发与运维](OPERATIONS.md) 的「采集运维」。
 
 ### 故事、讨论与重要性
 
@@ -128,7 +116,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 ### 数据库与数据层约定
 
-数据库启用 `vector` 和 `pg_trgm` 扩展。`news` schema 由 `sql/infrastructure/schema/news_schema.sql` 管理，其余表由 `sql/infrastructure/schema/schema_ddl.sql` 管理，两者都由 `deployment/scripts/db/apply_schema.sh` 执行。
+数据库启用 `vector` 和 `pg_trgm` 扩展。`news` schema 由 `sql/schema/news_schema.sql` 管理，其余表由 `sql/schema/schema_ddl.sql` 管理，两者都由 `scripts/db/apply_schema.sh` 执行。
 
 `public` schema 中的表：
 
@@ -145,7 +133,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 数据层约定：
 
-- 检索的精确召回路用 `entity_registry`、`entity_alias` 把查询扩展为别名词项，这两张表由 `sql/infrastructure/seeds/seed_entity_core.sql` 和别名候选脚本维护。
+- 检索的精确召回路用 `entity_registry`、`entity_alias` 把查询扩展为别名词项，这两张表由 `sql/seeds/seed_entity_core.sql` 和别名候选脚本维护。
 - 向量检索只作为候选召回来源，最终回答仍须经证据登记表和引用校验。
 - `agent_model_io` 可能包含完整模型输入输出，只通过 Trace Console 和受控脚本读取，不作为常规业务接口返回。
 
@@ -204,7 +192,7 @@ flowchart TD
 | gather | 取证：决定调用哪个工具、什么参数，不撰写最终回答 | DeepSeek，`deepseek-flash` | `AGENT_GATHER_PROVIDER`、`AGENT_GATHER_MODEL` |
 | final | 综合：依据证据块撰写回答；评测的判官也使用它 | Vertex AI，`gemini-3.1-pro-preview` | `AGENT_FINAL_PROVIDER`、`AGENT_FINAL_MODEL` |
 
-供应商只认 `gemini_api`、`vertex`、`deepseek` 三个名字，模型经 `services/llm_provider.py` 构建。取证模型须支持工具调用。
+供应商只认 `gemini_api`、`vertex`、`deepseek` 三个名字，模型经 `common/llm_provider.py` 构建。取证模型须支持工具调用。
 
 运行边界：
 
@@ -252,7 +240,7 @@ flowchart TD
 
 **用户标识** `user_key`：Web 取 `email:` 加访问令牌对应的邮箱，Telegram 取 `tg:` 加 chat id。CLI 和 MCP 没有用户标识，不启用记忆：`run_turn` 的 `user_key` 为空时，`prepare` 与 `collect` 不读取记忆。
 
-**存储**：表定义在 `sql/infrastructure/schema/schema_ddl.sql`。
+**存储**：表定义在 `sql/schema/schema_ddl.sql`。
 
 | 表 | 字段 | 约束 |
 | --- | --- | --- |
@@ -406,15 +394,13 @@ Web 和 Telegram 向 `run_turn` 传入 `user_key`，回答为 `answered` 时调�
 | `agent/types.py`、`agent/config.py` | 数据类与 `AgentConfig`。 |
 | `agent/trace.py` | 请求 Trace、span、模型 I/O 和运行时元数据。 |
 | `agent/mcp/` | MCP 服务与 stdio 入口。 |
-| `services/urls.py`、`services/taxonomy.py` | 地址归一、领域与类型词表，采集与 Agent 共用。 |
-| `services/llm_provider.py` | 三个供应商的聊天模型工厂。 |
-| `services/script_env.py` | 读取仓库根目录的 `.env`。 |
-| `services/agent_trace_store.py` | Trace 持久化到 PostgreSQL。 |
-| `services/conversations.py` | 对话线程与消息。 |
+| `common/urls.py`、`common/taxonomy.py` | 地址归一、领域与类型词表，采集与 Agent 共用。 |
+| `common/llm_provider.py` | 三个供应商的聊天模型工厂。 |
+| `common/script_env.py` | 读取仓库根目录的 `.env`。 |
+| `agent/trace_store.py` | Trace 持久化到 PostgreSQL。 |
+| `app/conversations.py` | 对话线程与消息。 |
 | `app/api.py` | Web/API、流式输出、token 配额和关注项接口。 |
 | `app/trace_api.py` | Trace Console 后端 API。 |
-| `trace_dashboard/` | Trace Console 前端。 |
-| `eval/` | 离线评测、验收与统计脚本，`legacy/` 存放归档的评测。 |
 
 ## LangSmith
 

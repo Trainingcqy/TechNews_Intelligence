@@ -1,76 +1,32 @@
-# 部署与运维
+# 开发与运维
 
-本文档描述生产和本地部署、数据库脚本、端口、Cloudflare Tunnel、采集管线、一次性切换与回退、n8n 存档、Metabase、Trace Console 和常用运维命令。
-
-## Docker Compose 服务
-
-Compose 文件是仓库根目录的 `docker-compose.yml`，项目名用 `name: deployment` 固定，PostgreSQL 的数据卷 `deployment_pg_data` 因此不随目录名变化。本文档中的 `docker compose` 命令都在仓库根目录执行。
-
-| 服务 | 容器 | 端口 | 职责 |
-| --- | --- | ---: | --- |
-| `postgres` | `tech_news_db` | `5432` | PostgreSQL + pgvector。 |
-| `ingest` | `tech_news_ingest` | 无 HTTP 端口 | 采集管线，命令 `python -m ingest loop`。 |
-| `metabase` | `tech_news_bi` | `3000` | BI 看板。 |
-| `api` | `tech_news_api` | `8000` | FastAPI 主入口。 |
-| `trace` | `tech_news_trace` | `8010` | Trace Console 服务。 |
-| `bot` | `tech_news_bot` | 无 HTTP 端口 | Telegram Bot。 |
-
-所有服务都配置了 `restart: always`。
-
-启动服务：
-
-```bash
-docker compose up -d
-```
-
-查看状态：
-
-```bash
-docker compose ps
-```
-
-查看日志：
-
-```bash
-docker compose logs -f ingest
-docker compose logs -f api
-docker compose logs -f trace
-docker compose logs -f bot
-```
+本文档描述环境变量、本地开发、部署和采集运维。系统设计见 [系统架构](ARCHITECTURE.md)。
 
 ## 环境变量
 
-环境变量模板是仓库根目录的 `.env.example`。本机和服务器都使用仓库根目录的 `.env`，两边的变量名相同。
+本机和服务器都使用仓库根目录的 `.env`，模板为 `.env.example`，两边的变量名相同：
 
 ```bash
 cp .env.example .env
 ```
 
-模板只列必须由部署者填写的变量：密钥，以及随部署环境变化、没有通用默认值的账号、地址和路径；只在服务器填写的变量在模板中是注释掉的。可调参数的默认值写在代码里，就是生产取值，不写进模板；需要修改时，在 `docker-compose.yml` 对应服务的 `environment` 中加一行。compose 自动读取同目录的 `.env` 并按服务传入容器，容器内没有 `.env` 文件。`deployment/scripts/db/` 的脚本也读这个文件。
+`app/` 的四个入口（`api`、`trace_api`、`bot`、`cli`）、`python -m ingest`、评测脚本和冒烟脚本经 `common/script_env.py` 的 `load_env()` 读取它，shell 中已设置的变量优先于文件；冒烟脚本和只读数据库的统计脚本可用 `--env-file` 指定其他文件。服务器上，compose 自动读取同目录的 `.env`，把各服务 `environment` 中列出的变量传入容器，容器内没有 `.env` 文件。`scripts/db/` 的脚本也读这个文件。
 
-必填项以及它们传给的服务：
+模板只列必须由部署者填写的变量：密钥，以及随部署环境变化、没有通用默认值的账号、地址和路径。只在服务器使用的变量在模板中是注释掉的。
 
-| 变量 | 传给 |
-| --- | --- |
-| `DB_USER`, `DB_PASS` | 同时是 postgres 容器的 `POSTGRES_USER`、`POSTGRES_PASSWORD`，并传给 ingest、bot、api、trace。`DB_NAME` 不填时为 `DB`，同样用于 postgres 容器的 `POSTGRES_DB` 并传给这四个服务。 |
-| `DEEPSEEK_API_KEY`, `JINA_API_KEY` | ingest、bot、api。取证模型与采集分析用 DeepSeek；向量、重排和 Reader 用 Jina。 |
-| `VERTEX_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS` | bot、api。综合模型用 Vertex AI。`GOOGLE_APPLICATION_CREDENTIALS` 是服务账号 JSON 的宿主机路径，只读挂载到容器内的 `/run/secrets/gcp-sa.json`，容器内的同名变量在 compose 中固定为这个路径。 |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` | bot。`TELEGRAM_ADMIN_IDS` 是允许执行 `/settings`、`/quota` 的用户 ID，逗号分隔。 |
-| `CORS_ORIGINS`, `API_BASE_URL`, `APPROVE_LINK_SECRET` | api。前端的跨域来源、审批链接使用的公开 API 地址、审批链接的签名密钥。 |
-| `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL` | `SMTP_USER`、`SMTP_PASS` 传给 ingest、api；`ADMIN_EMAIL` 传给 ingest、api、trace。ingest 的告警和 api 的额度审批邮件发到 `ADMIN_EMAIL`，发信服务器为代码默认的 `smtp.gmail.com:587`。 |
-| `TRACE_DASHBOARD_TOKEN` | trace。Trace Console 管理员访问 token。 |
-| `HTTP_PROXY`, `HTTPS_PROXY` | ingest、bot、api。服务器不能直连 DeepSeek、Google、Jina 时填写。 |
+| 变量 | 用途 | 传给 |
+| --- | --- | --- |
+| `DB_USER`, `DB_PASS` | 数据库账号，同时是 postgres 容器的 `POSTGRES_USER`、`POSTGRES_PASSWORD`。`DB_NAME` 不填时为 `DB`。本机的 `DB_HOST`、`DB_PORT` 默认为 `127.0.0.1`、`5555`，即经 SSH 隧道连接 | postgres、ingest、bot、api、trace |
+| `DEEPSEEK_API_KEY` | 取证模型与采集分析 | ingest、bot、api |
+| `JINA_API_KEY` | 向量、重排与 Reader | ingest、bot、api |
+| `VERTEX_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS` | 综合模型。后者是服务账号 JSON 的宿主机路径，compose 把它只读挂载到容器内的 `/run/secrets/gcp-sa.json`，容器内的同名变量固定为这个路径 | bot、api |
+| `HTTP_PROXY`, `HTTPS_PROXY` | 不能直连 DeepSeek、Google、Jina 时填写 | ingest、bot、api |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` | 服务器。后者是允许执行 `/settings`、`/quota` 的用户 ID，逗号分隔 | bot |
+| `CORS_ORIGINS`, `API_BASE_URL`, `APPROVE_LINK_SECRET` | 服务器。前端的跨域来源、审批链接使用的公开 API 地址、审批链接的签名密钥 | api |
+| `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL` | 服务器。ingest 的告警和 api 的额度审批邮件发到 `ADMIN_EMAIL`，发信服务器为代码默认的 `smtp.gmail.com:587` | `SMTP_USER`、`SMTP_PASS` 传给 ingest、api；`ADMIN_EMAIL` 传给 ingest、api、trace |
+| `TRACE_DASHBOARD_TOKEN` | 服务器。Trace Console 的访问 token，本机运行 Trace Console 时同样需要 | trace |
 
-端口变量，不填时取 compose 中的默认值：
-
-| 变量 | 默认值 |
-| --- | ---: |
-| `DB_PORT` | `5432` |
-| `METABASE_PORT` | `3000` |
-| `API_PORT` | `8000` |
-| `TRACE_DASHBOARD_PORT` | `8010` |
-
-`DB_PORT` 是 postgres 发布到宿主机的端口，绑定在 `127.0.0.1`。本机运行时不填这个变量，默认 `5555`，即 SSH 隧道。
+端口变量不填时取 compose 中的默认值：`DB_PORT` 为 `5432`，`METABASE_PORT` 为 `3000`，`API_PORT` 为 `8000`，`TRACE_DASHBOARD_PORT` 为 `8010`。`DB_PORT` 是 postgres 发布到宿主机的端口，绑定在 `127.0.0.1`；本机不填这个变量。
 
 生成 `APPROVE_LINK_SECRET`、`TRACE_DASHBOARD_TOKEN` 这类随机值：
 
@@ -80,13 +36,15 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ### 可调参数
 
+可调参数的默认值写在代码里，就是生产取值，不写进模板。本机修改时在 `.env` 中加一行；服务器修改时在 `docker-compose.yml` 对应服务的 `environment` 中加一行。
+
 | 变量 | 默认 | 含义 |
 | --- | --- | --- |
 | `AGENT_GATHER_PROVIDER`, `AGENT_GATHER_MODEL` | `deepseek`, `deepseek-flash` | 取证模型，须支持工具调用。 |
 | `AGENT_FINAL_PROVIDER`, `AGENT_FINAL_MODEL` | `vertex`, `gemini-3.1-pro-preview` | 综合模型；评测的判官也用它。 |
 | `AGENT_MAX_STEPS`, `AGENT_HISTORY_TURNS`, `AGENT_TEMPERATURE` | `3`, `4`, `0.1` | 取证循环的最大步数（1 到 6）、带入上下文的历史轮数、两个模型的温度。 |
 | `INGEST_ANALYZE_PROVIDER`, `INGEST_ANALYZE_MODEL` | `deepseek`, `deepseek-flash` | 采集分析模型。 |
-| `INGEST_<字段名大写>` | 见下表 | `IngestConfig` 的任一字段，例如 `INGEST_FETCH_WORKERS`。 |
+| `INGEST_<字段名大写>` | 见下文 | `IngestConfig` 的任一字段，例如 `INGEST_FETCH_WORKERS`。 |
 | `VERTEX_LOCATION` | `global` | Vertex 区域。 |
 | `DEEPSEEK_BASE_URL`, `DEEPSEEK_TIMEOUT_SEC` | `https://api.deepseek.com`, `120` | OpenAI 兼容接口的地址与超时秒数。 |
 | `GEMINI_API_KEY` | 无 | 某个用途的供应商选 `gemini_api` 时需要。 |
@@ -97,10 +55,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT` | 关 | LangSmith 外部观测；`LANGSMITH_API_KEY` 由 `langsmith` 库读取。 |
 | `TRACE_DASHBOARD_ADMIN_EMAIL` | 同 `ADMIN_EMAIL` | Trace Console 接口返回的管理员邮箱。 |
 | `BOT_SESSION_MAX_CHATS`, `BOT_SESSION_TTL_SEC`, `BOT_RATE_TRACK_MAX_CHATS`, `BOT_RATE_WINDOW_SEC`, `BOT_RATE_LIMIT`, `BOT_AUTO_DELETE_SEC`, `BOT_SEND_RETRY_ATTEMPTS`, `BOT_SEND_RETRY_BASE_SEC` | 见 `app/bot.py` | Telegram Bot 的会话缓存、限流、消息自动删除和发送重试。 |
-| `API_RATE_LIMIT`, `API_RATE_TRACK_MAX_IPS`, `APPROVE_LINK_TTL_SEC`, `SMTP_HOST`, `SMTP_PORT` | 见 `app/rate_limit.py`、`app/security.py`、`services/mail.py` | 接口限流、审批链接有效期、发信服务器。 |
-| `DEEPSEEK_ENTITY_MODEL`, `DEEPSEEK_ENTITY_ESCALATION_MODEL`, `DEEPSEEK_ENTITY_TIMEOUT_SEC` | `deepseek-flash`, `deepseek-v4-pro`, `30` | 实体别名脚本，读仓库根目录的 `.env`。 |
+| `API_RATE_LIMIT`, `API_RATE_TRACK_MAX_IPS`, `APPROVE_LINK_TTL_SEC`, `SMTP_HOST`, `SMTP_PORT` | 见 `app/rate_limit.py`、`app/security.py`、`common/mail.py` | 接口限流、审批链接有效期、发信服务器。 |
+| `DEEPSEEK_ENTITY_MODEL`, `DEEPSEEK_ENTITY_ESCALATION_MODEL`, `DEEPSEEK_ENTITY_TIMEOUT_SEC` | `deepseek-flash`, `deepseek-v4-pro`, `30` | 实体别名脚本。 |
 
-模型变量的规则：每个用途只认自己的 `<用途>_PROVIDER` 和 `<用途>_MODEL`。供应商只认 `gemini_api`、`vertex`、`deepseek` 三个名字；没有给模型名时，取 `services/llm_provider.py` 中 `DEFAULT_MODELS` 的供应商默认值。`gemini_api` 调 Google AI Studio 上的 Gemini，`vertex` 调 Vertex AI 上的 Gemini，`deepseek` 调 OpenAI 兼容接口；`DEEPSEEK_BASE_URL` 指向其他兼容服务时同样可用，但所有选 `deepseek` 的用途共用一个地址和 key。采集分析只适配 OpenAI 兼容的客户端：失败分类按 openai 的异常类型，`max_tokens` 只发给 `ChatOpenAI`；`response_format` 对 `vertex` 和 `gemini_api` 的效果未验证，供应商换成这两个时把 `INGEST_ANALYZE_JSON_MODE` 设为 `false`。向量模型 `jina-embeddings-v3` 写死在 `ingest/embed.py` 与 `agent/retrieval/embeddings.py`，两处必须一致。
+模型变量的规则：每个用途只认自己的 `<用途>_PROVIDER` 和 `<用途>_MODEL`。供应商只认 `gemini_api`、`vertex`、`deepseek` 三个名字；没有给模型名时，取 `common/llm_provider.py` 中 `DEFAULT_MODELS` 的供应商默认值。`gemini_api` 调 Google AI Studio 上的 Gemini，`vertex` 调 Vertex AI 上的 Gemini，`deepseek` 调 OpenAI 兼容接口；`DEEPSEEK_BASE_URL` 指向其他兼容服务时同样可用，但所有选 `deepseek` 的用途共用一个地址和 key。采集分析只适配 OpenAI 兼容的客户端：失败分类按 openai 的异常类型，`max_tokens` 只发给 `ChatOpenAI`；`response_format` 对 `vertex` 和 `gemini_api` 的效果未验证，供应商换成这两个时把 `INGEST_ANALYZE_JSON_MODE` 设为 `false`。向量模型 `jina-embeddings-v3` 写死在 `ingest/embed.py` 与 `agent/retrieval/embeddings.py`，两处必须一致。
 
 `IngestConfig` 的字段，环境变量为 `INGEST_` 加字段名大写，退避表写成逗号分隔的分钟数：
 
@@ -116,115 +74,140 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `analyze_provider`, `analyze_model` | `deepseek`, `deepseek-flash` | 同 `INGEST_ANALYZE_PROVIDER`、`INGEST_ANALYZE_MODEL`。 |
 | `analyze_json_mode` | `true` | 请求 `response_format: json_object`。解析与校验在两种模式下相同。 |
 
-## 数据库结构与 Seed
+## 本地开发
 
-数据库结构脚本：
-
-```bash
-bash deployment/scripts/db/apply_schema.sh
-```
-
-该脚本依次执行：
-
-- `sql/infrastructure/schema/schema_ddl.sql`
-- `sql/infrastructure/schema/news_schema.sql`
-- `sql/infrastructure/views/view_dashboard_news.sql`
-
-`schema_ddl.sql` 中的 `public.user_follow` 和 `public.user_story_seen` 保存用户的关注项与阅读记录，随该脚本创建，没有 seed。
-
-Seed 脚本：
+Python 版本为 3.12，与镜像和 CI 一致。安装依赖：
 
 ```bash
-bash deployment/scripts/db/apply_seed.sh
+pip install -r requirements.txt -c constraints.txt
 ```
 
-执行指定 seed：
+`requirements.txt` 声明直接依赖的版本范围，`constraints.txt` 固定全部依赖的精确版本，镜像和 CI 用同一条命令安装。改动 `requirements.txt` 后，在 Python 3.12 的全新虚拟环境中安装它，测试全部通过后用 `pip freeze` 重新生成 `constraints.txt`。
+
+本机连接的是 `.env` 中配置的数据库。各入口：
 
 ```bash
-bash deployment/scripts/db/apply_seed.sh --seed-file sql/infrastructure/seeds/seed_entity_core.sql
+uvicorn app.api:app --host 0.0.0.0 --port 8000         # Web API
+uvicorn app.trace_api:app --host 0.0.0.0 --port 8010   # Trace Console 后端
+python -m app.bot                                      # Telegram Bot
+python -m app.cli                                      # 命令行对话
+python -m agent.mcp.stdio_server                       # MCP stdio 服务
+python -m ingest run                                   # 采集一轮，命令见「采集运维」
 ```
 
-`apply_schema.sh` 用于自动部署，`apply_seed.sh` 用于手动维护实体和别名基础数据。来源不走 seed，见「来源维护」。
+`python -m ingest run` 和 `loop` 会写库并调用 Reader、模型和向量接口。同一个数据库上只有一个采集进程处理文章，已有进程运行时 `run` 退出。
 
-## 自动部署
+冒烟脚本调用真实模型，由使用者运行并查看输出：
 
-GitHub Actions 工作流位于 `.github/workflows/deploy.yml`。`main` 分支推送后通过 SSH 进入服务器执行部署。
+```bash
+python scripts/smoke/smoke_agent.py      # 取证模型与综合模型各一次调用，不连数据库
+python scripts/smoke/smoke_analyze.py    # 取旧表中的 20 篇文章执行 analyze，只读数据库，不写入
+```
 
-部署顺序：
+Trace Console 前端在 `trace_dashboard/`，`npm install` 后用 `npm run dev` 开发、`npm run build` 构建。生产环境由 `trace` 容器提供构建产物和 `/trace-api/*` 接口。
 
-1. `git pull --ff-only origin main`
-2. 拉取基础镜像：`postgres`、`metabase`
-3. 启动 `postgres`
-4. 执行 `bash deployment/scripts/db/apply_schema.sh`
-5. 构建 `bot`、`api`、`trace`、`ingest`
-6. `docker compose up -d --remove-orphans`
-7. 清理镜像；PostgreSQL 镜像摘要变化时执行 `REINDEX INDEX unique_url`
-8. 检查 `postgres`、`bot`、`api`、`trace`、`ingest` 的状态
+### 测试与 CI
 
-自动部署不会执行 seed。
+```bash
+pytest tests -q
+python scripts/encoding_guard.py --root . --report reports/encoding_guard/local.json
+```
+
+测试不读取开发者的 `.env`：`tests/conftest.py` 把 `common.script_env.load_env` 替换为空操作。采集解析层的录制样本在 `tests/fixtures/ingest/`。
+
+CI 工作流 `.github/workflows/ci.yml` 在 Python 3.12 上安装依赖，运行编码检查（失败不阻断）和 `pytest tests -v`，并上传编码检查报告。
+
+### 代码边界
+
+- 业务入口在 `app/`。
+- Agent 编排、工具和检索在 `agent/`，LangGraph 只在 `agent/graph/` 中导入；检索、工具、证据登记表和引用校验不依赖图。
+- 采集管线在 `ingest/`：解析和判定逻辑是不访问网络与数据库的纯函数，HTTP 请求经 `ingest/http.py`，模型调用在 `ingest/analyze.py`，SQL 集中在 `ingest/store.py`。
+- 采集、Agent、入口共用的模块在 `common/`。
+- `news` schema 的结构变更写入 `sql/schema/news_schema.sql`，其余表的结构变更写入 `sql/schema/schema_ddl.sql`。
+- 部署和数据库运维脚本放入 `scripts/`，评测逻辑放入 `eval/`，测试放入 `tests/unit/`。
+- 运行产物（`reports/`、`data/`、缓存、构建产物、虚拟环境）不纳入版本控制。
+
+## 部署
+
+Compose 文件是仓库根目录的 `docker-compose.yml`，项目名用 `name: deployment` 固定，PostgreSQL 的数据卷 `deployment_pg_data` 因此不随目录名变化。本文档中的 `docker compose` 命令都在仓库根目录执行。
+
+| 服务 | 容器 | 端口 | 职责 |
+| --- | --- | ---: | --- |
+| `postgres` | `tech_news_db` | `5432` | PostgreSQL + pgvector。 |
+| `ingest` | `tech_news_ingest` | 无 | 采集管线，命令 `python -m ingest loop`。 |
+| `metabase` | `tech_news_bi` | `3000` | BI 看板。 |
+| `api` | `tech_news_api` | `8000` | Web API。 |
+| `trace` | `tech_news_trace` | `8010` | Trace Console。 |
+| `bot` | `tech_news_bot` | 无 | Telegram Bot。 |
+
+所有服务都配置了 `restart: always`。查看状态与日志：
+
+```bash
+docker compose ps
+docker compose logs -f ingest
+```
+
+### 自动部署
+
+`main` 分支推送后，GitHub Actions（`.github/workflows/deploy.yml`）经 SSH 在服务器上部署：拉取代码，拉取 `postgres`、`metabase` 镜像并启动 `postgres`，执行 `bash scripts/db/apply_schema.sh`，构建 `bot`、`api`、`trace`、`ingest`，执行 `docker compose up -d --remove-orphans`，清理镜像，最后检查各服务的状态。PostgreSQL 镜像摘要变化时执行 `REINDEX INDEX unique_url`。自动部署不执行 seed。
 
 `up -d` 会重新启动已手动停止的 `ingest`，服务器重启时 `restart: always` 同样会拉起它。需要在 `ingest` 停止的状态下操作（回填旧数据、冻结评测用的数据快照）时，期间不要推送 `main`，也不要重启服务器。
 
-## 一次性切换
+网页对话前端 `frontend/` 由 Cloudflare Pages 从 `main` 分支发布，域名为 `agent.trainingcqy.com`。
 
-部署只做一次：全部代码合并到 main 后，按下表一次部署、一次切换，新旧采集管线不并行运行。
+### 数据库结构与 Seed
 
-部署前在服务器上用 `docker volume ls` 核对 PostgreSQL 的数据卷名为 `deployment_pg_data`。名称不同时，把 `docker-compose.yml` 的 `name` 改成实际的项目名，否则 compose 会新建一个空的数据卷。
+`bash scripts/db/apply_schema.sh` 依次执行 `sql/schema/schema_ddl.sql`、`sql/schema/news_schema.sql`、`sql/views/view_dashboard_news.sql`，可重复执行，由自动部署调用。
 
-| 步骤 | 操作 | 说明 |
-| --- | --- | --- |
-| 1 | 在仓库根目录建 `.env`：按「环境变量」由原先放在 `deployment/` 目录中的 `.env` 改写，原文件留作回退用的副本 | `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB` 改为 `DB_USER`、`DB_PASS`、`DB_NAME`，`POSTGRES_PORT` 改为 `DB_PORT`，`GCP_SA_PATH` 改为 `GOOGLE_APPLICATION_CREDENTIALS`；`docker compose config` 能解析，没有未设置变量的警告 |
-| 2 | 推送 main，部署流程自动执行 | `deploy.yml` 先执行 `apply_schema.sh` 建 schema `news`，旧表不动；再构建并启动全部服务。compose 中已没有 n8n，`up -d --remove-orphans` 删除 n8n 容器，旧采集管线随之停止。此时 `ingest` 已在运行，但库中还没有渠道和文章，各阶段空跑；bot 与 api 已是新 Agent，第 6 步完成前检索不到文章 |
-| 3 | `docker compose stop ingest` | 第 4 到 6 步期间常驻采集不运行 |
-| 4 | `docker compose run --rm ingest python -m ingest sync-sources` | 写入发布方与渠道 |
-| 5 | `docker compose run --rm ingest python -m ingest migrate --dry-run`，核对行数后去掉 `--dry-run` 执行 | 回填历史 |
-| 6 | `docker compose run --rm ingest python -m ingest run --stage link` | 为全部历史文章分配故事，约 2.3 万次最近邻查询 |
-| 7 | `docker compose start ingest` | 新管线开始采集 |
-| 8 | 旧文章的标签 | `migrate` 已按旧分类做机械映射；是否用 `relabel` 全量重标由分类试标的结果决定，见「旧表回填与重标」与 [评测体系](EVALUATION.md) |
+`bash scripts/db/apply_seed.sh` 手动导入实体和别名基础数据，`--seed-file sql/seeds/seed_entity_core.sql` 指定单个文件。来源不走 seed，见「来源维护」。
 
-第 3 到 7 步期间不推送 main，也不重启服务器，原因见「自动部署」。
+### Cloudflare Tunnel
 
-**切换之后**：旧表不再更新，迁移带来的历史截止到第 2 步。新管线第一轮补上 feed 和 sitemap 中仍在保留范围内的条目，更早的空档不补。Metabase 看板读旧视图，数据停在切换日。
-
-**回退**：把 main 回退到切换前的提交并推送，部署流程按切换前的 compose 文件重建，n8n 容器连同它的数据卷恢复；回退前把原 `deployment/.env` 放回。旧表在整个过程中没有被修改，schema `news` 不影响旧系统。
-
-## Cloudflare Tunnel
-
-推荐映射：
+三个域名经 Tunnel 指向宿主机端口，API 和 Trace 服务只绑定宿主机本地地址：
 
 | 域名 | Origin |
 | --- | --- |
-| `dashboard.trainingcqy.com` | `http://localhost:3000` |
 | `agentapi.trainingcqy.com` | `http://localhost:8000` |
 | `trace.trainingcqy.com` | `http://localhost:8010` |
+| `dashboard.trainingcqy.com` | `http://localhost:3000` |
 
-API 和 Trace 服务默认只绑定宿主机本地地址，适合通过 Tunnel 暴露。
+### Trace Console
 
-## 采集管线
+浏览器访问 `trace.trainingcqy.com` 或本地 `http://localhost:8010`，输入 `TRACE_DASHBOARD_TOKEN` 后进入面板。面板展示请求列表、span 调用链（流程节点、模型调用、工具执行）、完整的模型输入与原始输出、工具参数与证据地址、错误信息和 raw JSON。
 
-`ingest` 容器常驻运行 `python -m ingest loop`，每轮结束后等待 300 秒。架构与各阶段见 [系统架构](ARCHITECTURE.md)。管理命令在容器内执行：
+### Metabase
+
+看板基于视图 `view_dashboard_news`，看板查询保存在 Metabase 自己的应用库中。该视图读取旧表 `tech_news`，旧表不再更新，看板的数据停在切换日。应用库由 `MB_DB_FILE=/metabase-data/metabase.db` 指定，宿主机的 `data/metabase/` 目录挂载为容器内的 `/metabase-data`，该目录被 git 忽略。
+
+## 采集运维
+
+`ingest` 容器常驻运行 `python -m ingest loop`，每轮结束后等待 300 秒。各阶段与状态机见 [系统架构](ARCHITECTURE.md)。命令：
+
+| 命令 | 作用 |
+| --- | --- |
+| `python -m ingest sync-sources` | 把 `sources.toml` 同步到数据库 |
+| `python -m ingest run [--stage <名称>] [--channel <键>]` | 执行一轮，不执行 monitor；`--channel` 只限定 discover 轮询的渠道 |
+| `python -m ingest loop [--interval 300]` | 常驻运行 |
+| `python -m ingest status` | 渠道最近一次成功轮询、`ready` 以外各状态的积压数、近 24 小时的失败分组 |
+| `python -m ingest requeue --status failed [--error-kind <类型>]` | 把 `failed` 的文章恢复到失败前的阶段 |
+| `python -m ingest monitor [--dry-run]` | 计算契约指标并发告警；`--dry-run` 只记日志 |
+| `python -m ingest migrate [--dry-run]` | 把旧表回填到 `news` schema |
+| `python -m ingest relabel [--limit N] [--keys-file <文件>]` | 对已有摘要的文章重标领域与类型 |
+
+服务器上在容器内执行，例如：
 
 ```bash
-# 各渠道最近一次成功轮询、积压数、近 24 小时失败分组
 docker compose run --rm ingest python -m ingest status
-
-# 修复某类失败的原因之后，把 failed 的文章恢复到失败前的阶段
 docker compose run --rm ingest python -m ingest requeue --status failed --error-kind reader_http
-
-# 只轮询一个渠道，其余阶段照常处理
-docker compose run --rm ingest python -m ingest run --channel openai_news
-
-# 计算契约指标；--dry-run 只记日志，不发邮件
-docker compose run --rm ingest python -m ingest monitor --dry-run
 ```
 
-`run` 与 `loop` 共用一个 PostgreSQL advisory lock，常驻容器在运行时手动执行 `run` 会打印"已有采集进程在运行"并以退出码 1 结束；`--channel` 指定的渠道不存在或未启用时以退出码 2 结束。`sync-sources`、`status`、`requeue`、`monitor`、`migrate`、`relabel` 不取锁。
+`run` 与 `loop` 共用一个 PostgreSQL advisory lock，常驻容器在运行时手动执行 `run` 会打印"已有采集进程在运行"并以退出码 1 结束；`--channel` 指定的渠道不存在或未启用时以退出码 2 结束。其余命令不取锁。
 
 告警邮件发往 `ADMIN_EMAIL`：渠道连续失败 3 次时发一封；`monitor` 的指标越限时发一封，列出越限项和当日全部指标。SMTP 未配置或收件人为空时只记日志。
 
 ### 旧表回填与重标
 
-`migrate` 把旧表（`tech_news`、`tech_news_failed`、`jina_raw_logs`、`news_embeddings`）的数据写入 `news` schema，可以重复执行，已存在的行跳过。`migrate` 不自动同步来源，映射到的渠道在 `news.channel` 中缺失时报错退出，因此先执行 `sync-sources`。
+`migrate` 把旧表（`tech_news`、`tech_news_failed`、`jina_raw_logs`、`news_embeddings`）的数据写入 `news` schema，可以重复执行，已存在的行跳过。它不自动同步来源，映射到的渠道在 `news.channel` 中缺失时报错退出，因此先执行 `sync-sources`：
 
 ```bash
 docker compose stop ingest
@@ -247,71 +230,14 @@ docker compose start ingest
 - 同步只写定义列：发布方的 `kind` 与登记项，渠道的名称、类型、入口、用途、发布方、语言、`enabled` 和 `config`。轮询间隔 `poll_minutes`（默认 60 分钟）和运行状态列不受同步影响，某个渠道需要不同的轮询间隔时直接修改库内的 `poll_minutes`。
 - 渠道级参数在 `config` 中：`body_from_feed`、`lookback_days`、`url_pattern`、`max_path_segments`、`discussion_after_hours`、`discussion_min_comments`。
 
-`sources.toml` 随镜像发布。修改后经部署（或 `docker compose build ingest`）进入镜像，再执行：
+`sources.toml` 随镜像发布。修改后经部署（或 `docker compose build ingest`）进入镜像，再执行 `docker compose run --rm ingest python -m ingest sync-sources`。
+
+### 实体别名
+
+检索的精确召回路用 `entity_registry`、`entity_alias` 扩展查询，候选别名从 `view_dashboard_news` 生成：
 
 ```bash
-docker compose run --rm ingest python -m ingest sync-sources
+bash scripts/entity_alias/build_entity_alias_candidates.sh --days 14 --limit 1000 --use-deepseek
 ```
 
-## n8n
-
-n8n 已从 compose 中删除，不再部署。采集由 `ingest` 承担，`etl_workflow/` 中的六个工作流导出文件（`Tech_Intelligence`、`AI_Analysis_Service`、`Daily_Tech_Brief`、`Quality_Monitor`、`System_Alert_Service`、`Eval_Analysis_Regression`）是旧采集链路的存档。
-
-## Metabase
-
-Metabase 使用 `view_dashboard_news` 和 `sql/analytics/` 中的查询 SQL 构建看板。该视图读取旧表 `tech_news`，旧表不再更新，看板的数据停在切换日。Metabase 的应用库由 `MB_DB_FILE=/metabase-data/metabase.db` 指定，宿主机的 `deployment/` 目录挂载为容器内的 `/metabase-data`。看板侧不直接复写北京时间、来源归一和搜索字段逻辑。
-
-## Source 与 Entity 维护
-
-实体别名候选生成，候选来自 `view_dashboard_news`：
-
-```bash
-bash deployment/scripts/db/build_entity_alias_candidates.sh --days 14 --limit 1000 --use-deepseek
-```
-
-执行前确保 schema/view：
-
-```bash
-bash deployment/scripts/db/build_entity_alias_candidates.sh --apply-schema --days 14 --limit 1000 --use-deepseek
-```
-
-## 数据质量检查
-
-采集管线的质量由 `ingest` 自带的两个命令检查：`python -m ingest status` 看积压和近 24 小时的失败分类，`python -m ingest monitor` 计算契约指标并与此前 14 天的中位数比较，见「采集管线」。
-
-## Trace Console
-
-Trace Console 服务由 `trace` 容器提供。浏览器访问 `trace.trainingcqy.com` 或本地 `http://localhost:8010`，输入 `TRACE_DASHBOARD_TOKEN` 后进入面板。
-
-面板展示：
-
-- 请求列表。
-- Span 调用链：流程节点、模型调用、工具执行。
-- 模型输入 messages 和 raw output。
-- 工具参数、结果摘要、证据地址和 diagnostics。
-- 错误码、异常链和 raw JSON。
-
-## 常用命令
-
-```bash
-# 更新 schema/view
-bash deployment/scripts/db/apply_schema.sh
-
-# 手动 seed
-bash deployment/scripts/db/apply_seed.sh
-
-# 采集状态
-docker compose run --rm ingest python -m ingest status
-
-# 查看采集日志
-docker compose logs -f ingest
-
-# 查看 API 日志
-docker compose logs -f api
-
-# 查看 Trace 日志
-docker compose logs -f trace
-
-# 重启服务
-docker compose restart api trace bot ingest
-```
+加 `--apply-schema` 时先执行数据库结构脚本。

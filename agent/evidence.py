@@ -4,7 +4,7 @@ from datetime import date
 
 from agent.config import BEIJING
 from agent.types import Article, Discussion, Evidence, StoryStats
-from services.urls import url_key
+from common.urls import url_key
 
 _LEVEL_RANK = {"listed": 0, "summary": 1, "fulltext": 2}
 PUBLISHER_KIND_LABELS = {

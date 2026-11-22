@@ -13,8 +13,8 @@ from agent.retrieval.stories import (
     fetch_discussions_by_url_keys,
 )
 from agent.types import Article, Discussion
-from services.db import get_conn, put_conn
-from services.urls import url_key
+from common.db import get_conn, put_conn
+from common.urls import url_key
 
 if TYPE_CHECKING:
     from .registry import ReadArticlesArgs, ToolOutcome

@@ -9,7 +9,7 @@ import pytest
 
 from agent.retrieval import search
 from agent.types import Article
-from services.taxonomy import EVENT_KINDS
+from common.taxonomy import EVENT_KINDS
 
 
 def _at(day: int) -> datetime:

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from services.urls import host_of
+from common.urls import host_of
 
 SOURCES_PATH = Path(__file__).with_name("sources.toml")
 

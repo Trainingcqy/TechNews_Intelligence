@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.script_env import load_env  # noqa: E402
+from common.script_env import load_env  # noqa: E402
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -68,7 +68,7 @@ def main() -> int:
     args = parser.parse_args()
     load_env()
 
-    from services.db import db_cursor  # noqa: E402
+    from common.db import db_cursor  # noqa: E402
 
     cases = [r for r in _read_jsonl(args.results.resolve()) if r.get("status") == "success"]
     # dedupe by case_id

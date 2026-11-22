@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services import entity_resolution as mod
+from scripts.entity_alias import entity_resolution as mod
 
 
 class _FakeResponse:

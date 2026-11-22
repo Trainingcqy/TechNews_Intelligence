@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from services import agent_trace_store as store_mod
+from agent import trace_store as store_mod
 
 
 class _FakeCursor:

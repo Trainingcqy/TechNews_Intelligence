@@ -14,8 +14,8 @@ from langchain_openai import ChatOpenAI
 from ingest import store
 from ingest.config import IngestConfig
 from ingest.models import Analysis
-from services.llm_provider import build_chat_model
-from services.taxonomy import KIND_SCOPES, KINDS, TOPIC_SCOPES, TOPICS, validate_kind, validate_topics
+from common.llm_provider import build_chat_model
+from common.taxonomy import KIND_SCOPES, KINDS, TOPIC_SCOPES, TOPICS, validate_kind, validate_topics
 
 logger = logging.getLogger(__name__)
 

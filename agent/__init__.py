@@ -1,6 +1,6 @@
 """TechNews Intelligence agent package exports."""
 
-from services.db import close_db_pool, init_db_pool
+from common.db import close_db_pool, init_db_pool
 
 from .turn import run_turn
 from .types import Answer, Delta, Event, EvidenceFound, Final, Progress

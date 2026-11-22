@@ -8,7 +8,7 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
-from services.script_env import load_env
+from common.script_env import load_env
 
 load_env()
 
@@ -26,8 +26,8 @@ from app.schemas import (
     FollowRequest,
     QuotaResponse,
 )
-from app.services import access_token_service, chat_service
-from services.db import close_db_pool, init_db_pool
+from app import access_token_service, chat_service
+from common.db import close_db_pool, init_db_pool
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",

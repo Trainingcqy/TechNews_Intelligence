@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.urls import extract_urls, host_of, url_key
+from common.urls import extract_urls, host_of, url_key
 
 
 @pytest.mark.parametrize(

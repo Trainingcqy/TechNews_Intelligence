@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.common import add_db_args, answer_line, choice, configure_stdout, parse_answers, parse_time, pct, readonly_cursor  # noqa: E402
+from eval.helpers import add_db_args, answer_line, choice, configure_stdout, parse_answers, parse_time, pct, readonly_cursor  # noqa: E402
 
 REFERENCE_CHANNEL = "techmeme"
 EVENT_WINDOW_DAYS = 2

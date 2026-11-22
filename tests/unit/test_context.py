@@ -9,7 +9,7 @@ from agent import context
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
 from agent.types import Article
-from services.urls import url_key
+from common.urls import url_key
 
 BASE = Article(
     article_id=0, url="", title="t", title_zh="", summary="", topics=(), kind=None,

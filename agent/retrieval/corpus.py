@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 import time
 
-from services.db import get_conn, put_conn
-from services.taxonomy import KINDS, TOPICS
+from common.db import get_conn, put_conn
+from common.taxonomy import KINDS, TOPICS
 
 logger = logging.getLogger(__name__)
 

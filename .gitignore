@@ -1,83 +1,53 @@
-﻿# Python
+# Python
 __pycache__/
 *.pyc
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Database files and runtime data: Metabase application DB, dumps
 *.db
 *.mv.db
 *.trace.db
-metabase.db.mv.db
-news_data.sql
-news_data_readable.sql
+news_data*.sql
+/data/
 
 # Secrets
 .env
 *.pem
 
-# Docker
-docker-data/
-deployment/data/
+# Generated reports (encoding guard)
+/reports/
 
-# Eval reports (generated artifacts)
-eval/reports/*
-!eval/reports/.gitkeep
-tests/reports/*
-!tests/reports/.gitkeep
-tests/_test_output.txt
-tests/unit/.tmp*/
-tests/unit/tmp*/
-tests/unit/tempfile_probe/
-tests/unit/.tmp_mcp_stdio/
-tests/pytest-cache-files-*/
-tests/unit/.tmp_pytest/
-tests/unit/.tmp_encoding_guard/
-eval/reports/tmp_pytest/
-tmp*/
-
-# Local development artifacts
+# Test and local development artifacts (paths created and cleaned by tests/conftest.py)
 .venv/
 .tmp/
 .pytest_tmp/
 .pytest_tmp*/
 .tmp_pytest*/
-.codex_pytest_tmp/
-tests/pytest-tmp/
 .pytest_cache/
-tests/.pytest_cache/
-agent/.pytest_cache/
-agents/.pytest_cache/
-agents/__pycache__/
+tests/pytest-tmp/
+tests/unit/.tmp*/
+eval/reports/tmp_pytest/
+tmp*/
+.codex_pytest_tmp/
+*.log
 
 # Editor / IDE
 .idea/
 .vscode/
 
-# Agent / skills install artifacts
+# Local AI assistant and skills artifacts
 .agents/
-.compat-main-check/
-
-# Skills lock is environment-specific (generated during install)
-skills-lock.json
-
-# Local AI assistant metadata
-CLAUDE.md
-claude.md
 .claude/
 .codex-ui-check/
+.compat-main-check/
+skills-lock.json
+CLAUDE.md
+claude.md
 
 # Trace dashboard frontend artifacts
 trace_dashboard/node_modules/
 trace_dashboard/dist/
 trace_dashboard/.npm-cache/
-
-# Auto-generated eval dataset artifacts
-eval/datasets/generated_rag_testset*.csv
-eval/datasets/_mock_generated_rag_testset.csv
-eval/datasets/versions/v*/
-eval/datasets/*.checkpoint.json
-eval/datasets/*.checkpoint.json.bak
-eval/datasets/*.jsonl
-eval/datasets/*_manifest.json
-*.log

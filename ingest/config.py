@@ -6,7 +6,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 
-from services.llm_provider import DEFAULT_DEEPSEEK_FLASH_MODEL
+from common.llm_provider import DEFAULT_DEEPSEEK_FLASH_MODEL
 
 
 @dataclass(frozen=True)

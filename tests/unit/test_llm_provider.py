@@ -5,7 +5,7 @@ import types
 
 import pytest
 
-from services.llm_provider import (
+from common.llm_provider import (
     DEFAULT_DEEPSEEK_BASE_URL,
     DEFAULT_DEEPSEEK_MODEL,
     ModelConfig,

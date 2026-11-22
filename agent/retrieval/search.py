@@ -8,8 +8,8 @@ from typing import Any
 
 from agent.config import BEIJING
 from agent.types import Article, StoryHit
-from services.db import get_conn, put_conn
-from services.taxonomy import EVENT_KINDS
+from common.db import get_conn, put_conn
+from common.taxonomy import EVENT_KINDS
 
 from .embeddings import get_query_embedding as _get_query_embedding
 from .hybrid import _clamp_int, candidate_from_row, fetch_hybrid_rows, retrieval_diagnostics

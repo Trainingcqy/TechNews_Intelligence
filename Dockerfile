@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY agent/ ./agent/
 COPY app/ ./app/
-COPY services/ ./services/
+COPY common/ ./common/
 COPY ingest/ ./ingest/
 
 CMD ["python", "-m", "app.bot"]

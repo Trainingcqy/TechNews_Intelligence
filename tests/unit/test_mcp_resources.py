@@ -13,7 +13,7 @@ from agent.mcp.stdio_server import _handle_request
 from agent.retrieval.search import SearchResult
 from agent.tools import read, registry
 from agent.types import Article, Discussion, StoryHit, StoryStats
-from services.urls import url_key
+from common.urls import url_key
 
 ARTICLE = Article(
     article_id=30, url="https://www.techcrunch.com/genie-4/", title="Genie 4 adds audio", title_zh="",

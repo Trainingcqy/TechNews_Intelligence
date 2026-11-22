@@ -1,11 +1,11 @@
-"""Unit tests for eval/encoding_guard.py."""
+"""Unit tests for scripts/encoding_guard.py."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from eval import encoding_guard
+from scripts import encoding_guard
 
 
 def _write_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:

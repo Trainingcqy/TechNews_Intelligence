@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from agent.config import BEIJING
 from agent.types import Answer
-from services.db import db_cursor, db_transaction
+from common.db import db_cursor, db_transaction
 
 logger = logging.getLogger(__name__)
 

@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.common import configure_stdout, read_choices  # noqa: E402
+from eval.helpers import configure_stdout, read_choices  # noqa: E402
 
 GROUPS = ("same", "cross")
 SEPARATE_IF_GAP_OVER = 0.03

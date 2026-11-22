@@ -12,8 +12,8 @@ from psycopg2.extras import Json, execute_values
 from ingest.config import IngestConfig
 from ingest.models import Analysis, Candidate
 from ingest.sources import Publisher, Sources, resolve_publisher
-from services.taxonomy import TAXONOMY_VERSION
-from services.urls import url_key
+from common.taxonomy import TAXONOMY_VERSION
+from common.urls import url_key
 
 _FEED_FULL_BODY_CHARS = 1500
 _HN_STORY_BODY_CHARS = 200

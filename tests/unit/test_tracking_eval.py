@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent.types import Answer, Source
-from eval.common import read_choices
+from eval.helpers import read_choices
 from eval.tracking import run_tracking as rt
 
 CHECKED = datetime(2026, 11, 10, tzinfo=rt.BEIJING)

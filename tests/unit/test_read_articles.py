@@ -8,7 +8,7 @@ from agent.evidence import EvidenceRegistry
 from agent.tools import read
 from agent.tools.registry import ReadArticlesArgs, TurnState, prepare_call
 from agent.types import Article, Discussion
-from services.urls import url_key
+from common.urls import url_key
 
 ARTICLE = Article(
     article_id=30, url="https://www.techcrunch.com/genie-4/", title="Genie 4 adds audio", title_zh="",

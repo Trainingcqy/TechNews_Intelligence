@@ -15,8 +15,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 
-from services.db import close_db_pool, db_cursor, init_db_pool
-from services.script_env import load_env
+from common.db import close_db_pool, db_cursor, init_db_pool
+from common.script_env import load_env
 
 load_env()
 

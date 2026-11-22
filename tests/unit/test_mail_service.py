@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services import mail
+from common import mail
 
 
 def test_send_returns_false_for_empty_recipient(monkeypatch) -> None:  # noqa: ANN001

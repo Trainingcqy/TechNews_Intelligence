@@ -11,8 +11,8 @@ from ingest.config import IngestConfig
 from ingest.migrate import migrate
 from ingest.relabel import run_relabel
 from ingest.sources import load_sources
-from services.db import init_db_pool
-from services.script_env import load_env
+from common.db import init_db_pool
+from common.script_env import load_env
 
 
 def _parser() -> argparse.ArgumentParser:

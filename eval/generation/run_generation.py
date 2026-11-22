@@ -23,10 +23,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.script_env import load_env  # noqa: E402
+from common.script_env import load_env  # noqa: E402
 
 from eval.eval_retry import call_with_retry  # noqa: E402
-from services.urls import url_key  # noqa: E402
+from common.urls import url_key  # noqa: E402
 
 # Answer.status -> record status. "direct" is a reply without retrieval (greeting or a clarifying
 # question), so it is skipped for faithfulness like the former clarification bucket.
@@ -146,7 +146,7 @@ def main() -> int:
         print(f"Resume: {len(done)} case(s) already done; skipping them.")
 
     from agent import run_turn  # noqa: E402
-    from services.db import db_cursor  # noqa: E402
+    from common.db import db_cursor  # noqa: E402
 
     if args.synth_prompt_file:
         prompt_path = args.synth_prompt_file.resolve()

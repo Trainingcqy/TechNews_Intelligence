@@ -806,6 +806,6 @@ def _compact_trace_summary(summary: dict[str, Any]) -> dict[str, Any]:
 
 def _persist_request_trace(summary: dict[str, Any]) -> bool:
     """Persist trace summary via storage adapter (isolated for tests)."""
-    from services.agent_trace_store import persist_request_trace
+    from agent.trace_store import persist_request_trace
 
     return persist_request_trace(summary)

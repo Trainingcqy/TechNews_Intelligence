@@ -10,7 +10,7 @@ from typing import Any, Callable
 from langchain_core.messages import AIMessage
 
 from agent.trace import extract_token_usage, set_request_token_usage, trace_span
-from services.llm_provider import (
+from common.llm_provider import (
     DEFAULT_DEEPSEEK_FLASH_MODEL,
     DEFAULT_VERTEX_MODEL,
     build_chat_model,

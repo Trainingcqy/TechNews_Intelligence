@@ -20,8 +20,8 @@ from ingest.analyze import (
     _table,
 )
 from ingest.config import IngestConfig
-from services.llm_provider import build_chat_model
-from services.taxonomy import KIND_SCOPES, KINDS, TOPIC_SCOPES, TOPICS, validate_kind, validate_topics
+from common.llm_provider import build_chat_model
+from common.taxonomy import KIND_SCOPES, KINDS, TOPIC_SCOPES, TOPICS, validate_kind, validate_topics
 
 logger = logging.getLogger(__name__)
 

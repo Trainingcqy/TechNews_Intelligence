@@ -38,11 +38,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from agent.config import BEIJING  # noqa: E402
 from agent.retrieval.stories import fetch_discussions_by_url_keys  # noqa: E402
 from eval.acceptance.run_acceptance import _append_jsonl, _cell, _read_jsonl  # noqa: E402
-from eval.common import (  # noqa: E402
+from eval.helpers import (  # noqa: E402
     add_db_args, answer_line, configure_stdout, parse_answers, pct, read_choices, readonly_cursor,
 )
-from services.script_env import load_env  # noqa: E402
-from services.urls import url_key  # noqa: E402
+from common.script_env import load_env  # noqa: E402
+from common.urls import url_key  # noqa: E402
 
 MAX_CASE_ID_CHARS = 40  # request_id (eval_<set>_<case_id>_<8 hex>) must fit agent_runs.request_id VARCHAR(64)
 SETS = ("inventory", "tracking", "contrast")
@@ -576,13 +576,13 @@ class _FollowStore:
         return add_follow(user_key, query).follow_id
 
     def set_checked(self, follow_id: int, when: datetime) -> None:
-        from services.db import db_transaction
+        from common.db import db_transaction
 
         with db_transaction() as (_, cur):
             cur.execute("UPDATE public.user_follow SET last_checked_at = %s WHERE follow_id = %s", (when, follow_id))
 
     def delete(self, user_key: str) -> None:
-        from services.db import db_transaction
+        from common.db import db_transaction
 
         with db_transaction() as (_, cur):
             cur.execute("DELETE FROM public.user_follow WHERE user_key = %s", (user_key,))

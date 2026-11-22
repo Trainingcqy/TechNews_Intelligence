@@ -11,8 +11,8 @@ from agent.citations import rewrite_history_citations, strip_source_section
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
 from agent.retrieval.stories import fetch_articles_by_url_keys
-from services.db import get_conn, put_conn
-from services.urls import extract_urls, url_key
+from common.db import get_conn, put_conn
+from common.urls import extract_urls, url_key
 
 logger = logging.getLogger(__name__)
 

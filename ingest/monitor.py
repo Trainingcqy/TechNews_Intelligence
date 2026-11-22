@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from statistics import median
 
 from ingest import store
-from services.mail import _send
+from common.mail import _send
 
 logger = logging.getLogger(__name__)
 

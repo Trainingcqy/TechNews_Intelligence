@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from psycopg2.extras import Json, execute_values
+from psycopg2.extras import Json
 
 from ingest.config import IngestConfig
 from ingest.models import Analysis, Candidate
@@ -98,55 +98,6 @@ class WindowCounts:
     analyze_failed: int = 0  # failed, with analyze as the stage of the latest failure
     fetched: int = 0  # reached fetched: every status but discovered
     degraded: int = 0  # reached fetched with body_level other than full
-
-
-@dataclass(frozen=True)
-class LegacyNews:
-    id: int
-    url: str
-    title: str
-    summary: str | None
-    title_cn: str | None
-    points: int | None
-    source_id: str | None
-    created_at: datetime  # naive, UTC
-    source_key: str
-
-
-@dataclass(frozen=True)
-class LegacyFailed:
-    id: int
-    url: str
-    title: str
-    created_at: datetime
-    source_key: str | None
-
-
-@dataclass(frozen=True)
-class MigratedArticle:
-    url: str
-    url_key: str
-    lang: str | None
-    title: str
-    title_zh: str | None
-    summary: str | None
-    topics: tuple[str, ...]
-    label_source: str | None
-    first_seen_at: datetime
-    published_at: datetime | None
-    body_level: str
-    status: str
-
-
-@dataclass(frozen=True)
-class MigratedSighting:
-    url_key: str
-    channel_key: str
-    external_id: str | None
-    title: str
-    first_seen_at: datetime
-    last_seen_at: datetime
-    score: int | None
 
 
 @dataclass(frozen=True)
@@ -767,128 +718,6 @@ def recent_failure_counts(cur) -> list[tuple[str, str, int]]:
         "WHERE created_at >= now() - interval '24 hours' GROUP BY stage, error_kind ORDER BY stage, error_kind"
     )
     return cur.fetchall()
-
-
-def legacy_news(cur) -> list[LegacyNews]:
-    cur.execute(
-        "SELECT id, url, title, summary, title_cn, points, source_id, created_at, source_key "
-        "FROM tech_news ORDER BY id"
-    )
-    return [LegacyNews(*row) for row in cur.fetchall()]
-
-
-def legacy_failed(cur) -> list[LegacyFailed]:
-    cur.execute("SELECT id, url, original_title, created_at, source_key FROM tech_news_failed ORDER BY id")
-    return [LegacyFailed(*row) for row in cur.fetchall()]
-
-
-def legacy_embedded_urls(cur) -> set[str]:
-    cur.execute("SELECT url FROM news_embeddings WHERE embedding IS NOT NULL")
-    return {row[0] for row in cur.fetchall()}
-
-
-def legacy_bodies(cur, urls: list[str]) -> Iterator[tuple[str, str]]:
-    """Yields (url, raw Reader output). Streamed through a server-side cursor: the table is several hundred MB."""
-    with cur.connection.cursor(name="legacy_bodies") as named:
-        named.itersize = 200
-        named.execute(
-            "SELECT url, raw_content FROM jina_raw_logs WHERE url = ANY(%s) AND raw_content IS NOT NULL", (urls,)
-        )
-        yield from named
-
-
-def channel_langs(cur) -> dict[str, str]:
-    cur.execute("SELECT key, lang FROM news.channel")
-    return dict(cur.fetchall())
-
-
-def existing_url_keys(cur, keys: list[str]) -> set[str]:
-    cur.execute("SELECT url_key FROM news.article WHERE url_key = ANY(%s)", (keys,))
-    return {row[0] for row in cur.fetchall()}
-
-
-def existing_sightings(cur, keys: list[str]) -> set[tuple[str, str]]:
-    """(channel key, url_key) of the sightings of the given articles."""
-    cur.execute(
-        "SELECT c.key, a.url_key FROM news.sighting s "
-        "JOIN news.article a ON a.article_id = s.article_id JOIN news.channel c ON c.channel_id = s.channel_id "
-        "WHERE a.url_key = ANY(%s)",
-        (keys,),
-    )
-    return {(key, article_key) for key, article_key in cur.fetchall()}
-
-
-def insert_migrated_articles(cur, rows: list[tuple[MigratedArticle, str]]) -> dict[str, int]:
-    """rows are (article, publisher name). Returns url_key -> article_id of the inserted articles."""
-    inserted = execute_values(
-        cur,
-        """
-        INSERT INTO news.article
-            (url, url_key, publisher_id, lang, title, title_zh, summary, topics, label_source,
-             first_seen_at, published_at, body_level, status)
-        VALUES %s
-        ON CONFLICT (url_key) DO NOTHING
-        RETURNING url_key, article_id
-        """,
-        [
-            (
-                a.url, a.url_key, publisher, a.lang, a.title, a.title_zh, a.summary, list(a.topics),
-                a.label_source, a.first_seen_at, a.published_at, a.body_level, a.status,
-            )
-            for a, publisher in rows
-        ],
-        template="(%s, %s, (SELECT publisher_id FROM news.publisher WHERE name = %s), %s, %s, %s, %s, "
-        "%s::text[], %s, %s, %s, %s, %s)",
-        page_size=500,
-        fetch=True,
-    )
-    return dict(inserted)
-
-
-def insert_migrated_bodies(cur, rows: list[tuple[int, str]]) -> int:
-    """rows are (article_id, cleaned Reader body)."""
-    inserted = execute_values(
-        cur,
-        "INSERT INTO news.article_body (article_id, source, text, char_count) VALUES %s "
-        "ON CONFLICT (article_id) DO NOTHING RETURNING article_id",
-        [(article_id, "reader", text, len(text)) for article_id, text in rows],
-        page_size=100,
-        fetch=True,
-    )
-    return len(inserted)
-
-
-def copy_legacy_embeddings(cur, article_ids: list[int], model: str) -> int:
-    cur.execute(
-        "INSERT INTO news.article_embedding (article_id, embedding, model) "
-        "SELECT a.article_id, e.embedding, %s FROM news.article a JOIN news_embeddings e ON e.url = a.url "
-        "WHERE a.article_id = ANY(%s) AND e.embedding IS NOT NULL "
-        "ON CONFLICT (article_id) DO NOTHING",
-        (model, article_ids),
-    )
-    return cur.rowcount
-
-
-def insert_migrated_sightings(cur, sightings: list[MigratedSighting]) -> int:
-    inserted = execute_values(
-        cur,
-        """
-        INSERT INTO news.sighting
-            (article_id, channel_id, external_id, title, first_seen_at, last_seen_at, score)
-        VALUES %s
-        ON CONFLICT (channel_id, article_id) DO NOTHING
-        RETURNING sighting_id
-        """,
-        [
-            (s.url_key, s.channel_key, s.external_id, s.title, s.first_seen_at, s.last_seen_at, s.score)
-            for s in sightings
-        ],
-        template="((SELECT article_id FROM news.article WHERE url_key = %s), "
-        "(SELECT channel_id FROM news.channel WHERE key = %s), %s, %s, %s, %s, %s)",
-        page_size=500,
-        fetch=True,
-    )
-    return len(inserted)
 
 
 def take_relabel(cur, *, limit: int | None, url_keys: list[str] | None) -> list[RelabelItem]:

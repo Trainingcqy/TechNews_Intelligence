@@ -77,7 +77,7 @@ Agent 评测遵循同一条 5 步流水线；差异只在"造什么题、捕获�
 **分类试标**（`eval/taxonomy/build_sample.py`、`score.py`，标注用 `python -m ingest relabel`）：
 
 1. `build_sample.py` 抽样：旧分类每类 50 篇；另从标题含 AI 实验室或模型名的文章中随机抽 200 篇；另取全部相似度不低于 0.94 且相隔不超过 3 天的文章对。输出 `sample.json` 与 `sample_keys.txt`（每行一个 `url_key`）。
-2. `python -m ingest relabel --keys-file sample_keys.txt` 标注这些文章；样本文章须已由 `migrate` 迁入。
+2. `python -m ingest relabel --keys-file sample_keys.txt` 标注这些文章。
 3. `score.py sheet` 生成 100 篇的人工抽检表，`score.py report` 统计下表指标。
 
 | 指标 | 通过条件 |

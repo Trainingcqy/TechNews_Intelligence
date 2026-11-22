@@ -379,7 +379,7 @@ Web 和 Telegram 向 `run_turn` 传入 `user_key`，回答为 `answered` 时调�
 
 | 目录/文件 | 内容 |
 | --- | --- |
-| `ingest/` | 采集管线：`sources.toml` 与 `sources.py`（来源定义）、`discover/`（feed、站点地图、HackerNews、参照渠道的解析）、`store.py`（全部 SQL）、`fetch.py`、`analyze.py`、`embed.py`、`stories.py`、`discuss.py`、`runner.py`（一轮循环与进程锁）、`monitor.py`、`migrate.py`、`relabel.py`、`cli.py`。 |
+| `ingest/` | 采集管线：`sources.toml` 与 `sources.py`（来源定义）、`discover/`（feed、站点地图、HackerNews、参照渠道的解析）、`store.py`（全部 SQL）、`fetch.py`、`analyze.py`、`embed.py`、`stories.py`、`discuss.py`、`runner.py`（一轮循环与进程锁）、`monitor.py`、`relabel.py`、`cli.py`。 |
 | `agent/turn.py` | `run_turn`：构建模型、执行图、收尾 Trace、发出 `Final` 事件。 |
 | `agent/graph/` | `state.py`、`nodes.py`、`build.py`：状态、节点和图的构建。 |
 | `agent/tools/` | `registry.py`（工具定义与三阶段调用）、`search.py`、`read.py`。 |

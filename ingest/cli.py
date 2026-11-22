@@ -8,7 +8,6 @@ from pathlib import Path
 
 from ingest import monitor, runner, store
 from ingest.config import IngestConfig
-from ingest.migrate import migrate
 from ingest.relabel import run_relabel
 from ingest.sources import load_sources
 from common.db import init_db_pool
@@ -30,7 +29,6 @@ def _parser() -> argparse.ArgumentParser:
     requeue.add_argument("--error-kind")
     monitor_command = commands.add_parser("monitor")
     monitor_command.add_argument("--dry-run", action="store_true")
-    commands.add_parser("migrate").add_argument("--dry-run", action="store_true")
     relabel = commands.add_parser("relabel")
     relabel.add_argument("--limit", type=int)
     relabel.add_argument("--keys-file", type=Path)
@@ -82,9 +80,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"恢复 {count} 篇")
     elif args.command == "monitor":
         monitor.run_monitor(transaction=runner.transaction, dry_run=args.dry_run)
-    elif args.command == "migrate":
-        with runner.transaction() as cur:
-            migrate(cur, dry_run=args.dry_run)
     elif args.command == "relabel":
         keys = None
         if args.keys_file is not None:

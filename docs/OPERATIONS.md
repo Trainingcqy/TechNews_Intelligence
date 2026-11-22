@@ -101,7 +101,6 @@ python -m ingest run                                   # 采集一轮，命令�
 
 ```bash
 python scripts/smoke/smoke_agent.py      # 取证模型与综合模型各一次调用，不连数据库
-python scripts/smoke/smoke_analyze.py    # 取旧表中的 20 篇文章执行 analyze，只读数据库，不写入
 ```
 
 Trace Console 前端在 `trace_dashboard/`，`npm install` 后用 `npm run dev` 开发、`npm run build` 构建。生产环境由 `trace` 容器提供构建产物和 `/trace-api/*` 接口。
@@ -151,7 +150,7 @@ docker compose logs -f ingest
 
 `main` 分支推送后，GitHub Actions（`.github/workflows/deploy.yml`）经 SSH 在服务器上部署：拉取代码，拉取 `postgres`、`metabase` 镜像并启动 `postgres`，执行 `bash scripts/db/apply_schema.sh`，构建 `bot`、`api`、`trace`、`ingest`，执行 `docker compose up -d --remove-orphans`，清理镜像，最后检查各服务的状态。PostgreSQL 镜像摘要变化时执行 `REINDEX INDEX unique_url`。自动部署不执行 seed。
 
-`up -d` 会重新启动已手动停止的 `ingest`，服务器重启时 `restart: always` 同样会拉起它。需要在 `ingest` 停止的状态下操作（回填旧数据、冻结评测用的数据快照）时，期间不要推送 `main`，也不要重启服务器。
+`up -d` 会重新启动已手动停止的 `ingest`，服务器重启时 `restart: always` 同样会拉起它。需要在 `ingest` 停止的状态下操作（如冻结评测用的数据快照）时，期间不要推送 `main`，也不要重启服务器。
 
 网页对话前端 `frontend/` 由 Cloudflare Pages 从 `main` 分支发布，域名为 `agent.trainingcqy.com`。
 
@@ -191,7 +190,6 @@ docker compose logs -f ingest
 | `python -m ingest status` | 渠道最近一次成功轮询、`ready` 以外各状态的积压数、近 24 小时的失败分组 |
 | `python -m ingest requeue --status failed [--error-kind <类型>]` | 把 `failed` 的文章恢复到失败前的阶段 |
 | `python -m ingest monitor [--dry-run]` | 计算契约指标并发告警；`--dry-run` 只记日志 |
-| `python -m ingest migrate [--dry-run]` | 把旧表回填到 `news` schema |
 | `python -m ingest relabel [--limit N] [--keys-file <文件>]` | 对已有摘要的文章重标领域与类型 |
 
 服务器上在容器内执行，例如：
@@ -205,20 +203,9 @@ docker compose run --rm ingest python -m ingest requeue --status failed --error-
 
 告警邮件发往 `ADMIN_EMAIL`：渠道连续失败 3 次时发一封；`monitor` 的指标越限时发一封，列出越限项和当日全部指标。SMTP 未配置或收件人为空时只记日志。
 
-### 旧表回填与重标
+### 重标
 
-`migrate` 把旧表（`tech_news`、`tech_news_failed`、`jina_raw_logs`、`news_embeddings`）的数据写入 `news` schema，可以重复执行，已存在的行跳过。它不自动同步来源，映射到的渠道在 `news.channel` 中缺失时报错退出，因此先执行 `sync-sources`：
-
-```bash
-docker compose stop ingest
-docker compose run --rm ingest python -m ingest sync-sources
-docker compose run --rm ingest python -m ingest migrate --dry-run
-docker compose run --rm ingest python -m ingest migrate
-docker compose run --rm ingest python -m ingest run --stage link
-docker compose start ingest
-```
-
-`--dry-run` 只打印各步将写入的行数；`run --stage link` 为迁入的文章分配故事。`relabel` 对已有摘要、且标签来自旧分类映射或尚未记录词表版本的文章重新标注领域与类型，`--keys-file` 把范围限定为文件中列出的 `url_key`，`--limit` 限定篇数。
+`relabel` 对已有摘要、且标签来自旧分类映射或尚未记录词表版本的文章重新标注领域与类型，`--keys-file` 把范围限定为文件中列出的 `url_key`，`--limit` 限定篇数。
 
 ### 来源维护
 

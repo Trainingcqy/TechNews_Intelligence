@@ -91,29 +91,31 @@ watch(
 </script>
 
 <template>
-  <aside id="follow-panel" class="follow-panel" :hidden="!open">
-    <div class="follow-panel-head">
-      <h2 class="follow-panel-title">关注列表</h2>
-      <button id="follow-close-btn" class="icon-btn" type="button" title="关闭" @click="$emit('close')">
-        <span class="material-symbols-outlined">close</span>
-      </button>
-    </div>
-    <form id="follow-form" class="follow-form" @submit.prevent="addFollow">
-      <div class="input-group">
-        <input id="follow-input" v-model="query" type="text" placeholder="添加关注的公司、产品或话题" required />
-      </div>
-      <button type="submit" class="icon-btn" title="添加">
-        <span class="material-symbols-outlined">add</span>
-      </button>
-    </form>
-    <p id="follow-status" class="status-msg" :class="status.type">{{ status.text }}</p>
-    <ul id="follow-list" class="follow-list">
-      <li v-for="follow in follows" :key="follow.follow_id" class="follow-item">
-        <span class="follow-query">{{ follow.query }}</span>
-        <button type="button" class="icon-btn" title="删除" @click="removeFollow(follow.follow_id)">
+  <Transition name="follow-slide">
+    <aside v-show="open" id="follow-panel" class="follow-panel">
+      <div class="follow-panel-head">
+        <h2 class="follow-panel-title">关注列表</h2>
+        <button id="follow-close-btn" class="icon-btn" type="button" title="关闭" @click="$emit('close')">
           <span class="material-symbols-outlined">close</span>
         </button>
-      </li>
-    </ul>
-  </aside>
+      </div>
+      <form id="follow-form" class="follow-form" @submit.prevent="addFollow">
+        <div class="input-group">
+          <input id="follow-input" v-model="query" type="text" placeholder="添加关注的公司、产品或话题" required />
+        </div>
+        <button type="submit" class="icon-btn" title="添加">
+          <span class="material-symbols-outlined">add</span>
+        </button>
+      </form>
+      <p id="follow-status" class="status-msg" :class="status.type">{{ status.text }}</p>
+      <ul id="follow-list" class="follow-list">
+        <li v-for="follow in follows" :key="follow.follow_id" class="follow-item">
+          <span class="follow-query">{{ follow.query }}</span>
+          <button type="button" class="icon-btn" title="删除" @click="removeFollow(follow.follow_id)">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </li>
+      </ul>
+    </aside>
+  </Transition>
 </template>

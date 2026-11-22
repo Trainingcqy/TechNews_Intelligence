@@ -106,19 +106,12 @@ function answerMarkdown(rawText, sources) {
 
   const urlByN = {};
   for (const src of sources) urlByN[String(src.n)] = src.url;
-  const linkedBody = body.replace(/\[(\d{1,3})\](?!\()/g, (full, n) => (
-    urlByN[n] ? `[${n}](${urlByN[n]})` : full
+  return body.replace(/\[(\d{1,3})\](?!\()/g, (full, n) => (
+    urlByN[n] ? `[\\[${n}\\]](${urlByN[n]})` : full
   ));
-
-  const lines = sources.map((src) => {
-    const title = String(src.title_zh || src.title || "").replace(/[\\\[\]]/g, "\\$&");
-    const tail = [src.source, src.published_at].filter(Boolean).join(" · ");
-    return `- \\[${src.n}\\] [${title}](${src.url})${tail ? ` · ${tail}` : ""}`;
-  });
-  return `${linkedBody}\n\n## 来源\n${lines.join("\n")}`;
 }
 
-// The reply comes from a model that reads external articles and the source titles come
+// The reply comes from a model that reads external articles and the citation URLs come
 // from external feeds, so the generated HTML is sanitized before it reaches v-html.
 export function renderAnswerHtml(text, sources = []) {
   return DOMPurify.sanitize(marked.parse(answerMarkdown(text, sources)), { ADD_ATTR: ["target"] });

@@ -8,7 +8,6 @@ import FollowPanel from "./FollowPanel.vue";
 
 const props = defineProps({ active: Boolean });
 
-const DEFAULT_PLACEHOLDER = "你想知道什么？";
 const EXHAUSTED_PLACEHOLDER = "额度已耗尽，申请提额邮件已发送，通过后将通过邮件告知";
 const CAPPED_PLACEHOLDER = "已达最高额度上限，如需更多请直接联系管理员";
 const DEFAULT_LOADING_STATUS = "正在理解问题";
@@ -21,7 +20,7 @@ const loading = ref(false);
 const quotaText = ref("剩余 --/-- 次");
 const quotaLow = ref(false);
 const inputLocked = ref(false);
-const placeholder = ref(DEFAULT_PLACEHOLDER);
+const placeholder = ref("");
 const followOpen = ref(false);
 const messagesEl = ref(null);
 const inputEl = ref(null);
@@ -61,9 +60,19 @@ function scrollToBottom() {
   });
 }
 
+function sourceView(source) {
+  return {
+    n: source.n,
+    title: source.title_zh || source.title,
+    // Vue binds href verbatim and source URLs come from external feeds.
+    href: /^https?:\/\//i.test(source.url) ? source.url : null,
+    meta: [source.source, source.published_at].filter(Boolean).join(" · ")
+  };
+}
+
 function appendMessage(role, text, sources = []) {
   if (role === "agent") {
-    items.value.push({ id: nextItemId++, role, html: renderAnswerHtml(text, sources) });
+    items.value.push({ id: nextItemId++, role, html: renderAnswerHtml(text, sources), sources: sources.map(sourceView) });
   } else {
     items.value.push({ id: nextItemId++, role, text });
   }
@@ -92,7 +101,7 @@ function removeTyping(typing) {
 
 function setInputLocked(locked, lockedPlaceholder = EXHAUSTED_PLACEHOLDER) {
   inputLocked.value = locked;
-  placeholder.value = locked ? lockedPlaceholder : DEFAULT_PLACEHOLDER;
+  placeholder.value = locked ? lockedPlaceholder : "";
   if (locked) {
     input.value = "";
     resetInputHeight();
@@ -296,7 +305,7 @@ if (session.token) {
 </script>
 
 <template>
-  <main id="chat-view" class="view" :class="{ active }">
+  <main id="chat-view" class="view" :class="{ active, 'follow-open': followOpen }">
     <FollowPanel :open="followOpen" @close="followOpen = false" />
     <div class="chat-container" :class="{ 'chat-empty': !started }">
       <div class="chat-header">
@@ -336,6 +345,21 @@ if (session.token) {
           </div>
           <div v-else-if="item.role === 'agent'" class="msg agent">
             <div class="msg-content" v-html="item.html"></div>
+            <details v-if="item.sources.length" class="msg-sources">
+              <summary>
+                来源<span class="msg-sources-count">{{ item.sources.length }}</span>
+                <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+              </summary>
+              <ol>
+                <li v-for="source in item.sources" :key="source.n">
+                  <span>[{{ source.n }}]</span>
+                  <span>
+                    <a :href="source.href" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
+                    <span v-if="source.meta" class="msg-sources-meta"> · {{ source.meta }}</span>
+                  </span>
+                </li>
+              </ol>
+            </details>
           </div>
           <div v-else class="msg user">
             <div class="msg-content">{{ item.text }}</div>

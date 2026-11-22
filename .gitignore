@@ -6,11 +6,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Database files and runtime data: Metabase application DB, dumps
+# Database files and runtime data: Metabase application DB
 *.db
 *.mv.db
 *.trace.db
-news_data*.sql
 /data/
 
 # Secrets

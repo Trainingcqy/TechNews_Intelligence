@@ -57,7 +57,7 @@ python -m app.cli
 | `trace_dashboard/` | Trace Console 前端 |
 | `eval/` | 评测与验收脚本 |
 | `scripts/` | 数据库、冒烟、实体别名和编码检查脚本 |
-| `sql/` | 表结构、视图、seed |
+| `sql/` | 表结构与 seed |
 | `tests/` | 单元测试 |
 
 ## 文档

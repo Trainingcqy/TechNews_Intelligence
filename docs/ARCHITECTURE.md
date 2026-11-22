@@ -122,14 +122,13 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 | 领域 | 表 |
 | --- | --- |
-| 旧采集链路（不再更新） | `tech_news`, `tech_news_failed`, `jina_raw_logs`, `news_embeddings`, `news_search_index`, `source_registry`, `system_logs` |
-| 实体 | `entity_registry`, `entity_alias`, `entity_alias_candidate`, `news_entity_mentions` |
+| 实体 | `entity_registry`, `entity_alias`, `entity_alias_candidate` |
 | 访问 | `access_tokens` |
 | 用户记忆 | `user_follow`, `user_story_seen` |
 | 对话 | `conversation_threads`, `conversation_messages` |
 | Trace | `agent_runs`, `agent_trace_spans`, `agent_model_io` |
 
-`subscribers`、`thread_memory_summaries` 和 `thread_evidence_index` 三张表保留在 schema 中，没有读写方。`view_dashboard_news` 是读旧表的视图，供 Metabase 和实体别名脚本使用。
+库中另有切换前采集链路的旧表（`tech_news`、`tech_news_failed`、`jina_raw_logs`、`news_embeddings`、`news_search_index`、`source_registry`）和读取旧表的视图 `view_dashboard_news`。它们已冻结，不由 `sql/` 管理，定义见 tag `v1-n8n`；Metabase 看板经这个视图读取旧数据，分类试标的抽样脚本读取 `tech_news` 和 `news_embeddings`。
 
 数据层约定：
 

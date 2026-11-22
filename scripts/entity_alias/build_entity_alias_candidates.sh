@@ -28,7 +28,7 @@ Options:
   --limit <int>         Max recent rows to scan. Default: 1000.
   --use-deepseek        Call DeepSeek for merge/disambiguation decisions.
   --dry-run             Print candidates without writing entity_alias_candidate.
-  --apply-schema        Apply schema/view before extraction.
+  --apply-schema        Apply schema before extraction.
   --skip-promotion      Do not promote previously approved candidates.
   --include-auto-approved-promotion
                         Also promote auto_approved candidates into entity_alias.

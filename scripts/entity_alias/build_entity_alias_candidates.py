@@ -33,13 +33,14 @@ def _load_news_rows(*, days: int, limit: int) -> list[dict[str, Any]]:
             """
             SELECT
                 COALESCE(title, '') AS title,
-                COALESCE(title_cn, '') AS title_cn,
+                COALESCE(title_zh, '') AS title_zh,
                 COALESCE(summary, '') AS summary,
                 url,
-                created_at
-            FROM view_dashboard_news
-            WHERE created_at >= NOW() - %s::interval
-            ORDER BY created_at DESC
+                event_at
+            FROM news.article
+            WHERE status = 'ready'
+              AND event_at >= NOW() - %s::interval
+            ORDER BY event_at DESC
             LIMIT %s
             """,
             (f"{days} days", limit),

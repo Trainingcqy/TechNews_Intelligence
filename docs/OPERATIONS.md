@@ -157,7 +157,7 @@ docker compose logs -f ingest
 
 ### 数据库结构与 Seed
 
-`bash scripts/db/apply_schema.sh` 依次执行 `sql/public.sql`、`sql/news.sql`、`sql/views/view_dashboard_news.sql`，可重复执行，由自动部署调用。
+`bash scripts/db/apply_schema.sh` 依次执行 `sql/public.sql`、`sql/news.sql`，可重复执行，由自动部署调用。
 
 `bash scripts/db/apply_seed.sh` 手动导入实体和别名基础数据（`sql/seed_entities.sql`），可重复执行。来源不走 seed，见「来源维护」。
 
@@ -177,7 +177,7 @@ docker compose logs -f ingest
 
 ### Metabase
 
-看板基于视图 `view_dashboard_news`，看板查询保存在 Metabase 自己的应用库中。该视图读取旧表 `tech_news`，旧表不再更新，看板的数据停在切换日。应用库由 `MB_DB_FILE=/metabase-data/metabase.db` 指定，宿主机的 `data/metabase/` 目录挂载为容器内的 `/metabase-data`，该目录被 git 忽略。
+看板基于视图 `view_dashboard_news`，看板查询保存在 Metabase 自己的应用库中。该视图读取切换前的旧表 `tech_news`；视图和旧表都已冻结，不由 `sql/` 管理（定义见 tag `v1-n8n`），看板的数据停在切换日。应用库由 `MB_DB_FILE=/metabase-data/metabase.db` 指定，宿主机的 `data/metabase/` 目录挂载为容器内的 `/metabase-data`，该目录被 git 忽略。
 
 ## 采集运维
 
@@ -234,7 +234,7 @@ docker compose start ingest
 
 ### 实体别名
 
-检索的精确召回路用 `entity_registry`、`entity_alias` 扩展查询，候选别名从 `view_dashboard_news` 生成：
+检索的精确召回路用 `entity_registry`、`entity_alias` 扩展查询，候选别名从 `news.article` 中已就绪的文章生成：
 
 ```bash
 bash scripts/entity_alias/build_entity_alias_candidates.sh --days 14 --limit 1000 --use-deepseek

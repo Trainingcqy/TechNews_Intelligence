@@ -177,14 +177,3 @@ db_psql_file() {
       psql -v ON_ERROR_STOP=1 "$@" -U "${DB_USER}" -d "${DB_NAME}"
   )
 }
-
-db_psql_sql() {
-  db_assert_runtime
-  local sql="$1"
-  shift || true
-  (
-    cd "${REPO_ROOT}"
-    printf '%s\n' "${sql}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-      psql -v ON_ERROR_STOP=1 "$@" -U "${DB_USER}" -d "${DB_NAME}"
-  )
-}

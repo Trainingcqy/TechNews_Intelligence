@@ -147,9 +147,8 @@ def load_history_for_token(
 def delete_thread_for_token(thread_id: str, token_id: int | str) -> None:
     """Delete a web thread only when owned by the given token.
 
-    The FK constraints on conversation_messages, thread_memory_summaries, and
-    thread_evidence_index are ON DELETE CASCADE, so removing the thread row
-    purges the messages, rolling summary, and evidence index in one statement.
+    The FK constraint on conversation_messages is ON DELETE CASCADE, so removing
+    the thread row purges its messages in one statement.
     """
     thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
     token_key = _normalize_token_id(token_id)

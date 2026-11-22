@@ -10,7 +10,6 @@ import requests
 
 RERANK_MODE_NONE = "none"
 RERANK_MODE_LLM = "llm_rerank"
-SUPPORTED_RERANK_MODES = {RERANK_MODE_NONE, RERANK_MODE_LLM}
 
 DEFAULT_RERANK_MODE_ENV = "NEWS_RERANK_MODE"
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"

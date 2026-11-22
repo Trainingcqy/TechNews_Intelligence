@@ -42,7 +42,6 @@ DISCUSSION = Discussion(
     title=ARTICLE.title,
     score=955,
     comment_total=312,
-    char_count=21840,
 )
 
 

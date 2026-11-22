@@ -33,7 +33,6 @@ class Discussion:
     title: str  # 对应文章的标题
     score: int | None
     comment_total: int
-    char_count: int
 
 
 @dataclass(frozen=True)

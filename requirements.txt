@@ -13,6 +13,3 @@ langgraph>=1.2.22,<2
 langchain-openai>=1.1.13,<2
 langchain-google-genai>=4.2.2,<5
 langchain-google-vertexai>=3.2.2,<4
-
-# Observability
-langsmith>=0.7.30,<0.8

@@ -22,7 +22,7 @@ ARTICLE = Article(
     hn_score=None, hn_comments=None, hn_sighting_id=None, story_id=5,
 )
 DISCUSSION = Discussion(sighting_id=70, article_id=30, url="https://news.ycombinator.com/item?id=1",
-                        title="Genie 4 adds audio", score=955, comment_total=312, char_count=1500)
+                        title="Genie 4 adds audio", score=955, comment_total=312)
 DISCUSSION_URL = "http://news.ycombinator.com/item?id=1"
 
 

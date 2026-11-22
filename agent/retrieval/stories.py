@@ -39,7 +39,7 @@ ARTICLE_JOINS = """
 RELATED_LIMIT = 6
 
 _DISCUSSION_SELECT = """
-        SELECT d.sighting_id, s.article_id, d.url, a.title, s.score, d.comment_total, d.char_count
+        SELECT d.sighting_id, s.article_id, d.url, a.title, s.score, d.comment_total
         FROM news.discussion d
         JOIN news.sighting s ON s.sighting_id = d.sighting_id
         JOIN news.article a ON a.article_id = s.article_id"""

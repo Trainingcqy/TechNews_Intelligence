@@ -52,7 +52,6 @@ class Headline:
 class Story:
     story_id: int
     publisher_count: int
-    has_official: bool
     hn_score: int | None
     hn_comments: int | None
     first_at: datetime
@@ -86,20 +85,19 @@ def load_stories(cur, since: datetime, until: datetime) -> list[Story]:
             JOIN news.article a ON a.article_id = m.article_id
             WHERE a.status = 'ready' AND a.event_at >= %(since)s AND a.event_at < %(until)s
         )
-        SELECT m.story_id, count(DISTINCT a.publisher_id), bool_or(p.kind = 'official'),
+        SELECT m.story_id, count(DISTINCT a.publisher_id),
                max(s.score), max(s.comment_count), min(a.event_at), max(a.event_at),
                array_agg(DISTINCT (a.event_at AT TIME ZONE 'UTC')::date)
         FROM win JOIN news.story_member m ON m.story_id = win.story_id
         JOIN news.article a ON a.article_id = m.article_id AND a.status = 'ready'
-        JOIN news.publisher p ON p.publisher_id = a.publisher_id
         LEFT JOIN news.sighting s ON s.article_id = a.article_id
              AND s.channel_id IN (SELECT channel_id FROM news.channel WHERE fetch_kind = 'hn')
         GROUP BY m.story_id
         """,
         {"since": since, "until": until},
     )
-    return [Story(sid, pubs, official, score, comments, first, last, frozenset(days))
-            for sid, pubs, official, score, comments, first, last, days in cur.fetchall()]
+    return [Story(sid, pubs, score, comments, first, last, frozenset(days))
+            for sid, pubs, score, comments, first, last, days in cur.fetchall()]
 
 
 # Ranking rules. Each maps the stories of one day to a sort key; the smaller key ranks first.

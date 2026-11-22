@@ -48,7 +48,7 @@ def _registry() -> EvidenceRegistry:
     )
     registry.add_discussion(
         Discussion(sighting_id=7, article_id=2, url="https://news.ycombinator.com/item?id=7", title="Title 1",
-                   score=10, comment_total=3, char_count=100)
+                   score=10, comment_total=3)
     )
     registry.set_fulltext("E4", "comments", 8, False)
     return registry

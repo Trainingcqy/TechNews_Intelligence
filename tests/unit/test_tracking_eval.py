@@ -170,7 +170,7 @@ def test_resolve_sources_matches_by_url_key_and_skips_discussions() -> None:
 def test_discussion_stories_come_from_the_discussed_article() -> None:
     class Cur:
         def __init__(self):
-            self.results, self.sqls = [[(1, 5, "https://news.ycombinator.com/item?id=9", "t", 10, 3, 100)],
+            self.results, self.sqls = [[(1, 5, "https://news.ycombinator.com/item?id=9", "t", 10, 3)],
                                        [("k", 5, 50, "news", "media", None)]], []
 
         def execute(self, sql, params):

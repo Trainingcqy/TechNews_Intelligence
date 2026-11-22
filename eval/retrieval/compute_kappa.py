@@ -15,7 +15,6 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Any
 
 BLOCK_RE = re.compile(
     r"^##\s+\d+\.\s+`([^`]+)`.*?\*\*Your score:\*\*\s*`\[\s*([012]?)\s*\]`",

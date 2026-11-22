@@ -12,7 +12,7 @@ T0 = datetime(2026, 11, 10, 12, tzinfo=timezone.utc)
 
 def _story(sid, pubs, hn, hours):
     at = T0 + timedelta(hours=hours)
-    return tc.Story(sid, pubs, False, hn, None, at, at, frozenset({DAY}))
+    return tc.Story(sid, pubs, hn, None, at, at, frozenset({DAY}))
 
 
 def _order(rule, stories):
@@ -28,7 +28,7 @@ def test_ranking_rules_order_stories_differently() -> None:
 
 
 def test_day_rank_is_none_when_the_story_has_no_member_that_day() -> None:
-    other_day = tc.Story(9, 5, True, 500, None, T0, T0, frozenset({date(2026, 11, 11)}))
+    other_day = tc.Story(9, 5, 500, None, T0, T0, frozenset({date(2026, 11, 11)}))
     stories = [_story(1, 1, None, 0), other_day]
     assert tc.day_rank(stories, 1, DAY, "three_level") == 1
     assert tc.day_rank(stories, 9, DAY, "three_level") is None

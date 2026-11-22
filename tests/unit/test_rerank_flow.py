@@ -1,4 +1,4 @@
-﻿"""Unit tests for rerank integration on search/retrieval paths."""
+"""Unit tests for rerank integration on search/retrieval paths."""
 
 from __future__ import annotations
 

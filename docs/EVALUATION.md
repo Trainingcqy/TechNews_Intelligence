@@ -35,7 +35,7 @@
 | G6 RGB 拒答 | `eval/rgb/` | 只给干扰文档时是否冒充出处？ | 误归因率 |
 | 验收问题集 | `eval/acceptance/` | 在实际问题上，工具使用、引用、角色归属是否符合预期？ | 逐条人工判断；状态分布、步数、耗时、token |
 | 追踪型验收集 | `eval/tracking/` | 盘点、追踪、对照三类任务是否达标？ | 召回率、完整率、顺序、"自上次以来"、角色覆盖；归属与评论表述由人工判断 |
-| 效率 | `eval/trace_query.py`、`eval/retrieval/sql_latency.py` | 各节点的耗时与并行收益如何？混合检索的 SQL 耗时随时间窗如何变化？ | 节点耗时与 token 的中位数；并行收益；`days=14`、`days=365` 的 SQL 耗时中位数 |
+| 效率 | `eval/trace_query.py`、`eval/retrieval/sql_latency.py` | 各类 span 的耗时与并行收益如何？混合检索的 SQL 耗时随时间窗如何变化？ | span 耗时与 token 的中位数；并行收益；`days=14`、`days=365` 的 SQL 耗时中位数 |
 
 ## 数据层
 
@@ -99,7 +99,7 @@
 ### G3 生成忠实度
 
 - **方法**：对每个问题调用 `run_turn`，按回答状态分桶：`answered` 记为 success，`direct` 记为 clarification，`insufficient`、`not_found`、`blocked` 记为 refusal，`error` 记为 error。只有 success 进入忠实度评判。
-- **证据对齐**：`enrich_evidence.py` 从 `agent_model_io` 中节点名为 `final_synthesizer` 的记录取回综合模型实际看到的证据块，判官依据这份证据评分，而不是依据从数据库重新读取的摘要。
+- **证据对齐**：`enrich_evidence.py` 从 `agent_model_io` 中名为 `final` 的 `llm` span 的输入取回综合模型实际看到的证据块，判官依据这份证据评分，而不是依据从数据库重新读取的摘要。
 - **评分**：LLM 判官给出 faithfulness 与 answer_relevancy，均为 1 到 5 分，忠实度不高于 2 分的回答占比记为幻觉率；`url_leak` 由代码判定，回答正文中不应出现任何地址，来源由后端渲染。
 - **对抗集**：用不存在的型号、精确数字、完整名单等诱饵检验回答是否如实拒答。
 - **提示词 A/B**：`run_generation.py --synth-prompt-file` 用指定文件替换 `agent.prompts.FINAL_SYSTEM_PROMPT`，量化提示词的作用。替换后的提示词仍须要求首行输出 `STATUS` 并用 `[E…]` 编号引用，否则回答被引用校验拦截。
@@ -116,7 +116,7 @@
 ### 验收问题集
 
 - **问题集**：写在 `eval/acceptance/questions.jsonl`，30 到 50 条实际会问的问题，由使用者手写，覆盖问答、盘点、追踪、对照四类任务。每行一个 JSON 对象：`question` 必填；`case_id` 选填，默认 `q<行号>`，不超过 40 字符，因为 `request_id` 是 `VARCHAR(64)`；`task` 选填，取四类任务之一，只回显到表里。
-- **运行**：`run_acceptance.py` 对每条调用 `run_turn`，返回后只读查询 Trace 表，记录状态、工具调用序列、步数、来源数、耗时和 token：步数是 `collect` span 的个数，token 取 `agent_runs.token_usage`，工具参数取 `tool_call` span 的 `input_summary.args`。输出 `runs/acceptance.jsonl` 和 `report.md`，可断点续跑，`error` 的条目续跑时重跑。
+- **运行**：`run_acceptance.py` 对每条调用 `run_turn`，返回后只读查询 Trace 表，记录状态、工具调用序列、步数、来源数、耗时和 token：步数是模型提出了调用的 `step` span 的个数，token 取 `agent_runs.token_usage`，工具参数取 `tool` span 的 `input`。输出 `runs/acceptance.jsonl` 和 `report.md`，可断点续跑，`error` 的条目续跑时重跑。
 - **人工判断**：`report.md` 的表中留空五列，逐条判断：该调用工具的问题是否调用了工具，统计 `direct` 状态下的事实性问题数；多对象问题是否每个对象各检索了一次；没有具体对象的问题是否走了按重要性的浏览；回答里的引用是否支持对应的句子；官方说法和社区评论是否按综合提示词的 Source Roles 归属。
 - **已知风险**：取证模型可能不调用工具就回答事实问题。代码无法从语义上识别这种情况，由提示词约束，并在验收问题集上统计发生次数。
 
@@ -132,7 +132,7 @@
 
 `eval/retrieval/sql_latency.py` 测混合检索的 SQL 耗时，`days=365` 的中位数超过 1 秒时改用近似索引。检索词取 G2 `queries.jsonl` 的前 20 条，SQL 与参数由 `fetch_hybrid_rows` 按默认参数的 `search_news` 生成，在 `EXPLAIN (ANALYZE, TIMING OFF)` 下执行，耗时取数据库报告的规划与执行时间之和，不含网络往返。脚本只读，每条检索词请求一次向量。
 
-`eval/trace_query.py --node-stats --since <日期>` 按节点统计耗时和 token 的中位数，并与脚本中记录的旧链路中位数对比。起点按北京时间零点；统计 `graph_node`、`model_call`、`tool_call` 三类 span，不筛状态；`gather` 对应旧链路的工具规划，旧链路的意图判断在当前链路没有对应节点。同一输出还统计一步内多个调用时 `run_tool` 各分支耗时之和与该步实际耗时之比，作为并行收益的测量。
+`eval/trace_query.py --node-stats --since <日期>` 按 span 的类型与名称统计耗时和 token 五项的中位数，另给出请求整体的中位数。起点按北京时间零点，不筛状态。同一输出还统计一步内有多个工具调用时，各调用耗时之和与这些调用实际占用时间之比，作为并行收益的测量。
 
 ## 运行命令
 
@@ -228,7 +228,7 @@ python eval/rgb/run_rgb_rejection.py --limit 0 --provider deepseek --judge-provi
 
 ```powershell
 python eval/acceptance/run_acceptance.py                               # -> runs/acceptance.jsonl 与 report.md
-python eval/trace_query.py --node-stats --since 2026-11-01             # 节点耗时与并行收益，日期按实际起点填写
+python eval/trace_query.py --node-stats --since 2026-11-01             # span 耗时与并行收益，日期按实际起点填写
 python eval/retrieval/sql_latency.py                                   # 混合检索的 SQL 耗时，days=14 与 365 各 20 条
 ```
 

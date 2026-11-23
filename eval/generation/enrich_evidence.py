@@ -5,10 +5,10 @@ from the DB, which omitted analytical-tool outputs (compare_topics / trend /
 landscape statistics) and full-text content. That produced false-positive
 "hallucination" flags on real tool statistics.
 
-This script reads the persisted final_synthesizer model input (agent_model_io,
-node='final_synthesizer') for each case and extracts the exact "Evidence brief +
-Tool results" block the agent generated from, writing it as `synthesizer_evidence`
-so the judge can be re-run against the true context.
+This script reads the persisted input of the final model call (agent_model_io of the
+llm span named 'final') for each case and extracts the exact evidence brief the
+agent generated from, writing it as `synthesizer_evidence` so the judge can be
+re-run against the true context.
 """
 
 from __future__ import annotations
@@ -82,22 +82,16 @@ def main() -> int:
         for case_id, rec in by_id.items():
             exact_request_id = str(rec.get("request_id") or "").strip()
             with db_cursor() as (_, cur):
-                if exact_request_id:
-                    # Precise match (avoids cross-run collisions when the same
-                    # case_id is run twice, e.g. strict vs ablation).
-                    cur.execute(
-                        "SELECT input_messages FROM agent_model_io "
-                        "WHERE request_id = %s AND node = 'final_synthesizer' "
-                        "ORDER BY created_at DESC LIMIT 1",
-                        (exact_request_id,),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT input_messages FROM agent_model_io "
-                        "WHERE request_id LIKE %s AND node = 'final_synthesizer' "
-                        "ORDER BY created_at DESC LIMIT 1",
-                        (f"eval_g3_{case_id}_%",),
-                    )
+                # Precise match by request_id avoids cross-run collisions when the same
+                # case_id is run twice, e.g. strict vs ablation.
+                request_filter = "m.request_id = %s" if exact_request_id else "m.request_id LIKE %s"
+                cur.execute(
+                    "SELECT m.input_messages FROM agent_model_io m "
+                    "JOIN agent_trace_spans s ON s.request_id = m.request_id AND s.span_id = m.span_id "
+                    f"WHERE {request_filter} AND s.kind = 'llm' AND s.name = 'final' "
+                    "ORDER BY s.started_at_ms DESC LIMIT 1",
+                    (exact_request_id or f"eval_g3_{case_id}_%",),
+                )
                 row = cur.fetchone()
             evidence_text = ""
             if row and row[0]:

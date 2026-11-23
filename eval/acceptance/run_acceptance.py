@@ -97,28 +97,25 @@ def _format_call(name: str, args: Any) -> str:
 
 
 def _trace_facts(request_id: str, fetch: Callable[[str, tuple], list[tuple]]) -> dict[str, Any]:
-    """Step count, token usage and formatted tool calls of one request, from the persisted trace."""
+    """Step count, token usage and formatted tool calls of one request, from the persisted trace.
+
+    A step counts when the gather model proposed at least one call, so the reply that ends gathering is not a step.
+    """
     runs = fetch("SELECT token_usage FROM public.agent_runs WHERE request_id = %s", (request_id,))
     spans = fetch(
         """
-        SELECT span_type, name, input_summary
+        SELECT kind, name, input, output
         FROM public.agent_trace_spans
-        WHERE request_id = %s
-          AND ((span_type = 'graph_node' AND name = 'collect') OR span_type = 'tool_call')
+        WHERE request_id = %s AND kind IN ('step', 'tool')
         ORDER BY started_at_ms
         """,
         (request_id,),
     )
     usage = runs[0][0] if runs and isinstance(runs[0][0], dict) else None
-    calls = [
-        _format_call(name, (summary or {}).get("args") if isinstance(summary, dict) else None)
-        for span_type, name, summary in spans
-        if span_type == "tool_call"
-    ]
     return {
-        "steps": sum(1 for span_type, _, _ in spans if span_type == "graph_node"),
+        "steps": sum(1 for kind, _, _, output in spans if kind == "step" and (output or {}).get("calls")),
         "token_usage": usage,
-        "calls": calls,
+        "calls": [_format_call(name, args) for kind, name, args, _ in spans if kind == "tool"],
     }
 
 

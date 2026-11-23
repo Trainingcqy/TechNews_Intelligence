@@ -1,0 +1,13 @@
+<svg width="800" height="120" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .title {
+      font-family: "Georgia", "Times New Roman", serif;
+      font-size: 64px;
+      font-weight: bold;
+      fill: #c9d1d9;
+    }
+  </style>
+  <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" class="title">
+    TechNews Intelligence
+  </text>
+</svg>

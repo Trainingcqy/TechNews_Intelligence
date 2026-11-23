@@ -13,34 +13,24 @@ Thumbs.db
 # Generated reports (encoding guard)
 /reports/
 
-# Test and local development artifacts (paths created and cleaned by tests/conftest.py)
+# Virtual environment, test and CI temporary files
 .venv/
 .tmp/
-.pytest_tmp/
-.pytest_tmp*/
-.tmp_pytest*/
+tests/.tmp_pytest_compat/
 .pytest_cache/
-tests/pytest-tmp/
-tests/unit/.tmp*/
-eval/reports/tmp_pytest/
-tmp*/
-.codex_pytest_tmp/
 *.log
 
 # Editor / IDE
 .idea/
 .vscode/
 
-# Local AI assistant and skills artifacts
-.agents/
+# Claude Code
 .claude/
-.codex-ui-check/
-.compat-main-check/
-skills-lock.json
 CLAUDE.md
-claude.md
 
 # Frontend artifacts
 web/*/node_modules/
 web/*/dist/
-web/*/.npm-cache/
+
+# Local development notes and scripts
+/dev/

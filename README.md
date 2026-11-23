@@ -1,8 +1,11 @@
 <div align="center">
-  <img src="docs/title.svg" alt="TechNews Intelligence" width="700">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/title-dark.svg">
+    <img src="docs/title-light.svg" alt="TechNews Intelligence" width="700">
+  </picture>
   <br>
   <p align="center">
-    <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>智能体交互</strong></a>
+    <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>在线体验</strong></a>
   </p>
 </div>
 
@@ -13,16 +16,16 @@ TechNews Intelligence 持续采集中英文科技新闻，并由 Agent 回答关
   <img src="docs/architecture-light.svg" alt="系统架构">
 </picture>
 
-## 主要设计
+## 设计要点
 
-- **采集**：`ingest/` 常驻运行，轮询 14 个官方渠道、17 个中英文科技媒体渠道和 HackerNews 首页。新文章依次经过取正文、模型生成中文标题、摘要与领域和类型标签、生成摘要向量，最后与报道同一事件的文章归并为故事。
+- **采集**：常驻进程轮询官方渠道、中英文科技媒体和 HackerNews，新文章经取正文、模型摘要与分类、生成向量后，按事件归并为故事。
 - **检索**：全文、向量、实体别名三路召回，RRF 融合后重排，结果按故事返回。
-- **Agent**：LangGraph 编排一轮问答。取证模型调用 `search_news`、`read_articles` 两个工具，一步内的多个调用并行执行，取到的材料登记为编号证据。综合模型按编号引用，代码校验引用并生成来源列表，没有有效引用的回答被拦截。
-- **记忆**：带入最近几轮对话；用户的关注项和阅读记录只决定检索参数和"此前已提及"标注，不作为证据。
-- **入口**：网页（SSE 流式）、Telegram Bot、本地 CLI，以及暴露两个工具的 MCP stdio 服务。
-- **观测与评测**：每轮问答的执行链路和完整模型输入输出写入 PostgreSQL，在 Trace Console 中查看。评测覆盖采集数据（分类、故事归并、来源覆盖）和 Agent（检索、忠实度、拒答、验收问题集）。
+- **Agent**：LangGraph 编排取证与综合两个模型，工具结果登记为编号证据；回答只能引用登记过的证据，没有有效引用的回答被拦截。
+- **记忆**：关注项和阅读记录只决定检索参数，不作为证据。
+- **入口**：网页、Telegram Bot、命令行，以及暴露两个工具的 MCP stdio 服务。
+- **观测与评测**：每轮问答的执行链路和完整模型输入输出写入 PostgreSQL，在 Trace Console 中查看；评测覆盖采集数据和 Agent 的各层。
 
-## 运行
+## 快速开始
 
 服务器部署：
 
@@ -32,11 +35,12 @@ cd TechNews_Intelligence
 cp .env.example .env                 # 填写模板中的变量，包括注释掉的服务器变量
 docker compose up -d postgres
 bash scripts/db/apply_schema.sh      # 建表
+bash scripts/db/apply_seed.sh        # 导入实体与别名
 docker compose up -d
 docker compose run --rm ingest python -m ingest sync-sources   # 同步来源，ingest 随后开始轮询
 ```
 
-本地开发，默认经 SSH 隧道连接服务器上的数据库：
+本地开发：
 
 ```bash
 pip install -r requirements.txt -c constraints.txt
@@ -44,13 +48,13 @@ pytest tests -q
 python -m app.cli
 ```
 
-环境变量、部署和运维命令见 [开发与运维](docs/OPERATIONS.md)。
+本地默认经 SSH 隧道连接服务器上的数据库，环境变量和各入口见[开发与运维](docs/OPERATIONS.md)。
 
 ## 文档
 
-- [系统架构](docs/ARCHITECTURE.md)：数据模型、采集状态机、检索、Agent 图、证据与引用、记忆、Trace、工程文件映射。
+- [系统架构](docs/ARCHITECTURE.md)：设计取舍、采集、存储、检索、Agent、交互入口与观测。
 - [开发与运维](docs/OPERATIONS.md)：环境变量、本地开发、测试、部署、采集运维、来源维护。
-- [评测](docs/EVALUATION.md)：评测方法、通过条件与运行步骤。
+- [评测](docs/EVALUATION.md)：数据层与 Agent 的评测方法和运行步骤。
 
 ## License
 

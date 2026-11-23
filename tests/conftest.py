@@ -6,7 +6,6 @@ import re
 import sys
 import types
 import uuid
-import warnings
 from contextlib import contextmanager
 from collections.abc import Iterator
 from pathlib import Path
@@ -39,9 +38,6 @@ psycopg2.connect = _no_database
 psycopg2.pool.SimpleConnectionPool = _no_database
 psycopg2.pool.ThreadedConnectionPool = _no_database
 
-# Ignore known upstream deprecation warning noise from LangGraph/LangChain.
-warnings.filterwarnings("ignore", message=".*AgentStatePydantic has been moved.*")
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TMP_PATH_COMPAT_ROOT = PROJECT_ROOT / "tests" / ".tmp_pytest_compat"
 
@@ -69,46 +65,8 @@ def _remove_tree(path: Path, *, root: Path) -> None:
         return
 
 
-def _cleanup_transient_pytest_artifacts() -> None:
-    known_dirs = [
-        TMP_PATH_COMPAT_ROOT,
-        PROJECT_ROOT / ".pytest_tmp",
-        PROJECT_ROOT / ".pytest_tmp_root",
-        PROJECT_ROOT / ".pytest_tmp_technews",
-        PROJECT_ROOT / ".pytest_tmp" / "technews",
-        PROJECT_ROOT / ".tmp_pytest_fingerprint",
-        PROJECT_ROOT / ".tmp_pytest_task_dataset_env",
-        PROJECT_ROOT / ".tmp" / "pytest-technews",
-        PROJECT_ROOT / "tests" / "pytest-tmp",
-        PROJECT_ROOT / "tests" / ".pytest_cache",
-        PROJECT_ROOT / "tests" / "unit" / ".tmp_pytest",
-        PROJECT_ROOT / "eval" / "reports" / "tmp_pytest",
-    ]
-    for target in known_dirs:
-        _remove_tree(target, root=PROJECT_ROOT)
-
-    tests_dir = PROJECT_ROOT / "tests"
-    if tests_dir.exists():
-        for target in tests_dir.glob("pytest-cache-files-*"):
-            _remove_tree(target, root=PROJECT_ROOT)
-
-    # Cleanup root-level temp folders like tmpabcd123 that some tooling may leave.
-    for target in PROJECT_ROOT.glob("tmp*"):
-        if not target.is_dir():
-            continue
-        name = target.name
-        if name == "tmp":
-            continue
-        suffix = name[3:]
-        if not suffix:
-            continue
-        if not all(ch.isalnum() or ch in "_-" for ch in suffix):
-            continue
-        _remove_tree(target, root=PROJECT_ROOT)
-
-
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
-    _cleanup_transient_pytest_artifacts()
+    _remove_tree(TMP_PATH_COMPAT_ROOT, root=PROJECT_ROOT)
 
 
 def _sanitize_tmp_node_name(node_name: str) -> str:

@@ -1,4 +1,4 @@
-"""Unit tests for the standalone trace dashboard API."""
+"""Unit tests for the Trace Console API."""
 
 from __future__ import annotations
 
@@ -10,11 +10,12 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+STARTED = datetime(2026, 11, 22, 8, 30, tzinfo=timezone.utc)
+
 
 @pytest.fixture()
 def trace_api_mod(agent_dependency_stubs, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001
     monkeypatch.setenv("TRACE_DASHBOARD_TOKEN", "unit-secret")
-    monkeypatch.setenv("TRACE_DASHBOARD_ADMIN_EMAIL", "trace-admin@example.com")
     monkeypatch.delitem(sys.modules, "app.trace_api", raising=False)
     return importlib.import_module("app.trace_api")
 
@@ -27,10 +28,8 @@ class _FakeCursor:
         self.rows = []
 
     def execute(self, sql, params=()):  # noqa: ANN001
-        sql_text = str(sql)
-        params_tuple = tuple(params or ())
-        self.calls.append((sql_text, params_tuple))
-        columns, rows = self.handler(sql_text, params_tuple)
+        self.calls.append((" ".join(str(sql).split()), tuple(params or ())))
+        columns, rows = self.handler(self.calls[-1][0], self.calls[-1][1])
         self.description = [(column,) for column in columns]
         self.rows = rows
 
@@ -38,7 +37,7 @@ class _FakeCursor:
         return self.rows
 
 
-def _install_db(monkeypatch: pytest.MonkeyPatch, trace_api_mod, handler):  # noqa: ANN001
+def _install_db(monkeypatch: pytest.MonkeyPatch, trace_api_mod, handler) -> _FakeCursor:  # noqa: ANN001
     cursor = _FakeCursor(handler)
 
     @contextmanager
@@ -49,296 +48,114 @@ def _install_db(monkeypatch: pytest.MonkeyPatch, trace_api_mod, handler):  # noq
     return cursor
 
 
-def _auth_headers() -> dict[str, str]:
-    return {"Authorization": "Bearer unit-secret"}
+def _get(trace_api_mod, path: str, token: str = "unit-secret"):  # noqa: ANN001
+    with TestClient(trace_api_mod.app) as client:
+        return client.get(path, headers={"Authorization": f"Bearer {token}"})
 
 
 def test_trace_api_rejects_missing_or_wrong_token(trace_api_mod) -> None:  # noqa: ANN001
     with TestClient(trace_api_mod.app) as client:
-        missing = client.get("/trace-api/meta")
-        wrong = client.get("/trace-api/meta", headers={"Authorization": "Bearer wrong"})
-
-    assert missing.status_code == 401
-    assert wrong.status_code == 401
+        assert client.get("/trace-api/runs").status_code == 401
+    assert _get(trace_api_mod, "/trace-api/runs", token="wrong").status_code == 401
 
 
-def test_trace_api_meta_returns_admin_and_langsmith(trace_api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
-    monkeypatch.setenv("LANGSMITH_TRACING", "true")
-    monkeypatch.setenv("LANGSMITH_PROJECT", "unit-project")
-
-    with TestClient(trace_api_mod.app) as client:
-        response = client.get("/trace-api/meta", headers=_auth_headers())
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["admin_email"] == "trace-admin@example.com"
-    assert payload["langsmith"]["enabled"] is True
-    assert payload["langsmith"]["project"] == "unit-project"
-
-
-def test_list_runs_filters_and_returns_compact_rows(trace_api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
-    created_at = datetime(2026, 5, 12, 8, 30, tzinfo=timezone.utc)
-
+def test_list_runs_hides_eval_runs_and_returns_compact_rows(trace_api_mod, monkeypatch) -> None:  # noqa: ANN001
     def _handler(sql: str, params: tuple):
         if "COUNT(*)" in sql:
             return ["total"], [(1,)]
-        assert "final_status = %s" in sql
-        assert "error_code = %s" in sql
-        assert "user_message ILIKE %s" in sql
-        assert "COALESCE(error_code, '') ILIKE %s" in sql
-        assert params[:7] == (
-            "error",
-            "tool_failed",
-            "%OpenAI%",
-            "%OpenAI%",
-            "%OpenAI%",
-            "%OpenAI%",
-            "%OpenAI%",
-        )
-        return (
-            [
-                "request_id",
-                "thread_id",
-                "user_message",
-                "final_status",
-                "latency_ms",
-                "evidence_count",
-                "token_usage",
-                "error_code",
-                "error_message",
-                "exception_chain",
-                "tool_call_chain",
-                "trace_payload",
-                "created_at",
-            ],
-            [
-                (
-                    "req-1",
-                    "thread-1",
-                    "OpenAI news",
-                    "error",
-                    1200,
-                    2,
-                    {"total_tokens": 9},
-                    "tool_failed",
-                    "boom",
-                    [],
-                    ["search_news"],
-                    {"runtime": {"langsmith": {"enabled": False, "project": "p"}}},
-                    created_at,
-                )
-            ],
-        )
+        return (["request_id", "thread_id", "channel", "user_message", "status", "started_at", "latency_ms",
+                 "total_tokens", "warnings", "error_code"],
+                [("r1", "t1", "web", "Genie 4 有什么新功能？", "answered", STARTED, 48000, 9, ["low_relevance"], None)])
 
-    _install_db(monkeypatch, trace_api_mod, _handler)
-
-    with TestClient(trace_api_mod.app) as client:
-        response = client.get(
-            "/trace-api/runs?status=error&error_code=tool_failed&q=OpenAI",
-            headers=_auth_headers(),
-        )
+    cursor = _install_db(monkeypatch, trace_api_mod, _handler)
+    response = _get(trace_api_mod, "/trace-api/runs?status=answered&warned=true&q=Genie")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["total"] == 1
-    assert payload["items"][0]["request_id"] == "req-1"
-    assert payload["items"][0]["langsmith"]["project"] == "p"
-    assert "T08:30:00" in payload["items"][0]["created_at"]
+    assert payload["items"] == [{"request_id": "r1", "thread_id": "t1", "channel": "web",
+                                 "user_message": "Genie 4 有什么新功能？", "status": "answered",
+                                 "started_at": "2026-11-22T08:30:00+00:00", "latency_ms": 48000, "total_tokens": 9,
+                                 "warnings": ["low_relevance"], "error_code": None}]
+    count_sql, count_params = cursor.calls[0]
+    assert ("status = %s AND channel <> 'eval' AND cardinality(warnings) > 0 AND (user_message ILIKE %s"
+            in count_sql)
+    assert count_params == ("answered", "%Genie%", "%Genie%", "%Genie%", "%Genie%")
+    assert cursor.calls[1][1][-2:] == (50, 0)
 
 
-def test_get_run_builds_span_tree_with_chinese_labels(trace_api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
-    def _handler(sql: str, _params: tuple):
+@pytest.mark.parametrize("query, where", [
+    ("thread_id=t1", "WHERE thread_id = %s"),
+    ("channel=eval", "WHERE channel = %s"),
+])
+def test_list_runs_by_thread_or_channel_includes_eval_runs(trace_api_mod, monkeypatch, query, where) -> None:  # noqa: ANN001
+    cursor = _install_db(monkeypatch, trace_api_mod,
+                         lambda sql, params: (["total"], [(0,)]) if "COUNT(*)" in sql else (["request_id"], []))
+    assert _get(trace_api_mod, f"/trace-api/runs?{query}").status_code == 200
+    assert cursor.calls[0][0].endswith(where)
+
+
+def test_get_run_returns_spans_and_resolves_referenced_materials(trace_api_mod, monkeypatch) -> None:  # noqa: ANN001
+    output = {"evidence": [{"eid": "E1", "doc": "article", "article_id": 30},
+                           {"eid": "E2", "doc": "discussion", "sighting_id": 70, "article_id": 30}]}
+    spans = [
+        ("s1", None, "step", None, "ok", 1, 9, {}, {"calls": []}, {"step": 1}, [], None, None, None),
+        ("s2", "s1", "tool", "search_news", "ok", 2, 8, {"query": "Genie 4"},
+         {"stories": [{"story_id": 5, "lead": 30, "related": [31], "discussion": 70}]}, {}, [], None, None, None),
+        ("s3", "s2", "retrieval", None, "ok", 3, 4, {}, {"candidates": [{"article_id": 32, "score": 0.1}]}, {},
+         [], None, None, None),
+    ]
+
+    def _handler(sql: str, params: tuple):
         if "FROM public.agent_runs" in sql:
-            return (
-                [
-                    "request_id",
-                    "thread_id",
-                    "user_message",
-                    "final_status",
-                    "latency_ms",
-                    "evidence_count",
-                    "token_usage",
-                    "error_code",
-                    "error_message",
-                    "exception_chain",
-                    "tool_call_chain",
-                    "trace_payload",
-                    "created_at",
-                ],
-                [
-                    (
-                        "req-2",
-                        "thread-2",
-                        "latest ai",
-                        "success",
-                        330,
-                        1,
-                        None,
-                        None,
-                        None,
-                        [],
-                        ["search_news"],
-                        {"runtime": {}},
-                        datetime(2026, 5, 12, tzinfo=timezone.utc),
-                    )
-                ],
-            )
-        return (
-            [
-                "request_id",
-                "span_id",
-                "parent_span_id",
-                "span_type",
-                "name",
-                "status",
-                "started_at_ms",
-                "finished_at_ms",
-                "latency_ms",
-                "input_summary",
-                "output_summary",
-                "error_code",
-                "error_message",
-                "exception_chain",
-                "metadata",
-                "created_at",
-            ],
-            [
-                (
-                    "req-2",
-                    "span-root",
-                    None,
-                    "graph_node",
-                    "gather",
-                    "success",
-                    1,
-                    2,
-                    1,
-                    {},
-                    {},
-                    None,
-                    None,
-                    [],
-                    {},
-                    datetime(2026, 5, 12, tzinfo=timezone.utc),
-                ),
-                (
-                    "req-2",
-                    "span-child",
-                    "span-root",
-                    "model_call",
-                    "gather",
-                    "success",
-                    2,
-                    5,
-                    3,
-                    {},
-                    {},
-                    None,
-                    None,
-                    [],
-                    {},
-                    datetime(2026, 5, 12, tzinfo=timezone.utc),
-                ),
-            ],
-        )
-
-    _install_db(monkeypatch, trace_api_mod, _handler)
-
-    with TestClient(trace_api_mod.app) as client:
-        response = client.get("/trace-api/runs/req-2", headers=_auth_headers())
-
-    assert response.status_code == 200
-    tree = response.json()["span_tree"]
-    assert tree[0]["display_name"] == "取证：选择工具"
-    assert tree[0]["children"][0]["display_name"] == "模型调用：取证：选择工具"
-    assert tree[0]["children"][0]["span_type_label"] == "模型调用"
-
-
-def test_node_name_labels(trace_api_mod) -> None:  # noqa: ANN001
-    graph_node_labels = {
-        "prepare": "准备上下文",
-        "gather": "取证：选择工具",
-        "run_tool": "执行工具",
-        "collect": "登记证据",
-        "route": "路由",
-        "synthesize": "综合",
-        "finalize": "校验引用",
-    }
-    for name, label in graph_node_labels.items():
-        assert trace_api_mod._display_name("graph_node", name) == label
-    assert trace_api_mod._display_name("model_call", "final_synthesizer") == "模型调用：生成最终回答"
-    assert trace_api_mod._display_name("tool_call", "read_articles") == "工具执行：read_articles"
-    assert trace_api_mod.SPAN_NAME_LABELS["search_news"] == "检索新闻"
-    assert trace_api_mod.SPAN_NAME_LABELS["read_articles"] == "读取正文"
-
-
-def test_historical_node_names_have_no_chinese_label(trace_api_mod) -> None:  # noqa: ANN001
-    assert trace_api_mod._display_name("graph_node", "intent_router") == "流程节点：intent_router"
-    assert trace_api_mod._display_name("model_call", "intent_router") == "模型调用：intent_router"
-
-
-def test_model_io_endpoint_returns_full_payload(trace_api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
-    def _handler(sql: str, _params: tuple):
+            return (["request_id", "status", "started_at", "output"], [("r1", "answered", STARTED, output)])
         if "FROM public.agent_trace_spans" in sql:
-            return ["request_id", "span_id", "span_type", "name"], [("req-3", "span-model", "model_call", "final_synthesizer")]
-        return (
-            [
-                "request_id",
-                "span_id",
-                "node",
-                "provider",
-                "model",
-                "input_messages",
-                "raw_output",
-                "parsed_output",
-                "token_usage",
-                "created_at",
-            ],
-            [
-                (
-                    "req-3",
-                    "span-model",
-                    "final_synthesizer",
-                    "vertex",
-                    "gemini-test",
-                    [{"role": "human", "content": "full prompt"}],
-                    {"content": "full output"},
-                    {"answer": "ok"},
-                    {"total_tokens": 12},
-                    datetime(2026, 5, 12, tzinfo=timezone.utc),
-                )
-            ],
-        )
+            return (["span_id", "parent_span_id", "kind", "name", "status", "started_at_ms", "finished_at_ms",
+                     "input", "output", "attributes", "warnings", "error_code", "error_message", "exception"], spans)
+        if "FROM news.article" in sql:
+            assert params == ([30, 31, 32],)
+            return (["article_id", "title", "title_zh", "publisher", "url", "event_at"],
+                    [(30, "Genie 4 adds audio", "", "TechCrunch", "https://techcrunch.com/genie-4", STARTED)])
+        assert "FROM news.discussion" in sql and params == ([70],)
+        return (["sighting_id", "article_id", "url", "title", "score", "comment_total"],
+                [(70, 30, "https://news.ycombinator.com/item?id=1", "Genie 4 adds audio", 955, 312)])
 
     _install_db(monkeypatch, trace_api_mod, _handler)
-
-    with TestClient(trace_api_mod.app) as client:
-        response = client.get(
-            "/trace-api/spans/span-model/model-io?request_id=req-3",
-            headers=_auth_headers(),
-        )
+    response = _get(trace_api_mod, "/trace-api/runs/r1")
 
     assert response.status_code == 200
-    payload = response.json()["model_io"]
-    assert payload["input_messages"][0]["content"] == "full prompt"
-    assert payload["raw_output"]["content"] == "full output"
+    payload = response.json()
+    assert payload["run"]["started_at"] == "2026-11-22T08:30:00+00:00"
+    assert [(span["span_id"], span["parent_span_id"], span["kind"]) for span in payload["spans"]] == [
+        ("s1", None, "step"), ("s2", "s1", "tool"), ("s3", "s2", "retrieval")]
+    assert payload["articles"] == {"30": {"title": "Genie 4 adds audio", "title_zh": "", "publisher": "TechCrunch",
+                                          "url": "https://techcrunch.com/genie-4",
+                                          "event_at": "2026-11-22T08:30:00+00:00"}}
+    assert payload["discussions"]["70"]["comment_total"] == 312
 
 
-def test_model_io_endpoint_rejects_non_model_span(trace_api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
-    _install_db(
-        monkeypatch,
-        trace_api_mod,
-        lambda _sql, _params: (
-            ["request_id", "span_id", "span_type", "name"],
-            [("req-4", "span-tool", "tool_call", "search_news")],
-        ),
-    )
+def test_get_run_not_found(trace_api_mod, monkeypatch) -> None:  # noqa: ANN001
+    _install_db(monkeypatch, trace_api_mod, lambda sql, params: (["request_id"], []))
+    response = _get(trace_api_mod, "/trace-api/runs/missing")
+    assert (response.status_code, response.json()["detail"]) == (404, "trace_run_not_found")
 
-    with TestClient(trace_api_mod.app) as client:
-        response = client.get(
-            "/trace-api/spans/span-tool/model-io?request_id=req-4",
-            headers=_auth_headers(),
-        )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "model_io_only_available_for_model_call"
+def test_model_io_endpoint_returns_the_full_payload(trace_api_mod, monkeypatch) -> None:  # noqa: ANN001
+    def _handler(sql: str, params: tuple):
+        assert "FROM public.agent_model_io WHERE request_id = %s AND span_id = %s" in sql
+        assert params == ("r1", "s4")
+        return ["input_messages", "output"], [([{"class": "HumanMessage", "content": "full prompt"}],
+                                               {"content": "full output"})]
+
+    _install_db(monkeypatch, trace_api_mod, _handler)
+    response = _get(trace_api_mod, "/trace-api/runs/r1/model-io/s4")
+
+    assert response.status_code == 200
+    assert response.json()["model_io"] == {"input_messages": [{"class": "HumanMessage", "content": "full prompt"}],
+                                           "output": {"content": "full output"}}
+
+
+def test_model_io_endpoint_not_found(trace_api_mod, monkeypatch) -> None:  # noqa: ANN001
+    _install_db(monkeypatch, trace_api_mod, lambda sql, params: (["input_messages", "output"], []))
+    response = _get(trace_api_mod, "/trace-api/runs/r1/model-io/s2")
+    assert (response.status_code, response.json()["detail"]) == (404, "model_io_not_found")

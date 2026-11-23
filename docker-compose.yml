@@ -127,7 +127,6 @@ services:
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}
       TRACE_DASHBOARD_TOKEN: ${TRACE_DASHBOARD_TOKEN}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
     networks:
       - app_network
     depends_on:

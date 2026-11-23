@@ -23,7 +23,7 @@ cp .env.example .env
 | `HTTP_PROXY`, `HTTPS_PROXY` | 不能直连 DeepSeek、Google、Jina 时填写 | ingest、bot、api |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` | 服务器。后者是允许执行 `/settings`、`/quota` 的用户 ID，逗号分隔 | bot |
 | `CORS_ORIGINS`, `API_BASE_URL`, `APPROVE_LINK_SECRET` | 服务器。前端的跨域来源、审批链接使用的公开 API 地址、审批链接的签名密钥 | api |
-| `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL` | 服务器。ingest 的告警和 api 的额度审批邮件发到 `ADMIN_EMAIL`，发信服务器为代码默认的 `smtp.gmail.com:587` | `SMTP_USER`、`SMTP_PASS` 传给 ingest、api；`ADMIN_EMAIL` 传给 ingest、api、trace |
+| `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL` | 服务器。ingest 的告警和 api 的额度审批邮件发到 `ADMIN_EMAIL`，发信服务器为代码默认的 `smtp.gmail.com:587` | ingest、api |
 | `TRACE_DASHBOARD_TOKEN` | 服务器。Trace Console 的访问 token，本机运行 Trace Console 时同样需要 | trace |
 
 端口变量不填时取 compose 中的默认值：`DB_PORT` 为 `5432`，`API_PORT` 为 `8000`，`TRACE_DASHBOARD_PORT` 为 `8010`。`DB_PORT` 是 postgres 发布到宿主机的端口，绑定在 `127.0.0.1`；本机不填这个变量。
@@ -52,7 +52,6 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `JINA_RERANK_MODEL`, `JINA_RERANK_TIMEOUT_SEC` | `jina-reranker-v3`, `15` | 重排模型与超时秒数。 |
 | `RETRIEVAL_POINTS_BOOST`, `RETRIEVAL_FRESHNESS_BOOST`, `RETRIEVAL_TRGM_THRESHOLD` | 关, `0`, `0.42` | 检索排序的热度加权、新鲜度加权，以及精确召回的 pg_trgm 相似度阈值。 |
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT` | 关 | LangSmith 外部观测；`LANGSMITH_API_KEY` 由 `langsmith` 库读取。 |
-| `TRACE_DASHBOARD_ADMIN_EMAIL` | 同 `ADMIN_EMAIL` | Trace Console 接口返回的管理员邮箱。 |
 | `BOT_SESSION_MAX_CHATS`, `BOT_SESSION_TTL_SEC`, `BOT_RATE_TRACK_MAX_CHATS`, `BOT_RATE_WINDOW_SEC`, `BOT_RATE_LIMIT`, `BOT_AUTO_DELETE_SEC`, `BOT_SEND_RETRY_ATTEMPTS`, `BOT_SEND_RETRY_BASE_SEC` | 见 `app/bot.py` | Telegram Bot 的会话缓存、限流、消息自动删除和发送重试。 |
 | `API_RATE_LIMIT`, `API_RATE_TRACK_MAX_IPS`, `APPROVE_LINK_TTL_SEC`, `SMTP_HOST`, `SMTP_PORT` | 见 `app/rate_limit.py`、`app/security.py`、`common/mail.py` | 接口限流、审批链接有效期、发信服务器。 |
 | `DEEPSEEK_ENTITY_MODEL`, `DEEPSEEK_ENTITY_ESCALATION_MODEL`, `DEEPSEEK_ENTITY_TIMEOUT_SEC` | `deepseek-flash`, `deepseek-v4-pro`, `30` | 实体别名脚本。 |

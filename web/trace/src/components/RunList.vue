@@ -1,7 +1,8 @@
 <script setup>
-import { X } from "@lucide/vue";
+import { CircleAlert, X } from "@lucide/vue";
 import { formatCount, formatMs, formatTime, shortId } from "../format";
 import { CHANNEL, STATUS, warningLabel } from "../labels";
+import SelectMenu from "./SelectMenu.vue";
 
 const props = defineProps({
   runs: { type: Array, required: true },
@@ -13,12 +14,15 @@ const props = defineProps({
 });
 const emit = defineEmits(["change", "select", "more", "leave-thread"]);
 
-function update(key, value) {
-  emit("change", { ...props.filters, [key]: value });
+const statusOptions = [{ value: "", label: "全部状态" }, ...options(STATUS)];
+const channelOptions = [{ value: "", label: "不含评测" }, ...options(CHANNEL)];
+
+function options(labels) {
+  return Object.entries(labels).map(([value, label]) => ({ value, label }));
 }
 
-function flagTitle(run) {
-  return [run.error_code, ...run.warnings.map(warningLabel)].filter(Boolean).join("、");
+function update(key, value) {
+  emit("change", { ...props.filters, [key]: value });
 }
 </script>
 
@@ -39,18 +43,18 @@ function flagTitle(run) {
         @change="update('q', $event.target.value.trim())"
       />
       <div class="filter-row">
-        <select :value="filters.status" aria-label="状态" @change="update('status', $event.target.value)">
-          <option value="">全部状态</option>
-          <option v-for="(label, value) in STATUS" :key="value" :value="value">{{ label }}</option>
-        </select>
-        <select :value="filters.channel" aria-label="渠道" @change="update('channel', $event.target.value)">
-          <option value="">不含评测</option>
-          <option v-for="(label, value) in CHANNEL" :key="value" :value="value">{{ label }}</option>
-        </select>
-        <label class="check">
-          <input type="checkbox" :checked="filters.warned" @change="update('warned', $event.target.checked)" />
-          有警告
-        </label>
+        <SelectMenu
+          :model-value="filters.status"
+          :options="statusOptions"
+          label="状态"
+          @update:model-value="update('status', $event)"
+        />
+        <SelectMenu
+          :model-value="filters.channel"
+          :options="channelOptions"
+          label="渠道"
+          @update:model-value="update('channel', $event)"
+        />
       </div>
     </div>
 
@@ -64,12 +68,16 @@ function flagTitle(run) {
         >
           <span class="run-question">{{ run.user_message }}</span>
           <span class="run-meta">
-            <span class="status" :class="`status-${run.status}`">{{ STATUS[run.status] || run.status }}</span>
+            <span class="status" :class="`status-${run.status}`" :title="run.error_code || undefined">
+              {{ STATUS[run.status] || run.status }}
+            </span>
             <span>{{ formatTime(run.started_at) }}</span>
             <span>{{ formatMs(run.latency_ms) }}</span>
             <span>{{ formatCount(run.total_tokens) }} tok</span>
             <span>{{ CHANNEL[run.channel] || run.channel }}</span>
-            <span v-if="run.error_code || run.warnings.length" class="flag" :title="flagTitle(run)">!</span>
+            <span v-if="run.warnings.length" class="flag" :title="run.warnings.map(warningLabel).join('、')">
+              <CircleAlert :size="14" />
+            </span>
           </span>
         </button>
       </li>

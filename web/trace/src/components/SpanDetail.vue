@@ -1,8 +1,9 @@
 <script setup>
 import { computed } from "vue";
 import { compactArgs, formatDate, formatMs, formatScore, formatTime } from "../format";
-import { REASON, warningLabel } from "../labels";
+import { REASON } from "../labels";
 import { articleTitle, candidateRows, durationMs, evidenceTitle, nodeTitle, parentOf, rerankScores } from "../trace";
+import WarningList from "./WarningList.vue";
 
 const props = defineProps({
   trace: { type: Object, required: true },
@@ -84,9 +85,7 @@ function filterText(input) {
         <span>{{ formatMs(durationMs(node)) }}</span>
         <span v-if="node.attributes?.call_id" class="mono muted">{{ node.attributes.call_id }}</span>
       </div>
-      <ul v-if="node.warnings?.length" class="warnings">
-        <li v-for="code in node.warnings" :key="code">{{ warningLabel(code) }}</li>
-      </ul>
+      <WarningList v-if="node.warnings.length" :items="node.warnings.map((code) => ({ code, node }))" />
       <template v-if="node.error_code">
         <p class="error-text">{{ node.error_code }} {{ node.error_message }}</p>
         <details v-if="node.exception" class="fold">
@@ -123,11 +122,7 @@ function filterText(input) {
     </template>
 
     <template v-else-if="node.kind === 'step'">
-      <section v-if="!output.calls?.length" class="block">
-        <h4>模型回复</h4>
-        <pre class="pre">{{ output.reply }}</pre>
-      </section>
-      <section v-else class="block">
+      <section v-if="output.calls?.length" class="block">
         <h4>模型提出的调用</h4>
         <div class="table-wrap">
           <table class="grid-table">

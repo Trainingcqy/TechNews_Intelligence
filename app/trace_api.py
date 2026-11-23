@@ -109,7 +109,6 @@ def list_runs(
     status: str | None = Query(default=None),
     channel: str | None = Query(default=None),
     thread_id: str | None = Query(default=None),
-    warned: bool = Query(default=False),
     q: str | None = Query(default=None),
     started_from: str | None = Query(default=None),
     started_to: str | None = Query(default=None),
@@ -130,8 +129,6 @@ def list_runs(
     if thread_id:
         filters.append("thread_id = %s")
         params.append(thread_id)
-    if warned:
-        filters.append("cardinality(warnings) > 0")
     if q and q.strip():
         term = f"%{q.strip()}%"
         filters.append("(user_message ILIKE %s OR request_id ILIKE %s OR COALESCE(thread_id, '') ILIKE %s "

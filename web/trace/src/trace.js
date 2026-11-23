@@ -1,9 +1,18 @@
-import { STATUS } from "./labels";
+import { SORT, STATUS } from "./labels";
+
+// The span on which each request-level warning arises.
+const PLACES = {
+  step_budget_exhausted: (node) => node.kind === "step",
+  evidence_truncated: (node) => node.kind === "llm" && node.name === "final",
+  citations_removed: (node) => node.kind === "llm" && node.name === "final"
+};
 
 // The API returns spans flat with their parent ids; the request itself is the root of the tree.
 export function buildTrace(detail) {
   const { run, spans } = detail;
-  const nodes = new Map(spans.map((span) => [span.span_id, { ...span, key: span.span_id, children: [] }]));
+  const nodes = new Map(
+    spans.map((span) => [span.span_id, { ...span, key: span.span_id, warnings: [...(span.warnings || [])], children: [] }])
+  );
   const top = [];
   for (const node of nodes.values()) {
     const parent = node.parent_span_id ? nodes.get(node.parent_span_id) : null;
@@ -19,10 +28,11 @@ export function buildTrace(detail) {
     status: run.status === "error" ? "error" : run.status === "running" ? "aborted" : "ok",
     started_at_ms: startMs,
     finished_at_ms: run.latency_ms === null ? null : startMs + run.latency_ms,
-    warnings: run.warnings || [],
-    children: top
+    warnings: [],
+    children: top.map((node) => foldClosingCall(nodes, node))
   };
   nodes.set(root.key, root);
+  placeRequestWarnings(run.warnings || [], spans, root);
   return {
     run,
     root,
@@ -36,8 +46,47 @@ export function buildTrace(detail) {
   };
 }
 
+// A gather call that proposes no tool call ends the gathering. Its step holds only that call, so the call takes
+// the step's place and does not count as a step.
+function foldClosingCall(nodes, node) {
+  const call = node.kind === "step" && node.output?.calls?.length === 0 ? node.children.find((child) => child.kind === "llm") : null;
+  if (!call) return node;
+  nodes.delete(node.key);
+  return Object.assign(call, { parent_span_id: null, closing: node.attributes?.step === 1 ? "direct" : "end" });
+}
+
+// The run row lists the warnings of every span as well; those recorded on the request itself are shown on the last
+// span they concern, and the request keeps only those without one.
+function placeRequestWarnings(codes, spans, root) {
+  const onSpans = new Set(spans.flatMap((span) => span.warnings || []));
+  for (const code of codes) {
+    if (onSpans.has(code)) continue;
+    const target = PLACES[code] ? root.children.findLast(PLACES[code]) : null;
+    (target || root).warnings.push(code);
+  }
+}
+
+// Every warning with the node it is shown on, in tree order.
+export function warningsOf(trace) {
+  const out = [];
+  const walk = (node) => {
+    node.warnings.forEach((code) => out.push({ code, node }));
+    node.children.forEach(walk);
+  };
+  walk(trace.root);
+  return out;
+}
+
 export function parentOf(trace, node) {
-  return node.parent_span_id ? trace.nodes.get(node.parent_span_id) : trace.root;
+  return (node.parent_span_id && trace.nodes.get(node.parent_span_id)) || trace.root;
+}
+
+export function nodePath(trace, node) {
+  const parts = [];
+  for (let item = node; item.kind !== "request"; item = parentOf(trace, item)) {
+    parts.unshift(item.kind === "tool" ? `${nodeTitle(item)} ${nodeSubtitle(trace, item)}` : nodeTitle(item));
+  }
+  return parts.join(" › ");
 }
 
 export function durationMs(node) {
@@ -53,6 +102,7 @@ export function nodeTitle(node) {
     case "step":
       return `第 ${node.attributes?.step ?? "?"} 步`;
     case "llm":
+      if (node.closing) return node.closing === "direct" ? "直接回复" : "结束取证";
       return node.name === "final" ? "综合模型" : "取证模型";
     case "embedding":
       return "向量化";
@@ -76,7 +126,7 @@ export function nodeSubtitle(trace, node) {
       return node.attributes?.model || "";
     case "tool":
       if (node.name === "read_articles") return [...(node.input?.ids || []), ...(node.input?.urls || [])].join("、");
-      return node.input?.query || node.input?.topic || "按重要性浏览";
+      return node.input?.query || node.input?.topic || `${SORT[node.input?.sort] || ""}浏览`;
     case "retrieval":
       return `${output.candidates?.length ?? 0} 个候选`;
     case "rerank":

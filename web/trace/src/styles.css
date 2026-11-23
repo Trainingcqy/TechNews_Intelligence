@@ -4,10 +4,12 @@
   padding: 0;
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  scrollbar-width: thin;
 }
 
 :root {
   color-scheme: light dark;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
   --bg-color: #f7f9fc;
   --surface-color: #ffffff;
   --text-primary: #1f1f1f;
@@ -28,12 +30,11 @@
   --chip-bg: #f1f3f4;
   --code-bg: #f1f3f4;
   --code-ink: #1f1f1f;
-  --kind-request: #5f6368;
-  --kind-context: #8d6e63;
-  --kind-step: #8ab4f8;
-  --kind-llm: #0b57d0;
-  --kind-tool: #7b5ea7;
-  --kind-retrieval: #0f8a7e;
+  --selected-color: #e9ecef;
+  --scrollbar-thumb: #c4c7c5;
+  --bar-color: #c4c7c5;
+  --bar-llm: #8ab4f8;
+  --menu-shadow: 0 6px 20px rgba(60, 64, 67, 0.16);
   --list-width: 320px;
   --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -61,12 +62,11 @@
     --chip-bg: #2a2a2a;
     --code-bg: #171a1f;
     --code-ink: #e3e3e3;
-    --kind-request: #9aa0a6;
-    --kind-context: #bcaaa4;
-    --kind-step: #3d5a80;
-    --kind-llm: #a8c7fa;
-    --kind-tool: #c3a6f0;
-    --kind-retrieval: #6fd2c3;
+    --selected-color: #333333;
+    --scrollbar-thumb: #5c5c5c;
+    --bar-color: #5c5c5c;
+    --bar-llm: #8ab4f8;
+    --menu-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -92,12 +92,11 @@
   --chip-bg: #2a2a2a;
   --code-bg: #171a1f;
   --code-ink: #e3e3e3;
-  --kind-request: #9aa0a6;
-  --kind-context: #bcaaa4;
-  --kind-step: #3d5a80;
-  --kind-llm: #a8c7fa;
-  --kind-tool: #c3a6f0;
-  --kind-retrieval: #6fd2c3;
+  --selected-color: #333333;
+  --scrollbar-thumb: #5c5c5c;
+  --bar-color: #5c5c5c;
+  --bar-llm: #8ab4f8;
+  --menu-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
 :root[data-theme="light"] {
@@ -192,7 +191,7 @@ select {
   border: 1px solid var(--border-color);
   border-radius: 999px;
   background: transparent;
-  color: var(--primary-blue);
+  color: var(--text-secondary);
   padding: 0 10px;
   font-size: 12px;
   cursor: pointer;
@@ -341,16 +340,24 @@ select {
   padding: 24px;
 }
 
-/* The fade lies within the padding, so only content scrolled past the edges is faded. */
+/* The fade lies within the padding, so only content scrolled past the edges is faded. The strip on the right that
+   holds the scrollbar is left out of the fade. */
 .scroll-fade {
   --edge: 16px;
+  --bar-strip: 14px;
+  --fade: linear-gradient(transparent, #000 var(--edge), #000 calc(100% - var(--edge)), transparent);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding-block: var(--edge);
-  -webkit-mask-image: linear-gradient(transparent, #000 var(--edge), #000 calc(100% - var(--edge)), transparent);
-  mask-image: linear-gradient(transparent, #000 var(--edge), #000 calc(100% - var(--edge)), transparent);
-  scrollbar-width: thin;
+  -webkit-mask-image: var(--fade), linear-gradient(#000, #000);
+  mask-image: var(--fade), linear-gradient(#000, #000);
+  -webkit-mask-size: calc(100% - var(--bar-strip)) 100%, var(--bar-strip) 100%;
+  mask-size: calc(100% - var(--bar-strip)) 100%, var(--bar-strip) 100%;
+  -webkit-mask-position: left top, right top;
+  mask-position: left top, right top;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
 .toast {
@@ -370,44 +377,46 @@ select {
 }
 
 /* ===== Status ===== */
+/* The dot carries the status color; the label keeps the surrounding text color. */
 .status {
-  display: inline-block;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--chip-bg);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   white-space: nowrap;
 }
 
+.status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--dot, var(--text-tertiary));
+}
+
 .status-answered {
-  color: var(--status-success);
+  --dot: var(--status-success);
 }
 
 .status-error,
 .status-blocked {
-  color: var(--status-error);
+  --dot: var(--status-error);
 }
 
 .status-insufficient,
 .status-not_found {
-  color: var(--status-warn);
+  --dot: var(--status-warn);
 }
 
 .status-running {
-  color: var(--status-running);
+  --dot: var(--status-running);
 }
 
 .flag {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--status-warn);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
+  display: inline-flex;
+  color: var(--status-warn);
 }
 
 .chips {
@@ -449,25 +458,103 @@ select {
 
 .filter-row {
   display: flex;
-  align-items: center;
   gap: 8px;
-  font-size: 13px;
 }
 
-.filter-row select {
-  height: 30px;
-  padding: 0 6px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--surface-color);
+/* ===== Select ===== */
+.select {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
-.check {
-  display: inline-flex;
+.select-trigger {
+  width: 100%;
+  height: 36px;
+  padding: 0 8px 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--chip-bg);
+  display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: background-color var(--transition-smooth), border-color var(--transition-smooth);
+}
+
+.select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform var(--transition-smooth);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .select-trigger:hover {
+    background: var(--selected-color);
+  }
+}
+
+.select.open .select-trigger,
+.select-trigger:focus-visible {
+  border-color: var(--text-secondary);
+  background: transparent;
+}
+
+.select.open .select-chevron {
+  transform: rotate(180deg);
+}
+
+.select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 100%;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--surface-color);
+  box-shadow: var(--menu-shadow);
+}
+
+.select-option {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.select-option.active {
+  background: var(--selected-color);
+}
+
+.select-option[aria-selected="true"] {
+  font-weight: 600;
+}
+
+.menu-enter-active,
+.menu-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.menu-enter-from,
+.menu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .thread-banner {
@@ -506,7 +593,7 @@ select {
 
 .run-row.selected,
 .tree-row.selected {
-  background: var(--accent-soft);
+  background: var(--selected-color);
 }
 
 .run-question {
@@ -634,13 +721,6 @@ select {
   }
 }
 
-.kind-dot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  border-radius: 50%;
-}
-
 .tree-title {
   flex-shrink: 0;
   font-weight: 600;
@@ -669,11 +749,21 @@ select {
   height: 10px;
 }
 
+/* Model calls take most of the time, so only their bars are colored. */
 .bar {
   position: absolute;
   top: 0;
   bottom: 0;
   border-radius: 3px;
+  background: var(--bar-color);
+}
+
+.bar.bar-llm {
+  background: var(--bar-llm);
+}
+
+.tree-row.failed .bar {
+  background: var(--status-error);
 }
 
 .duration {
@@ -683,32 +773,6 @@ select {
   font-size: 12px;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
-}
-
-.kind-request {
-  background: var(--kind-request);
-}
-
-.kind-context {
-  background: var(--kind-context);
-}
-
-.kind-step {
-  background: var(--kind-step);
-}
-
-.kind-llm {
-  background: var(--kind-llm);
-}
-
-.kind-tool {
-  background: var(--kind-tool);
-}
-
-.kind-embedding,
-.kind-retrieval,
-.kind-rerank {
-  background: var(--kind-retrieval);
 }
 
 /* ===== Detail ===== */
@@ -790,19 +854,27 @@ select {
   word-break: break-word;
 }
 
-.warnings {
+.warning-list {
   list-style: none;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.warnings li {
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--chip-bg);
-  color: var(--status-warn);
-  font-size: 12px;
+.warning-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* Centers the icon on the first line of the label. */
+.warning-list .flag {
+  margin-top: 3px;
+}
+
+.warning-label {
+  margin-right: 4px;
+  font-weight: 600;
 }
 
 .plain-list {
@@ -920,6 +992,22 @@ select {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* An open message shows its full text instead of the one-line preview, indented to the role label. */
+.message[open] .preview {
+  display: none;
+}
+
+.message-body {
+  padding-left: 14px;
+}
+
+.call {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
 }
 
 .role {

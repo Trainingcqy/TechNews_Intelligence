@@ -23,7 +23,7 @@ const tokenInput = ref("");
 const authError = ref("");
 const errorText = ref("");
 
-const filters = ref({ status: "", channel: "", warned: false, q: "" });
+const filters = ref({ status: "", channel: "", q: "" });
 const thread = ref("");
 const runs = ref([]);
 const total = ref(0);
@@ -267,7 +267,7 @@ onMounted(() => {
         <button type="button" class="text-btn" @click="stage = 'trace'"><ArrowLeft :size="16" /> 调用链</button>
       </div>
       <div v-if="trace && selectedNode" class="detail-scroll scroll-fade">
-        <RequestDetail v-if="selectedNode.kind === 'request'" :trace="trace" />
+        <RequestDetail v-if="selectedNode.kind === 'request'" :trace="trace" @select="selectNode" />
         <LlmDetail v-else-if="selectedNode.kind === 'llm'" :node="selectedNode" :io="modelIo[selectedNode.span_id]" />
         <SpanDetail v-else :trace="trace" :node="selectedNode" />
       </div>

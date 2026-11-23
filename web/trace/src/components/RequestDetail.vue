@@ -1,14 +1,17 @@
 <script setup>
 import { computed } from "vue";
 import { formatDate } from "../format";
-import { LEVEL, ROUTE, warningLabel } from "../labels";
-import { evidenceTitle, location } from "../trace";
+import { LEVEL, ROUTE } from "../labels";
+import { evidenceTitle, location, warningsOf } from "../trace";
+import WarningList from "./WarningList.vue";
 
 const props = defineProps({
   trace: { type: Object, required: true }
 });
+const emit = defineEmits(["select"]);
 
 const run = computed(() => props.trace.run);
+const warnings = computed(() => warningsOf(props.trace));
 const output = computed(() => run.value.output || {});
 const answer = computed(() => output.value.answer || null);
 const route = computed(() => output.value.route || null);
@@ -64,6 +67,20 @@ function upgradeLabel(row) {
 
 <template>
   <div class="detail">
+    <section v-if="run.error_code || run.exception" class="block">
+      <h3>错误</h3>
+      <p class="error-text">{{ run.error_code }} {{ run.error_message }}</p>
+      <details v-if="run.exception" class="fold">
+        <summary><span class="fold-title">回溯</span></summary>
+        <pre class="code">{{ run.exception }}</pre>
+      </details>
+    </section>
+
+    <section v-if="warnings.length" class="block">
+      <h3>警告</h3>
+      <WarningList :items="warnings" :trace="trace" @select="emit('select', $event)" />
+    </section>
+
     <section class="block">
       <h3>回答</h3>
       <p class="answer">{{ answer?.text || "-" }}</p>
@@ -134,22 +151,6 @@ function upgradeLabel(row) {
           </tbody>
         </table>
       </div>
-    </section>
-
-    <section v-if="run.warnings?.length" class="block">
-      <h3>警告</h3>
-      <ul class="warnings">
-        <li v-for="code in run.warnings" :key="code">{{ warningLabel(code) }}</li>
-      </ul>
-    </section>
-
-    <section v-if="run.error_code || run.exception" class="block">
-      <h3>错误</h3>
-      <p class="error-text">{{ run.error_code }} {{ run.error_message }}</p>
-      <details v-if="run.exception" class="fold">
-        <summary><span class="fold-title">回溯</span></summary>
-        <pre class="code">{{ run.exception }}</pre>
-      </details>
     </section>
   </div>
 </template>

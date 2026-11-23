@@ -68,7 +68,7 @@ def test_list_runs_hides_eval_runs_and_returns_compact_rows(trace_api_mod, monke
                 [("r1", "t1", "web", "Genie 4 有什么新功能？", "answered", STARTED, 48000, 9, ["low_relevance"], None)])
 
     cursor = _install_db(monkeypatch, trace_api_mod, _handler)
-    response = _get(trace_api_mod, "/trace-api/runs?status=answered&warned=true&q=Genie")
+    response = _get(trace_api_mod, "/trace-api/runs?status=answered&q=Genie")
 
     assert response.status_code == 200
     payload = response.json()
@@ -78,8 +78,7 @@ def test_list_runs_hides_eval_runs_and_returns_compact_rows(trace_api_mod, monke
                                  "started_at": "2026-11-22T08:30:00+00:00", "latency_ms": 48000, "total_tokens": 9,
                                  "warnings": ["low_relevance"], "error_code": None}]
     count_sql, count_params = cursor.calls[0]
-    assert ("status = %s AND channel <> 'eval' AND cardinality(warnings) > 0 AND (user_message ILIKE %s"
-            in count_sql)
+    assert "status = %s AND channel <> 'eval' AND (user_message ILIKE %s" in count_sql
     assert count_params == ("answered", "%Genie%", "%Genie%", "%Genie%", "%Genie%")
     assert cursor.calls[1][1][-2:] == (50, 0)
 

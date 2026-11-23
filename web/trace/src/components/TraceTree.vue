@@ -1,9 +1,9 @@
 <script setup>
-import { ChevronRight } from "@lucide/vue";
+import { ChevronRight, CircleAlert } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { formatMs } from "../format";
 import { warningLabel } from "../labels";
-import { durationMs, nodeSubtitle, nodeTitle } from "../trace";
+import { durationMs, nodeSubtitle, nodeTitle, parentOf } from "../trace";
 
 const props = defineProps({
   trace: { type: Object, required: true },
@@ -17,6 +17,15 @@ watch(
   () => props.trace,
   () => {
     expanded.value = new Set();
+  }
+);
+// A stage selected from elsewhere, such as a warning link, unfolds its tool.
+watch(
+  () => props.selectedKey,
+  (key) => {
+    const node = props.trace.nodes.get(key);
+    const tool = node ? parentOf(props.trace, node) : null;
+    if (tool?.kind === "tool" && !expanded.value.has(tool.key)) expanded.value = new Set([...expanded.value, tool.key]);
   }
 );
 
@@ -45,7 +54,7 @@ function flags(node) {
   const all = [node, ...hidden];
   return {
     failed: all.some((item) => item.status === "error" || item.status === "aborted"),
-    warnings: all.flatMap((item) => item.warnings || [])
+    warnings: all.flatMap((item) => item.warnings)
   };
 }
 
@@ -57,6 +66,11 @@ function bar(node) {
     left: `${(start / totalMs) * 100}%`,
     width: `${Math.max(((end - start) / totalMs) * 100, 0.5)}%`
   };
+}
+
+function barClass(node) {
+  if (node.kind === "llm") return "bar-llm";
+  return node.kind === "request" || node.kind === "step" ? "bar-group" : "";
 }
 </script>
 
@@ -88,17 +102,18 @@ function bar(node) {
               <ChevronRight :size="14" />
             </button>
             <span v-else class="caret-space"></span>
-            <span class="kind-dot" :class="`kind-${node.kind}`"></span>
             <span class="tree-title">{{ nodeTitle(node) }}</span>
             <span class="tree-sub">{{ nodeSubtitle(trace, node) }}</span>
             <span
               v-if="flags(node).warnings.length"
               class="flag"
               :title="flags(node).warnings.map(warningLabel).join('、')"
-            >!</span>
+            >
+              <CircleAlert :size="14" />
+            </span>
           </span>
           <span class="tree-time">
-            <span class="bar-track"><span class="bar" :class="`kind-${node.kind}`" :style="bar(node)"></span></span>
+            <span class="bar-track"><span class="bar" :class="barClass(node)" :style="bar(node)"></span></span>
             <span class="duration">{{ formatMs(durationMs(node)) }}</span>
           </span>
         </div>

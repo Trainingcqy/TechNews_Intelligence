@@ -5,10 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import patch
 
+import pytest
 import requests
 
+from agent import trace_store
+from agent.retrieval import embeddings as embeddings_mod
 from agent.retrieval import rerank as rerank_mod
 from agent.retrieval import search as retrieval_mod
+from agent.trace import request_trace
 
 
 class _FakeCursor:
@@ -61,6 +65,19 @@ ROWS = [
 ]
 
 
+@pytest.fixture
+def traced(monkeypatch):
+    """Run a call inside a request trace and return its result and spans."""
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+
+    def run(fn):
+        with request_trace(question="q", channel="eval") as trace:
+            result = fn()
+        return result, {span.kind: span for span in trace.spans}
+
+    return run
+
+
 def test_resolve_rerank_mode_prefers_explicit_then_env(monkeypatch) -> None:
     monkeypatch.delenv("NEWS_RERANK_MODE", raising=False)
     assert rerank_mod.resolve_rerank_mode() == rerank_mod.RERANK_MODE_LLM
@@ -81,7 +98,7 @@ def test_resolve_rerank_mode_prefers_explicit_then_env(monkeypatch) -> None:
     assert rerank_mod.resolve_rerank_mode("unknown-mode") == rerank_mod.RERANK_MODE_NONE
 
 
-def test_lookup_candidates_by_query_rerank_off_keeps_recall_order() -> None:
+def test_lookup_candidates_by_query_rerank_off_keeps_recall_order(traced) -> None:
     fake_conn = _FakeConn(ROWS)
 
     with (
@@ -89,22 +106,20 @@ def test_lookup_candidates_by_query_rerank_off_keeps_recall_order() -> None:
         patch.object(retrieval_mod, "put_conn", lambda _conn: None),
         patch.object(retrieval_mod, "_get_query_embedding", lambda _q: None),
     ):
-        candidates, meta = retrieval_mod.lookup_candidates_by_query(
+        candidates, spans = traced(lambda: retrieval_mod.lookup_candidates_by_query(
             query="OpenAI",
             days=14,
             limit=2,
             rerank_mode="none",
-        )
+        ))
 
     assert [item["url"] for item in candidates] == ["https://1.com", "https://2.com"]
-    assert meta["rerank_mode"] == "none"
-    assert meta["candidate_count"] == 2
-    assert meta["top_k"] == 2
-    assert meta["fallback"] is False
-    assert meta["retrieval_mode"] == "postgres_rrf_hybrid"
-    assert meta["fusion"] == "rrf"
-    assert meta["points_boost"] is False
-    assert "lexical" in meta["channels_used"]
+    assert set(spans) == {"retrieval"}
+    retrieval = spans["retrieval"]
+    assert (retrieval.input["query"], retrieval.attributes["channels"], retrieval.attributes["pool_limit"]) == (
+        "OpenAI", ["lexical", "exact"], 2)
+    assert retrieval.output["candidates"][0] == {"article_id": 1, "score": 1.11, "text_score": 0.1,
+                                                 "semantic_score": 0.2, "exact_score": 0.0, "match_score": 0.5}
 
 
 def test_lookup_candidates_by_query_keeps_sql_order_and_maps_columns() -> None:
@@ -119,7 +134,7 @@ def test_lookup_candidates_by_query_keeps_sql_order_and_maps_columns() -> None:
         patch.object(retrieval_mod, "put_conn", lambda _conn: None),
         patch.object(retrieval_mod, "_get_query_embedding", lambda _q: None),
     ):
-        candidates, meta = retrieval_mod.lookup_candidates_by_query(
+        candidates = retrieval_mod.lookup_candidates_by_query(
             query="OpenAI",
             days=14,
             limit=2,
@@ -134,18 +149,12 @@ def test_lookup_candidates_by_query_keeps_sql_order_and_maps_columns() -> None:
     assert candidates[0]["article"].story_id == 101
 
 
-def test_lookup_candidates_by_query_empty_query_returns_structured_meta() -> None:
-    candidates, meta = retrieval_mod.lookup_candidates_by_query(
-        query="   ",
-        rerank_mode="llm_rerank",
-    )
-    assert candidates == []
-    assert meta["candidate_count"] == 0
-    assert meta["top_k"] == 0
-    assert meta["fallback"] is False
+def test_lookup_candidates_by_query_empty_query_returns_nothing(traced) -> None:
+    candidates, spans = traced(lambda: retrieval_mod.lookup_candidates_by_query(query="   ", rerank_mode="llm_rerank"))
+    assert (candidates, spans) == ([], {})
 
 
-def test_lookup_candidates_by_query_rerank_on_uses_reranker_order(monkeypatch) -> None:
+def test_lookup_candidates_by_query_rerank_on_uses_reranker_order(monkeypatch, traced) -> None:
     fake_conn = _FakeConn(ROWS)
 
     def _fake_post(_url, *, headers=None, json=None, timeout=None):
@@ -174,23 +183,21 @@ def test_lookup_candidates_by_query_rerank_on_uses_reranker_order(monkeypatch) -
         patch.object(retrieval_mod, "_get_query_embedding", lambda _q: None),
         patch.object(rerank_mod.requests, "post", _fake_post),
     ):
-        candidates, meta = retrieval_mod.lookup_candidates_by_query(
+        candidates, spans = traced(lambda: retrieval_mod.lookup_candidates_by_query(
             query="OpenAI",
             days=14,
             limit=2,
             rerank_mode="llm_rerank",
-        )
+        ))
 
     assert candidates[0]["url"] == "https://2.com"
     assert candidates[1]["url"] == "https://1.com"
-    assert meta["rerank_mode"] == "llm_rerank"
-    assert meta["candidate_count"] == 2
-    assert meta["top_k"] == 2
-    assert meta["fallback"] is False
-    assert meta["retrieval_mode"] == "postgres_rrf_hybrid"
+    rerank = spans["rerank"]
+    assert (rerank.status, rerank.input, rerank.attributes["top_k"]) == ("ok", {"candidates": 2}, 2)
+    assert rerank.output == {"ranked": [{"article_id": 2, "score": 0.95}, {"article_id": 1, "score": 0.12}]}
 
 
-def test_lookup_candidates_by_query_rerank_failure_fallbacks_to_recall_order(monkeypatch) -> None:
+def test_lookup_candidates_by_query_rerank_failure_fallbacks_to_recall_order(monkeypatch, traced) -> None:
     fake_conn = _FakeConn(ROWS)
 
     def _raise_timeout(*_args, **_kwargs):
@@ -203,15 +210,32 @@ def test_lookup_candidates_by_query_rerank_failure_fallbacks_to_recall_order(mon
         patch.object(retrieval_mod, "_get_query_embedding", lambda _q: None),
         patch.object(rerank_mod.requests, "post", _raise_timeout),
     ):
-        candidates, meta = retrieval_mod.lookup_candidates_by_query(
+        candidates, spans = traced(lambda: retrieval_mod.lookup_candidates_by_query(
             query="OpenAI",
             days=14,
             limit=2,
             rerank_mode="llm_rerank",
-        )
+        ))
 
     assert [item["url"] for item in candidates] == ["https://1.com", "https://2.com"]
-    assert meta["rerank_mode"] == "llm_rerank"
-    assert meta["candidate_count"] == 2
-    assert meta["top_k"] == 2
-    assert meta["fallback"] is True
+    rerank = spans["rerank"]
+    assert (rerank.status, rerank.error_code, rerank.warnings, rerank.output) == (
+        "error", "rerank_timeout", ["rerank_fallback"], {})
+
+
+@pytest.mark.parametrize("key, post, code", [
+    ("", None, "embedding_no_api_key"),
+    ("fake-key", requests.ConnectionError("down"), "embedding_connectionerror"),
+])
+def test_query_embedding_failure_skips_semantic_recall(monkeypatch, traced, key, post, code) -> None:
+    monkeypatch.setenv("JINA_API_KEY", key)
+
+    def _post(*_args, **_kwargs):
+        raise post
+
+    monkeypatch.setattr(embeddings_mod.requests, "post", _post)
+    vector, spans = traced(lambda: embeddings_mod.get_query_embedding("OpenAI"))
+
+    assert vector is None
+    embedding = spans["embedding"]
+    assert (embedding.status, embedding.error_code, embedding.warnings) == ("error", code, ["semantic_skipped"])

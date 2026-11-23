@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 import agent.llm as llm
+from agent import trace_store
 from agent.llm import ModelCallError, ModelHandle, build_models, call_text, call_with_tools, coerce_to_text, extract_json_object
+from agent.trace import request_trace
 
 _ENV = (
     "AGENT_GATHER_PROVIDER",
@@ -35,6 +38,7 @@ def test_build_models_defaults(fake_build) -> None:
     assert (gather.role, gather.provider, gather.model) == ("gather", "deepseek", "deepseek-flash")
     assert (final.role, final.provider, final.model) == ("final", "vertex", "gemini-3.1-pro-preview")
     assert [c["temperature"] for c in fake_build] == [0.1, 0.1]
+    assert (gather.temperature, final.temperature) == (0.1, 0.1)
 
 
 def test_build_models_env_overrides(fake_build, monkeypatch) -> None:
@@ -77,14 +81,44 @@ class _FailingClient:
         return self
 
 
-@pytest.mark.parametrize("call", [lambda h: call_text(h, [], node="final_synthesizer"),
-                                  lambda h: call_with_tools(h, [], [], node="gather")])
+@pytest.mark.parametrize("call", [lambda h: call_text(h, []), lambda h: call_with_tools(h, [], [])])
 def test_call_failure_raises_model_call_error(call) -> None:
     handle = ModelHandle(role="final", provider="vertex", model="m", client=_FailingClient())
     with pytest.raises(ModelCallError) as info:
         call(handle)
     assert info.value.code == "model_timeouterror"
     assert isinstance(info.value.__cause__, TimeoutError)
+
+
+class _Client:
+    def __init__(self, reply):
+        self.reply = reply
+
+    def invoke(self, messages):
+        return self.reply
+
+
+def test_call_records_the_llm_span(monkeypatch) -> None:
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+    reply = AIMessage(content="答案", response_metadata={"model_name": "gemini-3.1-pro-preview-0101",
+                                                        "finish_reason": "STOP"},
+                      usage_metadata={"input_tokens": 100, "output_tokens": 10, "total_tokens": 99})
+    handle = ModelHandle(role="final", provider="vertex", model="gemini-3.1-pro-preview", client=_Client(reply),
+                         temperature=0.1)
+
+    with request_trace(question="q", channel="web") as trace:
+        assert call_text(handle, [HumanMessage("问题")]) == "答案"
+
+    (span,) = trace.spans
+    assert (span.kind, span.name, span.status, span.output) == ("llm", "final", "ok", {"chars": 2, "tool_calls": 0})
+    assert span.attributes == {
+        "provider": "vertex", "model": "gemini-3.1-pro-preview", "temperature": 0.1,
+        "response_model": "gemini-3.1-pro-preview-0101", "finish_reason": "STOP",
+        "usage": {"input_tokens": 100, "cache_read_tokens": 0, "output_tokens": 10, "reasoning_tokens": 0,
+                  "total_tokens": 99},
+    }
+    assert span.warnings == ["usage_inconsistent"]
+    assert trace.model_io[span.span_id]["input_messages"][0]["content"] == "问题"
 
 
 def test_coerce_to_text() -> None:

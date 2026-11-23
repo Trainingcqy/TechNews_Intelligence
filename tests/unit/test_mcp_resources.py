@@ -7,11 +7,14 @@ from datetime import datetime, timezone
 
 import pytest
 
+from agent import trace_store
 from agent.mcp import server as server_mod
 from agent.mcp.server import InProcessMCPServer, build_newsdb_server
 from agent.mcp.stdio_server import _handle_request
+from agent.retrieval import corpus
 from agent.retrieval.search import SearchResult
 from agent.tools import read, registry
+from agent.trace import request_trace
 from agent.types import Article, Discussion, StoryHit, StoryStats
 from common.urls import url_key
 
@@ -48,6 +51,18 @@ def fake_db(monkeypatch):
 def _newsdb_server(monkeypatch) -> InProcessMCPServer:
     monkeypatch.setattr(server_mod, "corpus_info", lambda: "新闻库范围：共 3 篇")
     return build_newsdb_server()
+
+
+def test_corpus_lookup_failure_returns_the_unavailable_text_and_warns(monkeypatch):
+    def broken():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(corpus, "_cache", None)
+    monkeypatch.setattr(corpus, "get_conn", broken)
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+    with request_trace(question="q", channel="web") as trace:
+        assert corpus.corpus_info() == corpus.UNAVAILABLE
+    assert trace.warnings == ["corpus_unavailable"]
 
 
 def test_newsdb_server_exposes_two_tools_and_one_resource(monkeypatch):
@@ -91,7 +106,7 @@ def test_call_tool_search_news_lists_every_registered_evidence(monkeypatch):
                        hn_comments=312, hn_sighting_id=70, first_at=related.published_at,
                        last_at=ARTICLE.published_at)
     hit = StoryHit(lead=ARTICLE, stats=stats, related=(related,), discussion=DISCUSSION, match_score=None)
-    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False, meta={}))
+    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False))
 
     result = _newsdb_server(monkeypatch).call_tool("search_news", {"topic": "ai"})
 

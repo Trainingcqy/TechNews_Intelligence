@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from langchain_core.messages import AIMessage
 
-from agent.trace import extract_token_usage, set_request_token_usage, trace_span
+from agent.trace import set_model_io, trace_span, usage_from_message
 from common.llm_provider import (
     DEFAULT_DEEPSEEK_FLASH_MODEL,
     DEFAULT_VERTEX_MODEL,
@@ -27,10 +27,11 @@ class ModelCallError(Exception):
 
 @dataclass(frozen=True)
 class ModelHandle:
-    role: str
+    role: str  # gather | final
     provider: str
     model: str
     client: Any
+    temperature: float | None = None
 
 
 def _clean(value: Any) -> str:
@@ -60,65 +61,44 @@ def _build_role_model(*, role: str, default_provider: str, default_model: str) -
         # A role's default model belongs to its default provider; any other provider gets its own default model.
         model_name = _clean(os.getenv(f"{prefix}_MODEL", "")) or (default_model if provider == default_provider else None)
         config = resolve_model_config(provider=provider, model_name=model_name)
-        client = build_chat_model(provider=config.provider, model_name=config.model, temperature=_temperature())
+        temperature = _temperature()
+        client = build_chat_model(provider=config.provider, model_name=config.model, temperature=temperature)
     except Exception as exc:
         raise ModelCallError(f"model_build_{type(exc).__name__.lower()}", f"{role}: {exc}") from exc
-    return ModelHandle(role=role, provider=config.provider, model=config.model, client=client)
+    return ModelHandle(role=role, provider=config.provider, model=config.model, client=client,
+                       temperature=temperature)
 
 
-def call_with_tools(handle: ModelHandle, messages: list, tools: list, *, node: str) -> AIMessage:
-    return _invoke(handle, messages, node, lambda: handle.client.bind_tools(tools).invoke(messages))
+def call_with_tools(handle: ModelHandle, messages: list, tools: list) -> AIMessage:
+    return _invoke(handle, messages, lambda: handle.client.bind_tools(tools).invoke(messages))
 
 
-def call_text(handle: ModelHandle, messages: list, *, node: str) -> str:
-    result = _invoke(handle, messages, node, lambda: handle.client.invoke(messages))
+def call_text(handle: ModelHandle, messages: list) -> str:
+    result = _invoke(handle, messages, lambda: handle.client.invoke(messages))
     return coerce_to_text(getattr(result, "content", result)).strip()
 
 
-def _invoke(handle: ModelHandle, messages: list, node: str, invoke: Callable[[], Any]) -> Any:
+def _invoke(handle: ModelHandle, messages: list, invoke: Callable[[], Any]) -> Any:
     failure: Exception | None = None
-    with trace_span(
-        "model_call",
-        node,
-        input_summary={"message_count": len(messages)},
-        metadata={"node": node, "provider": handle.provider, "model": handle.model},
-    ) as span:
+    attributes = {"provider": handle.provider, "model": handle.model, "temperature": handle.temperature}
+    with trace_span("llm", handle.role, attributes=attributes) as span:
         try:
             result = invoke()
         except Exception as exc:  # noqa: BLE001
             failure = exc
-            span.set_error(error_code=_error_code(exc), error_message=str(exc), error=exc)
-            span.set_output({"status": "error", "error": str(exc)})
-            span.set_model_io(
-                node=node,
-                provider=handle.provider,
-                model=handle.model,
-                input_messages=messages,
-                raw_output={"error": str(exc), "exception_type": type(exc).__name__},
-            )
+            span.fail(exc, code=_error_code(exc))
+            set_model_io(span, messages, {"error": str(exc), "exception_type": type(exc).__name__})
         else:
-            usage = extract_token_usage([result])
-            if usage:
-                set_request_token_usage(usage)
-            tool_calls = list(getattr(result, "tool_calls", None) or [])
+            metadata = getattr(result, "response_metadata", None) or {}
+            usage, consistent = usage_from_message(result)
+            reported = {"response_model": metadata.get("model_name"), "finish_reason": metadata.get("finish_reason"),
+                        "usage": usage}
+            span.attributes.update({key: value for key, value in reported.items() if value is not None})
+            if not consistent:
+                span.warn("usage_inconsistent")
             text = coerce_to_text(getattr(result, "content", result)).strip()
-            span.set_output(
-                {
-                    "status": "success",
-                    "output_chars": len(text),
-                    "tool_call_count": len(tool_calls),
-                    "token_usage": usage,
-                }
-            )
-            span.set_model_io(
-                node=node,
-                provider=handle.provider,
-                model=handle.model,
-                input_messages=messages,
-                raw_output=result,
-                parsed_output={"tool_calls": tool_calls} if tool_calls else None,
-                token_usage=usage,
-            )
+            span.output = {"chars": len(text), "tool_calls": len(getattr(result, "tool_calls", None) or [])}
+            set_model_io(span, messages, result)
     # Raised outside the span so trace_span does not overwrite the error code recorded above.
     if failure is not None:
         raise ModelCallError(_error_code(failure), str(failure)) from failure

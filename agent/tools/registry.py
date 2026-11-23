@@ -10,14 +10,14 @@ from typing import Any, Callable, Literal
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from agent.config import AgentConfig
-from agent.trace import trace_span
 from agent.evidence import EvidenceRegistry
 from agent.retrieval.search import SearchResult
+from agent.trace import Span, trace_span, warn
 from agent.types import Evidence
 from common.taxonomy import KINDS, TOPICS
 
-from .read import ReadResult, commit_read_articles, run_read_articles
-from .search import commit_search_news, run_search_news
+from .read import ReadResult, commit_read_articles, read_trace_output, run_read_articles
+from .search import commit_search_news, run_search_news, search_trace_output
 
 
 class SearchNewsArgs(BaseModel):
@@ -77,6 +77,7 @@ class PreparedCall:
     call_id: str
     name: str
     args: BaseModel
+    dropped: tuple[str, ...] = ()  # 读取额度不足时截掉的编号与链接
 
 
 @dataclass(frozen=True)
@@ -88,7 +89,7 @@ class ToolPayload:
     ok: bool
     data: Any  # SearchResult 或 ReadResult
     error: str | None = None
-    diagnostics: dict[str, Any] = field(default_factory=dict)
+    span: Span | None = None  # collect 登记后把返回文本补进这个 span
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,7 @@ class ToolOutcome:
     gather_text: str  # 返回给取证模型的文本
     new_evidence: tuple[Evidence, ...] = ()
     error: str | None = None
+    reason: str | None = None  # 拒绝的原因：call_limit、unknown_tool、duplicate、invalid_args、read_quota
 
 
 @dataclass(frozen=True)
@@ -107,12 +109,16 @@ class ToolSpec:
     name: str
     description: str
     args_model: type[BaseModel]
-    run: Callable[..., SearchResult | ReadResult]  # 只做读取
+    run: Callable[..., SearchResult | ReadResult]  # 只做读取，参数为 PreparedCall
     commit: Callable[..., ToolOutcome]  # 登记证据并生成文本
+    trace_output: Callable[[Any], dict[str, Any]]  # tool span 的输出
 
 
-def _run_search(args: SearchNewsArgs, *, registry: EvidenceRegistry, state: TurnState) -> SearchResult:
-    return run_search_news(args)
+def _run_search(prepared: PreparedCall, *, registry: EvidenceRegistry, state: TurnState) -> SearchResult:
+    result = run_search_news(prepared.args)
+    if result.weak_match:
+        warn("low_relevance")
+    return result
 
 
 TOOLS: tuple[ToolSpec, ...] = (
@@ -128,6 +134,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         args_model=SearchNewsArgs,
         run=_run_search,
         commit=commit_search_news,
+        trace_output=search_trace_output,
     ),
     ToolSpec(
         name="read_articles",
@@ -138,6 +145,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         args_model=ReadArticlesArgs,
         run=run_read_articles,
         commit=commit_read_articles,
+        trace_output=read_trace_output,
     ),
 )
 _SPECS = {spec.name: spec for spec in TOOLS}
@@ -157,8 +165,8 @@ def tool_schemas() -> list[dict[str, Any]]:
     ]
 
 
-def _reject(index: int, call_id: str, name: str, text: str) -> ToolOutcome:
-    return ToolOutcome(index=index, call_id=call_id, name=name, ok=False, gather_text=text, error=text)
+def reject(index: int, call_id: str, name: str, text: str, reason: str | None = None) -> ToolOutcome:
+    return ToolOutcome(index=index, call_id=call_id, name=name, ok=False, gather_text=text, error=text, reason=reason)
 
 
 def _validation_text(exc: ValidationError) -> str:
@@ -173,58 +181,50 @@ def prepare_call(index: int, call: dict, *, state: TurnState, config: AgentConfi
     name, raw_args, call_id = call["name"], call["args"], call["id"]
     spec = _SPECS.get(name)
     if spec is None:
-        return _reject(index, call_id, name, f"未知工具：{name}。可用工具：search_news、read_articles。")
+        return reject(index, call_id, name, f"未知工具：{name}。可用工具：search_news、read_articles。", "unknown_tool")
 
     key = name + json.dumps(raw_args, sort_keys=True)
     if key in state.seen_calls:
-        return _reject(index, call_id, name, "与之前的调用完全相同，结果见上文。")
+        return reject(index, call_id, name, "与之前的调用完全相同，结果见上文。", "duplicate")
     state.seen_calls.add(key)
 
     try:
         args = spec.args_model.model_validate(raw_args)
     except ValidationError as exc:
-        return _reject(index, call_id, name, _validation_text(exc))
+        return reject(index, call_id, name, _validation_text(exc), "invalid_args")
 
+    dropped: tuple[str, ...] = ()
     if isinstance(args, ReadArticlesArgs):
         remaining = max(config.max_read_articles - state.read_count, 0)
         if remaining == 0:
-            return _reject(index, call_id, name, "已达到本次请求的读取上限。")
+            return reject(index, call_id, name, "已达到本次请求的读取上限。", "read_quota")
         ids = args.ids[:remaining]
         urls = args.urls[:remaining - len(ids)]
+        dropped = (*args.ids[len(ids):], *args.urls[len(urls):])
         args = args.model_copy(update={"ids": ids, "urls": urls})
         state.read_count += len(ids) + len(urls)
 
-    return PreparedCall(index=index, call_id=call_id, name=name, args=args)
-
-
-def _trace_output(data: SearchResult | ReadResult) -> tuple[list[str], dict[str, Any]]:
-    if isinstance(data, SearchResult):
-        return [hit.lead.url for hit in data.hits], data.meta
-    urls = [(item.discussion or item.article).url for item in data.items if item.error is None]
-    return urls, {}
+    return PreparedCall(index=index, call_id=call_id, name=name, args=args, dropped=dropped)
 
 
 def run_call(prepared: PreparedCall, *, registry: EvidenceRegistry, state: TurnState) -> ToolPayload:
     name = prepared.name
-    input_summary = {"tool": name, "args": prepared.args.model_dump(mode="json")}
-    with trace_span("tool_call", name, input_summary=input_summary) as span:
+    attributes = {"call_id": prepared.call_id, "index": prepared.index}
+    with trace_span("tool", name, input=prepared.args.model_dump(mode="json"), attributes=attributes) as span:
         try:
-            data = _SPECS[name].run(prepared.args, registry=registry, state=state)
+            data = _SPECS[name].run(prepared, registry=registry, state=state)
         except Exception as exc:
-            span.set_error(error_code=f"tool_call_{type(exc).__name__.lower()}", error_message=str(exc), error=exc)
-            payload = ToolPayload(index=prepared.index, call_id=prepared.call_id, name=name, args=prepared.args,
-                                  ok=False, data=None, error=f"工具执行失败：{type(exc).__name__}")
-            span.set_output({"status": "error", "evidence_urls": [], "diagnostics": {}})
-            return payload
-        evidence_urls, diagnostics = _trace_output(data)
-        span.set_output({"status": "ok", "evidence_urls": evidence_urls, "diagnostics": diagnostics})
+            span.fail(exc)
+            return ToolPayload(index=prepared.index, call_id=prepared.call_id, name=name, args=prepared.args,
+                               ok=False, data=None, error=f"工具执行失败：{type(exc).__name__}", span=span)
+        span.output = _SPECS[name].trace_output(data)
         return ToolPayload(index=prepared.index, call_id=prepared.call_id, name=name, args=prepared.args,
-                           ok=True, data=data, diagnostics=diagnostics)
+                           ok=True, data=data, span=span)
 
 
 def commit_call(payload: ToolPayload, *, registry: EvidenceRegistry, state: TurnState,
                 config: AgentConfig) -> ToolOutcome:
     if not payload.ok:
-        return _reject(payload.index, payload.call_id, payload.name, payload.error)
+        return reject(payload.index, payload.call_id, payload.name, payload.error)
     outcome = _SPECS[payload.name].commit(payload.args, payload.data, registry=registry)
     return replace(outcome, index=payload.index, call_id=payload.call_id)

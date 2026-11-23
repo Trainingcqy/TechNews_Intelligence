@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from agent import trace_store
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
 from agent.tools import read
-from agent.tools.registry import ReadArticlesArgs, TurnState, prepare_call
+from agent.trace import request_trace
+from agent.tools.registry import PreparedCall, ReadArticlesArgs, TurnState, prepare_call
 from agent.types import Article, Discussion
 from common.urls import url_key
 
@@ -48,9 +50,9 @@ def _fake_db(monkeypatch, *, articles=(), discussions=(), bodies=None, discussio
 
 
 def _read(registry, state=None, **fields):
-    args = ReadArticlesArgs(**fields)
-    result = read.run_read_articles(args, registry=registry, state=state or TurnState(user_urls=set()))
-    return result, read.commit_read_articles(args, result, registry=registry)
+    prepared = PreparedCall(index=0, call_id="c", name="read_articles", args=ReadArticlesArgs(**fields))
+    result = read.run_read_articles(prepared, registry=registry, state=state or TurnState(user_urls=set()))
+    return result, read.commit_read_articles(prepared.args, result, registry=registry)
 
 
 def test_unknown_id_fails_and_all_failed_is_not_ok(monkeypatch):
@@ -86,8 +88,31 @@ def test_read_limit_exhausted():
     state = TurnState(user_urls=set(), read_count=8)
     outcome = prepare_call(0, {"name": "read_articles", "args": {"ids": ["E1"]}, "id": "c"},
                            state=state, config=AgentConfig(max_read_articles=8))
-    assert (outcome.ok, outcome.gather_text) == (False, "已达到本次请求的读取上限。")
+    assert (outcome.ok, outcome.reason, outcome.gather_text) == (False, "read_quota", "已达到本次请求的读取上限。")
     assert state.read_count == 8
+
+
+def test_targets_over_the_read_quota_are_reported(monkeypatch):
+    _fake_db(monkeypatch, bodies={30: "正文"})
+    registry = EvidenceRegistry()
+    registry.add_article(ARTICLE, "summary")
+    state = TurnState(user_urls=set(), read_count=7)
+    prepared = prepare_call(0, {"name": "read_articles", "args": {"ids": ["E1", "E2"], "urls": ["https://a.com/x"]},
+                                "id": "c"}, state=state, config=AgentConfig(max_read_articles=8))
+
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+    with request_trace(question="q", channel="web") as trace:
+        result = read.run_read_articles(prepared, registry=registry, state=state)
+    outcome = read.commit_read_articles(prepared.args, result, registry=registry)
+
+    assert trace.warnings == ["read_targets_dropped"]
+    assert [(item.target, item.error) for item in result.items] == [
+        ("E1", None), ("E2", "超出本次请求的读取上限"), ("https://a.com/x", "超出本次请求的读取上限")]
+    assert outcome.gather_text.splitlines()[-2:] == [
+        "[E2] 读取失败：超出本次请求的读取上限。", "[https://a.com/x] 读取失败：超出本次请求的读取上限。"]
+    assert read.read_trace_output(result)["items"][1] == {
+        "target": "E2", "article_id": None, "sighting_id": None, "chars": 0, "total_chars": 0,
+        "error": "超出本次请求的读取上限"}
 
 
 def test_article_without_body_registers_summary_and_skips_fetch(monkeypatch):

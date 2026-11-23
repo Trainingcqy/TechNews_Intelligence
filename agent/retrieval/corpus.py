@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
+from agent.trace import warn
 from common.db import get_conn, put_conn
 from common.taxonomy import KINDS, TOPICS
 
@@ -68,6 +69,7 @@ def corpus_info() -> str:
         text = _render(kind_rows, publisher_rows)
     except Exception:
         logger.exception("corpus_info failed")
+        warn("corpus_unavailable")
         return UNAVAILABLE
     finally:
         if conn is not None:

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import replace
+from datetime import date, datetime, timezone
 
 import pytest
 from pydantic import ValidationError
 
+from agent import trace_store
 from agent.config import AgentConfig
-from agent.trace import request_trace_context
+from agent.trace import request_trace
 from agent.evidence import EvidenceRegistry
 from agent.retrieval.search import SearchResult
 from agent.tools import registry
@@ -20,6 +22,17 @@ from agent.tools.registry import (
     prepare_call,
     run_call,
 )
+from agent.types import Article, StoryHit, StoryStats
+
+PUBLISHED = datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc)
+ARTICLE = Article(
+    article_id=30, url="https://techcrunch.com/genie-4", title="Genie 4 adds audio", title_zh="",
+    summary="谷歌发布 Genie 4。", topics=("ai",), kind="release", publisher="TechCrunch", publisher_kind="media",
+    lang="en", published_at=PUBLISHED, body_level="full", hn_score=None, hn_comments=None, hn_sighting_id=None,
+    story_id=5,
+)
+STATS = StoryStats(story_id=5, report_count=1, publisher_count=1, publisher_kinds=("media",), hn_score=None,
+                   hn_comments=None, hn_sighting_id=None, first_at=PUBLISHED, last_at=PUBLISHED)
 
 
 def _call(name: str, args: dict, call_id: str = "c1") -> dict:
@@ -99,7 +112,8 @@ def test_prepare_unknown_tool():
     outcome = _prepare("query_news", {"query": "x"})
     assert outcome == ToolOutcome(index=2, call_id="c1", name="query_news", ok=False,
                                   gather_text="未知工具：query_news。可用工具：search_news、read_articles。",
-                                  error="未知工具：query_news。可用工具：search_news、read_articles。")
+                                  error="未知工具：query_news。可用工具：search_news、read_articles。",
+                                  reason="unknown_tool")
 
 
 def test_prepare_duplicate_call_ignores_key_order():
@@ -108,12 +122,12 @@ def test_prepare_duplicate_call_ignores_key_order():
     second = _prepare("search_news", {"days": 7, "query": "Genie 4"}, state)
     other = _prepare("search_news", {"query": "Genie 4", "days": 8}, state)
     assert isinstance(first, PreparedCall) and isinstance(other, PreparedCall)
-    assert second.ok is False and second.gather_text == "与之前的调用完全相同，结果见上文。"
+    assert (second.ok, second.reason, second.gather_text) == (False, "duplicate", "与之前的调用完全相同，结果见上文。")
 
 
 def test_prepare_validation_error_text_lists_fields():
     outcome = _prepare("search_news", {"query": "x", "days": 0, "limit": 21})
-    assert outcome.ok is False
+    assert (outcome.ok, outcome.reason) == (False, "invalid_args")
     assert outcome.gather_text == (
         "参数错误：days：Input should be greater than or equal to 1；"
         "limit：Input should be less than or equal to 20"
@@ -132,13 +146,14 @@ def test_prepare_read_quota_truncates_ids_then_urls():
     state = TurnState(user_urls=set(), read_count=5)
     prepared = _prepare("read_articles", {"ids": ["E1", "E2"], "urls": ["https://a.com/1", "https://a.com/2"]},
                         state, AgentConfig(max_read_articles=8))
-    assert (prepared.args.ids, prepared.args.urls) == (["E1", "E2"], ["https://a.com/1"])
+    assert (prepared.args.ids, prepared.args.urls, prepared.dropped) == (
+        ["E1", "E2"], ["https://a.com/1"], ("https://a.com/2",))
     assert state.read_count == 8
 
     state = TurnState(user_urls=set(), read_count=6)
     prepared = _prepare("read_articles", {"ids": ["E1", "E2", "E3"], "urls": ["https://a.com/1"]},
                         state, AgentConfig(max_read_articles=8))
-    assert (prepared.args.ids, prepared.args.urls) == (["E1", "E2"], [])
+    assert (prepared.args.ids, prepared.args.urls, prepared.dropped) == (["E1", "E2"], [], ("E3", "https://a.com/1"))
     assert state.read_count == 8
 
 
@@ -147,25 +162,41 @@ def test_run_call_turns_handler_exception_into_error_payload(monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(registry, "run_search_news", boom)
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
     prepared = _prepare("search_news", {"query": "Genie 4"})
-    with request_trace_context(user_message="q") as trace:
+    with request_trace(question="q", channel="cli") as trace:
         payload = run_call(prepared, registry=EvidenceRegistry(), state=TurnState(user_urls=set()))
 
     assert (payload.index, payload.call_id, payload.ok, payload.data, payload.error) == (
         2, "c1", False, None, "工具执行失败：RuntimeError")
     (span,) = trace.spans
-    assert (span.span_type, span.name, span.status, span.error_code) == (
-        "tool_call", "search_news", "error", "tool_call_runtimeerror")
-    assert span.input_summary["args"]["query"] == "Genie 4"
-    assert span.output_summary["status"] == "error"
+    assert payload.span is span
+    assert (span.kind, span.name, span.status, span.error_code, span.error_message) == (
+        "tool", "search_news", "error", "tool_runtimeerror", "db down")
+    assert (span.input["query"], span.attributes) == ("Genie 4", {"call_id": "c1", "index": 2})
 
     outcome = commit_call(payload, registry=EvidenceRegistry(), state=TurnState(user_urls=set()),
                           config=AgentConfig())
     assert (outcome.index, outcome.ok, outcome.gather_text) == (2, False, "工具执行失败：RuntimeError")
 
 
+def test_run_call_records_stories_and_weak_match(monkeypatch):
+    hit = StoryHit(lead=ARTICLE, stats=STATS, related=(replace(ARTICLE, article_id=31),), discussion=None,
+                   match_score=0.2)
+    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=True))
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+    with request_trace(question="q", channel="cli") as trace:
+        run_call(_prepare("search_news", {"query": "Genie 4"}), registry=EvidenceRegistry(),
+                 state=TurnState(user_urls=set()))
+
+    (span,) = trace.spans
+    assert span.output == {"stories": [{"story_id": 5, "lead": 30, "related": [31], "discussion": None,
+                                        "reports": 1, "publishers": 1, "match_score": 0.2}]}
+    assert span.warnings == ["low_relevance"]
+
+
 def test_commit_call_carries_index_and_call_id(monkeypatch):
-    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[], weak_match=False, meta={}))
+    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[], weak_match=False))
     prepared = _prepare("search_news", {"query": "Genie 4"})
     payload = run_call(prepared, registry=EvidenceRegistry(), state=TurnState(user_urls=set()))
     outcome = commit_call(payload, registry=EvidenceRegistry(), state=TurnState(user_urls=set()),

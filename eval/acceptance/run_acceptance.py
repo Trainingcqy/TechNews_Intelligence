@@ -243,7 +243,8 @@ def main() -> int:
         print(f"[{idx}/{len(pending)}] {case_id}: {case['question']} ...", flush=True)
         started = time.perf_counter()
         answer = run_turn(
-            case["question"], [], request_id=request_id, thread_id=f"eval_acc_{case_id}_{run_token}"
+            case["question"], [], channel="eval", request_id=request_id,
+            thread_id=f"eval_acc_{case_id}_{run_token}",
         )
         seconds = time.perf_counter() - started
         try:

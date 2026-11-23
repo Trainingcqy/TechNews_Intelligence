@@ -68,28 +68,6 @@ def _profile_limits(limit: int) -> tuple[int, int, int]:
     return pool_limit, channel_limit, semantic_limit
 
 
-def retrieval_diagnostics(
-    *,
-    query_vec: list[float] | None,
-    candidate_count: int,
-    top_k: int,
-) -> dict[str, Any]:
-    channels = ["lexical", "exact"]
-    if query_vec:
-        channels.insert(1, "semantic")
-    meta: dict[str, Any] = {
-        "retrieval_mode": "postgres_rrf_hybrid",
-        "fusion": "rrf",
-        "rrf_k": RRF_K,
-        "channels_used": channels,
-        "candidate_count": int(candidate_count),
-        "top_k": int(top_k),
-        "points_boost": _env_flag("RETRIEVAL_POINTS_BOOST", default=False),
-        "recall_profile": resolve_recall_profile().as_dict(),
-    }
-    return meta
-
-
 def fetch_hybrid_rows(
     cur,
     *,

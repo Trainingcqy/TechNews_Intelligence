@@ -121,66 +121,54 @@ CREATE TABLE IF NOT EXISTS public.user_story_seen (
 
 -- 6. Agent request traces
 CREATE TABLE IF NOT EXISTS public.agent_runs (
-    id BIGSERIAL PRIMARY KEY,
-    request_id VARCHAR(64) NOT NULL UNIQUE,
+    request_id VARCHAR(64) PRIMARY KEY,
     thread_id VARCHAR(128),
+    channel VARCHAR(16) NOT NULL,
     user_message TEXT NOT NULL,
-    final_status VARCHAR(32) NOT NULL,
-    latency_ms INTEGER NOT NULL DEFAULT 0,
-    evidence_count INTEGER NOT NULL DEFAULT 0,
-    token_usage JSONB,
+    status VARCHAR(16) NOT NULL,
     error_code VARCHAR(128),
     error_message TEXT,
-    exception_chain JSONB,
-    tool_call_chain JSONB NOT NULL DEFAULT '[]'::jsonb,
-    trace_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    exception TEXT,
+    started_at TIMESTAMPTZ NOT NULL,
+    latency_ms INTEGER,
+    token_usage JSONB,
+    warnings TEXT[] NOT NULL DEFAULT '{}',
+    output JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT chk_agent_runs_channel CHECK (channel IN ('web', 'telegram', 'cli', 'eval')),
+    CONSTRAINT chk_agent_runs_status CHECK (status IN (
+        'running', 'answered', 'insufficient', 'direct', 'not_found', 'blocked', 'error'
+    ))
 );
 
 CREATE TABLE IF NOT EXISTS public.agent_trace_spans (
-    id BIGSERIAL PRIMARY KEY,
-    request_id VARCHAR(64) NOT NULL,
-    span_id VARCHAR(64) NOT NULL,
-    parent_span_id VARCHAR(64),
-    span_type VARCHAR(32) NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    status VARCHAR(32) NOT NULL,
+    request_id VARCHAR(64) NOT NULL REFERENCES public.agent_runs(request_id) ON DELETE CASCADE,
+    span_id VARCHAR(32) NOT NULL,
+    parent_span_id VARCHAR(32),
+    kind VARCHAR(16) NOT NULL,
+    name VARCHAR(64),
+    status VARCHAR(16) NOT NULL,
     started_at_ms BIGINT NOT NULL,
     finished_at_ms BIGINT,
-    latency_ms INTEGER,
-    input_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    output_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    input JSONB NOT NULL DEFAULT '{}'::jsonb,
+    output JSONB NOT NULL DEFAULT '{}'::jsonb,
+    attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    warnings TEXT[] NOT NULL DEFAULT '{}',
     error_code VARCHAR(128),
     error_message TEXT,
-    exception_chain JSONB NOT NULL DEFAULT '[]'::jsonb,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_agent_trace_spans_request_span UNIQUE (request_id, span_id),
-    CONSTRAINT chk_agent_trace_spans_type
-        CHECK (span_type IN ('graph_node', 'model_call', 'tool_call', 'guard', 'postprocess', 'context')),
-    CONSTRAINT fk_agent_trace_spans_request
-        FOREIGN KEY (request_id)
-        REFERENCES public.agent_runs(request_id)
-        ON DELETE CASCADE
+    exception TEXT,
+    PRIMARY KEY (request_id, span_id),
+    CONSTRAINT chk_agent_trace_spans_kind
+        CHECK (kind IN ('context', 'step', 'llm', 'tool', 'embedding', 'retrieval', 'rerank')),
+    CONSTRAINT chk_agent_trace_spans_status CHECK (status IN ('ok', 'error', 'aborted'))
 );
 
 CREATE TABLE IF NOT EXISTS public.agent_model_io (
-    id BIGSERIAL PRIMARY KEY,
     request_id VARCHAR(64) NOT NULL,
-    span_id VARCHAR(64) NOT NULL,
-    node VARCHAR(128) NOT NULL,
-    provider VARCHAR(64),
-    model VARCHAR(160),
-    input_messages JSONB NOT NULL DEFAULT '[]'::jsonb,
-    raw_output JSONB,
-    parsed_output JSONB,
-    token_usage JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_agent_model_io_request_span UNIQUE (request_id, span_id),
-    CONSTRAINT fk_agent_model_io_span
-        FOREIGN KEY (request_id, span_id)
-        REFERENCES public.agent_trace_spans(request_id, span_id)
-        ON DELETE CASCADE
+    span_id VARCHAR(32) NOT NULL,
+    input_messages JSONB NOT NULL,
+    output JSONB,
+    PRIMARY KEY (request_id, span_id),
+    FOREIGN KEY (request_id, span_id) REFERENCES public.agent_trace_spans(request_id, span_id) ON DELETE CASCADE
 );
 
 -- 7. Performance Indexes
@@ -193,15 +181,8 @@ CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_order
     ON public.conversation_messages (thread_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
     ON public.conversation_messages (thread_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at ON public.agent_runs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON public.agent_runs(final_status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_request ON public.agent_trace_spans(request_id, started_at_ms);
-CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_parent ON public.agent_trace_spans(request_id, parent_span_id);
-CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_type ON public.agent_trace_spans(span_type, name, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_status ON public.agent_trace_spans(status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_model_io_request ON public.agent_model_io(request_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_agent_model_io_span ON public.agent_model_io(span_id);
-CREATE INDEX IF NOT EXISTS idx_agent_model_io_node ON public.agent_model_io(node, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_started ON public.agent_runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_thread ON public.agent_runs(thread_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_entity_registry_active_type
     ON public.entity_registry(is_active, entity_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_alias_entity_lower_alias

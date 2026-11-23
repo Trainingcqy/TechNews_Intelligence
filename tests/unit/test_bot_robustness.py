@@ -270,7 +270,7 @@ def test_handle_message_appends_model_message_format_and_passes_history(bot_mod)
     }
     assert calls[0][1] == []
     assert calls[1][1] == [{"role": "user", "parts": [{"text": "问题一"}]}, first_model]
-    assert calls[0][2] == calls[1][2] == {"user_key": "tg:1001"}
+    assert calls[0][2] == calls[1][2] == {"channel": "telegram", "user_key": "tg:1001"}
 
     history = bot_mod.conversation_histories[chat_id]
     assert [item["role"] for item in history] == ["user", "model", "user", "model"]

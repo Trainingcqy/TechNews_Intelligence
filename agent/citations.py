@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, replace
 
 from agent.config import BEIJING
 from agent.evidence import EvidenceRegistry
@@ -57,6 +58,21 @@ _DELETED_RUN_RE = re.compile(r"[ \t]*\x00[ \t\x00]*")
 _NO_SPACE_BEFORE = frozenset("\n，。、；：！？）,.;:!?)")
 
 
+@dataclass(frozen=True)
+class CitationCheck:
+    """What citation checking found in the synthesis output."""
+
+    status_line: str | None = None  # answered | insufficient；没有 STATUS 行时为空
+    cited: tuple[tuple[str, int], ...] = ()  # 证据编号与重编号后的序号，按首次出现的顺序
+    removed_eids: tuple[str, ...] = ()  # 不可引用而被删除的编号
+    removed_urls: int = 0
+    removed_numeric: int = 0
+
+    @property
+    def removed_any(self) -> bool:
+        return bool(self.removed_eids or self.removed_urls or self.removed_numeric)
+
+
 def contains_cjk(text: str) -> bool:
     return bool(_CJK_BASIC_RE.search(text or ""))
 
@@ -89,17 +105,21 @@ def split_status(raw: str) -> tuple[str | None, str]:
     return None, raw
 
 
-def resolve_citations(body: str, registry: EvidenceRegistry) -> tuple[str, tuple[Source, ...], tuple[int, ...]]:
-    text = _NUMERIC_CITATION_RE.sub(_DELETED, body)
+def resolve_citations(
+    body: str, registry: EvidenceRegistry
+) -> tuple[str, tuple[Source, ...], tuple[int, ...], CitationCheck]:
+    text, removed_numeric = _NUMERIC_CITATION_RE.subn(_DELETED, body)
     text = _EID_LIST_RE.sub(lambda m: "".join(f"[{eid.strip()}]" for eid in re.split(r"[,，、]", m.group(1))), text)
-    text = _URL_RE.sub(_DELETED, text)
+    text, removed_urls = _URL_RE.subn(_DELETED, text)
 
     citable = registry.citable_ids()
     numbers: dict[str, int] = {}
+    removed: dict[str, None] = {}
 
     def renumber(match: re.Match[str]) -> str:
         eid = f"E{match.group(1)}"
         if eid not in citable:
+            removed[eid] = None
             return _DELETED
         numbers.setdefault(eid, len(numbers) + 1)
         return f"[{numbers[eid]}]"
@@ -117,21 +137,24 @@ def resolve_citations(body: str, registry: EvidenceRegistry) -> tuple[str, tuple
         story_id = _story_id(evidence, registry)
         if story_id is not None and story_id not in story_ids:
             story_ids.append(story_id)
-    return text, tuple(sources), tuple(story_ids)
+    check = CitationCheck(cited=tuple(numbers.items()), removed_eids=tuple(removed),
+                          removed_urls=removed_urls, removed_numeric=removed_numeric)
+    return text, tuple(sources), tuple(story_ids), check
 
 
-def finalize_answer(raw: str, registry: EvidenceRegistry, question: str) -> Answer:
+def finalize_answer(raw: str, registry: EvidenceRegistry, question: str) -> tuple[Answer, CitationCheck]:
     lang = "zh" if contains_cjk(question) else "en"
     if not raw.strip():
-        return Answer(status="error", text=ERROR_TEXT[lang], error_code="empty_synthesis")
+        return Answer(status="error", text=ERROR_TEXT[lang], error_code="empty_synthesis"), CitationCheck()
     status, body = split_status(raw)
-    text, sources, story_ids = resolve_citations(strip_emoji(body), registry)
+    text, sources, story_ids, check = resolve_citations(strip_emoji(body), registry)
+    check = replace(check, status_line=status)
     text = text.strip()
     if status == "insufficient":
-        return Answer(status="insufficient", text=text, sources=sources)
+        return Answer(status="insufficient", text=text, sources=sources), check
     if not sources:
-        return Answer(status="blocked", text=BLOCKED_TEXT[lang], error_code="no_valid_citation")
-    return Answer(status="answered", text=text, sources=sources, story_ids=story_ids)
+        return Answer(status="blocked", text=BLOCKED_TEXT[lang], error_code="no_valid_citation"), check
+    return Answer(status="answered", text=text, sources=sources, story_ids=story_ids), check
 
 
 def clean_direct_reply(text: str, question: str) -> str:

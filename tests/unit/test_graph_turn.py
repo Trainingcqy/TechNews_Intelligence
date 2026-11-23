@@ -7,7 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent import Answer, EvidenceFound, Final, Progress, run_turn
-from agent import memory, prompts
+from agent import memory, prompts, trace_store
 from agent.citations import BLOCKED_TEXT, ERROR_TEXT, NOT_FOUND_TEXT
 from agent.config import AgentConfig
 from agent.graph import nodes
@@ -80,13 +80,14 @@ def _answered(**fields) -> Answer:
 
 @pytest.fixture
 def turn(monkeypatch):
-    persisted: list[dict] = []
+    persisted: list = []
     monkeypatch.setattr(nodes, "corpus_info", lambda: CORPUS)
-    monkeypatch.setattr("agent.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+    monkeypatch.setattr(trace_store, "persist", persisted.append)
 
     def search(args):
         hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), discussion=None, match_score=0.9)]
-        return SearchResult(hits=hits if args.query == "Genie 4" else [], weak_match=False, meta={})
+        return SearchResult(hits=hits if args.query == "Genie 4" else [], weak_match=False)
 
     monkeypatch.setattr(registry, "run_search_news", search)
     monkeypatch.setattr(read, "get_conn", FakeConn)
@@ -95,16 +96,22 @@ def turn(monkeypatch):
     monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {30: BODY} if 30 in ids else {})
     monkeypatch.setattr(read, "fetch_discussion_texts", lambda cur, ids: {})
 
-    def run(gather_replies, final_replies=(), *, config=None, history=None):
+    def run(gather_replies, final_replies=(), *, config=None, history=None, user_key=None):
         gather, final = FakeChat(gather_replies), FakeChat(final_replies)
         events: list = []
         answer = run_turn(
-            QUESTION, history, request_id="r1", on_event=events.append, config=config or AgentConfig(),
+            QUESTION, history, channel="web", request_id="r1", user_key=user_key, on_event=events.append,
+            config=config or AgentConfig(),
             models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)),
         )
         return SimpleNamespace(answer=answer, events=events, gather=gather, final=final, trace=persisted[-1])
 
+    run.persisted = persisted
     return run
+
+
+def _spans(trace, kind):
+    return [span for span in trace.spans if span.kind == kind]
 
 
 def test_direct_reply(turn):
@@ -151,9 +158,28 @@ def test_normal_answer(turn):
     assert "\n\nEvidence brief:\n[E1] 标题：Genie 4 adds audio\n" in last.content
     assert BODY in last.content
     assert last.content.endswith("Write the final answer now.")
-    model_spans = [s["name"] for s in r.trace["spans"] if s["span_type"] == "model_call"]
-    assert model_spans == ["gather", "gather", "gather", "final_synthesizer"]
-    assert r.trace["tool_call_chain"] == ["search_news", "read_articles"]
+
+    trace = r.trace
+    assert all(span.status == "ok" and span.finished_at_ms for span in trace.spans)
+    steps = _spans(trace, "step")
+    assert [step.attributes["step"] for step in steps] == [1, 2, 3]
+    assert steps[2].output == {"calls": [], "reply": "DONE"}
+    assert [(span.name, span.parent_id) for span in _spans(trace, "llm")] == [
+        ("gather", steps[0].span_id), ("gather", steps[1].span_id), ("gather", steps[2].span_id), ("final", None)]
+    search, read_call = _spans(trace, "tool")
+    assert (search.name, search.parent_id, read_call.name, read_call.parent_id) == (
+        "search_news", steps[0].span_id, "read_articles", steps[1].span_id)
+    assert search.output["stories"][0]["lead"] == 30
+    assert search.output["text"] == next(m for m in r.gather.calls[1] if isinstance(m, ToolMessage)).content
+    assert _spans(trace, "context")[0].output["turns_used"] == 1
+    assert trace.output["route"] == {"decision": "synthesize", "tools_called": True, "citable": 1}
+    assert trace.output["citations"]["cited"] == {"E1": 1}
+    assert trace.output["evidence"] == [{
+        "eid": "E1", "doc": "article", "level": "fulltext", "article_id": 30, "story_id": 5,
+        "registered": {"step": 1, "call": 0}, "upgraded": [{"step": 2, "call": 0, "level": "fulltext"}],
+        "body_in_block": True, "cited": 1,
+    }]
+    assert (trace.status, trace.channel, trace.all_warnings()) == ("answered", "web", [])
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -169,7 +195,18 @@ def test_synthesis_outcome(turn, raw, expected):
 
     assert r.answer == expected
     assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
-    assert r.trace["final_status"] == expected.status
+    assert r.trace.status == expected.status
+    # The model cited E9, which was never registered.
+    assert ("citations_removed" in r.trace.warnings) == (expected.status == "blocked")
+
+
+def test_body_dropped_from_the_evidence_block_is_recorded(turn):
+    r = turn([_search("Genie 4"), _calls(("c2", "read_articles", {"ids": ["E1"]})), DONE], [ANSWERED],
+             config=AgentConfig(synthesis_evidence_chars=10))
+
+    assert BODY not in r.final.calls[0][-1].content
+    assert r.trace.warnings == ["evidence_truncated"]
+    assert r.trace.output["evidence"][0]["body_in_block"] is False
 
 
 def test_step_limit_goes_to_synthesis(turn):
@@ -179,6 +216,8 @@ def test_step_limit_goes_to_synthesis(turn):
     assert r.answer == expected
     assert len(r.gather.calls) == 1
     assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
+    assert len(_spans(r.trace, "step")) == 1
+    assert r.trace.warnings == ["step_budget_exhausted"]
 
 
 def test_calls_over_step_limit_are_rejected(turn):
@@ -191,6 +230,10 @@ def test_calls_over_step_limit_are_rejected(turn):
     assert tool_messages[2].content == "已超过单步调用上限，本次调用未执行。"
     assert r.events == [UNDERSTANDING, RETRIEVING, Progress("retrieving", "正在检索相关新闻", "Gemini 最近 14 天"),
                         FOUND, SYNTHESIZING, Final(expected)]
+    step = _spans(r.trace, "step")[0]
+    assert [(call["disposition"], call.get("reason")) for call in step.output["calls"]] == [
+        ("executed", None), ("executed", None), ("rejected", "call_limit")]
+    assert step.warnings == ["calls_rejected"]
 
 
 def test_argument_error_then_model_corrects(turn):
@@ -212,7 +255,10 @@ def test_model_call_failure(turn):
                       error_code="model_timeouterror")
     assert r.answer == expected
     assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
-    assert (r.trace["final_status"], r.trace["error_code"]) == ("error", "model_timeouterror")
+    assert (r.trace.status, r.trace.error_code, r.trace.error_message) == ("error", "model_timeouterror", "slow")
+    final = _spans(r.trace, "llm")[-1]
+    assert (final.name, final.status, final.error_code) == ("final", "error", "model_timeouterror")
+    assert r.trace.output["route"]["decision"] == "synthesize" and r.trace.output["citations"] is None
 
 
 FOLLOWS = [
@@ -232,7 +278,7 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
         if args.query == "具身智能":
             raise RuntimeError("search failed")
         hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), discussion=None, match_score=0.9)]
-        return SearchResult(hits=hits if (args.query or "").lower() == "genie 4" else [], weak_match=False, meta={})
+        return SearchResult(hits=hits if (args.query or "").lower() == "genie 4" else [], weak_match=False)
 
     monkeypatch.setattr(registry, "run_search_news", search)
     gather = FakeChat([
@@ -243,13 +289,21 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     ])
     final = FakeChat([ANSWERED])
 
-    answer = run_turn("我关注的有什么新进展", user_key="tg:1", request_id="r1", config=AgentConfig(),
+    answer = run_turn("我关注的有什么新进展", channel="telegram", user_key="tg:1", request_id="r1",
+                      config=AgentConfig(),
                       models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
 
     # A failed search does not count as checking a follow; a follow hit twice is recorded once.
     assert answer.followed_queries == ("Genie 4",)
     assert answer.story_ids == (5,)
     assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5, 5]), ("seen", "tg:1", [])]
+    trace = turn.persisted[-1]
+    assert _spans(trace, "context")[0].output["follows"] == [
+        {"query": "Genie 4", "last_checked_at": "2026-11-09T17:00:00+00:00"},
+        {"query": "具身智能", "last_checked_at": None}]
+    failed = next(span for span in _spans(trace, "tool") if span.status == "error")
+    assert (failed.input["query"], failed.output["text"]) == ("具身智能", "工具执行失败：RuntimeError")
+    assert trace.output["seen_dates"] == {"5": "2026-11-10"}
     system = gather.calls[0][0]
     assert system == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
         today=nodes._today(), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, nodes._today_date())))
@@ -269,15 +323,13 @@ def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
 
     monkeypatch.setattr(nodes.memory, "list_follows", broken)
     monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda user_key, ids: {})
-    gather = FakeChat([_search("Genie 4"), DONE])
-    final = FakeChat([ANSWERED])
 
-    answer = run_turn("我关注的有什么新进展", user_key="tg:1", request_id="r1", config=AgentConfig(),
-                      models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
+    r = turn([_search("Genie 4"), DONE], [ANSWERED], user_key="tg:1")
 
-    assert answer.status == "answered"
-    assert gather.calls[0][0] == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
+    assert r.answer.status == "answered"
+    assert r.gather.calls[0][0] == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
         today=nodes._today(), corpus=CORPUS, follows=""))
+    assert _spans(r.trace, "context")[0].warnings == ["follows_unavailable"]
 
 
 def test_turn_without_user_key_skips_memory(turn, monkeypatch):

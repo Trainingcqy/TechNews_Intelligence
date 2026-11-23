@@ -84,9 +84,7 @@ FINAL_SYSTEM_PROMPT = (
 )
 
 
-def render_final_user(question: str, registry: EvidenceRegistry, max_chars: int) -> str:
-    return (
-        f"User question:\n{question}\n\n"
-        f"Evidence brief:\n{render_for_synthesis(registry, max_chars)}\n\n"
-        "Write the final answer now."
-    )
+def render_final_user(question: str, registry: EvidenceRegistry, max_chars: int) -> tuple[str, list[str]]:
+    """The synthesis user message, and the evidence ids whose body was dropped from it."""
+    brief, dropped = render_for_synthesis(registry, max_chars)
+    return f"User question:\n{question}\n\nEvidence brief:\n{brief}\n\nWrite the final answer now.", dropped

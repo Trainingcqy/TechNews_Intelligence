@@ -7,12 +7,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from agent.config import BEIJING
+from agent.trace import trace_span
 from agent.types import Article, StoryHit
 from common.db import get_conn, put_conn
 from common.taxonomy import EVENT_KINDS
 
 from .embeddings import get_query_embedding as _get_query_embedding
-from .hybrid import _clamp_int, candidate_from_row, fetch_hybrid_rows, retrieval_diagnostics
+from .hybrid import _clamp_int, candidate_from_row, fetch_hybrid_rows
 from .recall_profile import resolve_recall_profile
 from .rerank import RERANK_MODE_NONE, rerank_candidates, resolve_rerank_mode
 from .stories import (
@@ -42,31 +43,20 @@ def _rows_to_rerank_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
     return [{**candidate_from_row(row), "payload": row} for row in rows]
 
 
-def _finalize_candidate_rows(
-    rows: list[tuple],
-    *,
-    query: str,
-    limit: int,
-    rerank_mode: str,
-) -> tuple[list[tuple], dict[str, Any]]:
-    default_meta: dict[str, Any] = {
-        "rerank_mode": rerank_mode,
-        "candidate_count": len(rows),
-        "top_k": min(int(limit), len(rows)),
-        "fallback": False,
-    }
+def _finalize_candidate_rows(rows: list[tuple], *, query: str, limit: int, rerank_mode: str) -> list[tuple]:
     if not rows:
-        return [], default_meta
+        return []
     if rerank_mode == RERANK_MODE_NONE:
-        return list(rows)[:limit], default_meta
+        return list(rows)[:limit]
+    reranked = rerank_candidates(query, _rows_to_rerank_candidates(rows), mode=rerank_mode, top_k=limit)
+    return [item["payload"] for item in reranked]
 
-    reranked, rerank_meta = rerank_candidates(
-        query,
-        _rows_to_rerank_candidates(rows),
-        mode=rerank_mode,
-        top_k=limit,
-    )
-    return [item["payload"] for item in reranked], rerank_meta
+
+def _trace_candidate(row: tuple) -> dict[str, Any]:
+    candidate = candidate_from_row(row)
+    return {"article_id": candidate["article"].article_id,
+            **{key: candidate[key] for key in ("score", "text_score", "semantic_score", "exact_score",
+                                                "match_score")}}
 
 
 def lookup_candidates_by_query(
@@ -74,20 +64,14 @@ def lookup_candidates_by_query(
     limit: int = 5, rerank_mode: str | None = None,
     topic: str | None = None, kinds: tuple[str, ...] | None = None,
     publisher_kind: str | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Return ranked article candidates in the shape of hybrid.candidate_from_row."""
     query_clean = (query or "").strip()
+    if not query_clean:
+        return []
+
     recall_profile = resolve_recall_profile()
     resolved_mode = resolve_rerank_mode(rerank_mode)
-    if not query_clean:
-        return [], {
-            "rerank_mode": resolved_mode,
-            "candidate_count": 0,
-            "top_k": 0,
-            "fallback": False,
-            "recall_profile": recall_profile.as_dict(),
-        }
-
     days = _clamp_int(days, 1, 365)
     limit = _clamp_int(limit, 1, MAX_ARTICLE_LIMIT)
     start_at, end_at = time_window(days, start_date, end_date, now=datetime.now(timezone.utc))
@@ -103,32 +87,26 @@ def lookup_candidates_by_query(
     conn = get_conn()
     try:
         cur = conn.cursor()
-        rows = fetch_hybrid_rows(
-            cur,
-            query=query_clean,
-            limit=candidate_pool_limit,
-            query_vec=query_vec,
-            start_at=start_at,
-            end_at=end_at,
-            topic=topic,
-            kinds=kinds,
-            publisher_kind=publisher_kind,
-        )
+        span_input = {"query": query_clean, "start_at": start_at.isoformat(), "end_at": end_at.isoformat(),
+                      "topic": topic, "kinds": list(kinds) if kinds else None, "publisher_kind": publisher_kind}
+        span_attributes = {"pool_limit": candidate_pool_limit, "sim_floor": recall_profile.sim_floor,
+                           "channels": ["lexical", "semantic", "exact"] if query_vec else ["lexical", "exact"]}
+        with trace_span("retrieval", input=span_input, attributes=span_attributes) as span:
+            rows = fetch_hybrid_rows(
+                cur,
+                query=query_clean,
+                limit=candidate_pool_limit,
+                query_vec=query_vec,
+                start_at=start_at,
+                end_at=end_at,
+                topic=topic,
+                kinds=kinds,
+                publisher_kind=publisher_kind,
+            )
+            span.output = {"candidates": [_trace_candidate(row) for row in rows]}
         cur.close()
-        ranked_rows, meta = _finalize_candidate_rows(
-            rows,
-            query=query_clean,
-            limit=limit,
-            rerank_mode=resolved_mode,
-        )
-        retrieval_meta = retrieval_diagnostics(
-            query_vec=query_vec,
-            candidate_count=len(rows),
-            top_k=min(limit, len(rows)),
-        )
-        meta.update(retrieval_meta)
-        meta["recall_profile"] = recall_profile.as_dict()
-        return [candidate_from_row(row) for row in ranked_rows], meta
+        ranked_rows = _finalize_candidate_rows(rows, query=query_clean, limit=limit, rerank_mode=resolved_mode)
+        return [candidate_from_row(row) for row in ranked_rows]
     finally:
         put_conn(conn)
 
@@ -137,7 +115,6 @@ def lookup_candidates_by_query(
 class SearchResult:
     hits: list[StoryHit]
     weak_match: bool
-    meta: dict[str, Any]
 
 
 def _related(lead: Article, members: list[Article]) -> tuple[Article, ...]:
@@ -155,10 +132,9 @@ def search_stories(
     publisher_kind: str | None, sort: str, limit: int,
 ) -> SearchResult:
     weak_match = False
-    meta: dict[str, Any] = {}
     leads: dict[int, dict[str, Any]] = {}
     if query:
-        candidates, meta = lookup_candidates_by_query(
+        candidates = lookup_candidates_by_query(
             query, days=days, start_date=start_date, end_date=end_date,
             limit=min(limit * 3, MAX_ARTICLE_LIMIT),
             topic=topic, kinds=kinds, publisher_kind=publisher_kind,
@@ -207,4 +183,4 @@ def search_stories(
         ))
     if query and sort == "time":
         hits.sort(key=lambda hit: hit.lead.published_at, reverse=True)
-    return SearchResult(hits=hits, weak_match=weak_match, meta=meta)
+    return SearchResult(hits=hits, weak_match=weak_match)

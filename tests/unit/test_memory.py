@@ -7,8 +7,9 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from agent import memory
+from agent import memory, trace_store
 from agent.memory import Follow, FollowLimitError
+from agent.trace import request_trace
 from agent.types import Answer
 
 USER = "email:user@example.com"
@@ -138,8 +139,11 @@ def test_record_turn_without_followed_queries_leaves_follows_alone(db):
     assert [sql.split()[0] for sql, _ in db.executed] == ["INSERT"]
 
 
-def test_turn_lookups_count_failures_as_no_memory_but_list_follows_raises(broken_db):
-    assert memory.seen_story_dates(USER, [5]) == {}
+def test_turn_lookups_count_failures_as_no_memory_but_list_follows_raises(broken_db, monkeypatch):
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+    with request_trace(question="q", channel="web") as trace:
+        assert memory.seen_story_dates(USER, [5]) == {}
+    assert trace.warnings == ["seen_dates_unavailable"]
     memory.record_turn(USER, Answer(status="answered", text="t", story_ids=(5,), followed_queries=("x",)))
     # The follows page must show the failure; the turn catches it in prepare.
     with pytest.raises(RuntimeError):

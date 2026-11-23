@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from agent import EvidenceFound, Final, Progress, run_turn
+from agent import EvidenceFound, Final, Progress, run_turn, trace_store
 from agent.config import AgentConfig
 from agent.graph import nodes
 from agent.llm import ModelHandle
@@ -43,9 +43,10 @@ class FakeChat:
 
 
 def test_parallel_calls_keep_call_order_and_trace(monkeypatch):
-    persisted: list[dict] = []
+    persisted: list = []
     monkeypatch.setattr(nodes, "corpus_info", lambda: "")
-    monkeypatch.setattr("agent.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
+    monkeypatch.setattr(trace_store, "persist", persisted.append)
     done = {name: threading.Event() for name in WAITS_FOR}
     finished: list[str] = []
 
@@ -55,7 +56,7 @@ def test_parallel_calls_keep_call_order_and_trace(monkeypatch):
             raise TimeoutError(args.query)
         finished.append(args.query)
         done[args.query].set()
-        return SearchResult(hits=[_hit(list(WAITS_FOR).index(args.query) + 1, args.query)], weak_match=False, meta={})
+        return SearchResult(hits=[_hit(list(WAITS_FOR).index(args.query) + 1, args.query)], weak_match=False)
 
     monkeypatch.setattr(registry, "run_search_news", search)
     # The rejected call sits between executed ones, so the ToolMessages must merge both by call index.
@@ -65,7 +66,7 @@ def test_parallel_calls_keep_call_order_and_trace(monkeypatch):
     final = FakeChat([AIMessage(content="STATUS: answered\n三家都有发布 [E1][E2][E3]。")])
     events: list = []
 
-    answer = run_turn("Alpha、Beta、Gamma 发布了什么？", request_id="r1", on_event=events.append,
+    answer = run_turn("Alpha、Beta、Gamma 发布了什么？", channel="web", request_id="r1", on_event=events.append,
                       config=AgentConfig(),
                       models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
 
@@ -87,9 +88,12 @@ def test_parallel_calls_keep_call_order_and_trace(monkeypatch):
     assert answer.status == "answered"
     assert answer.tool_calls == ("search_news", "search_news", "search_news")
 
-    spans = persisted[0]["spans"]
-    run_tool_ids = {s["span_id"] for s in spans if s["span_type"] == "graph_node" and s["name"] == "run_tool"}
-    tool_spans = [s for s in spans if s["span_type"] == "tool_call"]
-    assert len(run_tool_ids) == 3 and len(tool_spans) == 3
-    assert {s["request_id"] for s in tool_spans} == {"r1"}
-    assert {s["parent_span_id"] for s in tool_spans} == run_tool_ids
+    (trace,) = persisted
+    first_step, _ = [span for span in trace.spans if span.kind == "step"]
+    tool_spans = sorted((span for span in trace.spans if span.kind == "tool"), key=lambda span: span.attributes["index"])
+    assert {span.parent_id for span in tool_spans} == {first_step.span_id}
+    assert [span.attributes["call_id"] for span in tool_spans] == ["c1", "c3", "c4"]
+    assert [span.output["text"] for span in tool_spans] == [tool_messages[i].content for i in (0, 2, 3)]
+    assert [(call["disposition"], call.get("reason")) for call in first_step.output["calls"]] == [
+        ("executed", None), ("rejected", "invalid_args"), ("executed", None), ("executed", None)]
+    assert first_step.finished_at_ms >= max(span.finished_at_ms for span in tool_spans)

@@ -156,6 +156,7 @@ def run_agent_turn(
     answer = run_turn(
         turn.body.message,
         turn.history,
+        channel="web",
         thread_id=turn.thread_id,
         request_id=turn.request_id,
         user_key=turn.user_key,

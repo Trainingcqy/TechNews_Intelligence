@@ -12,14 +12,16 @@ from agent.retrieval.stories import (
     fetch_discussion_texts,
     fetch_discussions_by_url_keys,
 )
+from agent.trace import warn
 from agent.types import Article, Discussion
 from common.db import get_conn, put_conn
 from common.urls import url_key
 
 if TYPE_CHECKING:
-    from .registry import ReadArticlesArgs, ToolOutcome
+    from .registry import PreparedCall, ReadArticlesArgs, ToolOutcome
 
 PREVIEW_CHARS = AgentConfig().gather_read_preview_chars
+OVER_QUOTA = "超出本次请求的读取上限"
 
 
 @dataclass(frozen=True)
@@ -37,7 +39,8 @@ class ReadResult:
     items: list[ReadItem]
 
 
-def run_read_articles(args: ReadArticlesArgs, *, registry, state) -> ReadResult:
+def run_read_articles(prepared: PreparedCall, *, registry, state) -> ReadResult:
+    args = prepared.args
     # (target, article, discussion, error) in request order: ids first, then urls.
     resolved: list[tuple[str, Article | None, Discussion | None, str | None]] = []
     for eid in args.ids:
@@ -81,7 +84,24 @@ def run_read_articles(args: ReadArticlesArgs, *, registry, state) -> ReadResult:
             items.append(ReadItem(target, article, discussion, None, 0, error))
         else:
             items.append(ReadItem(target, article, discussion, full[:args.max_chars], len(full), None))
+    if prepared.dropped:
+        warn("read_targets_dropped")
+        items.extend(ReadItem(target, None, None, None, 0, OVER_QUOTA) for target in prepared.dropped)
     return ReadResult(items=items)
+
+
+def read_trace_output(result: ReadResult) -> dict:
+    return {"items": [
+        {
+            "target": item.target,
+            "article_id": item.article.article_id if item.article else None,
+            "sighting_id": item.discussion.sighting_id if item.discussion else None,
+            "chars": len(item.text) if item.text is not None else 0,
+            "total_chars": item.total_chars,
+            "error": item.error,
+        }
+        for item in result.items
+    ]}
 
 
 def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry) -> ToolOutcome:

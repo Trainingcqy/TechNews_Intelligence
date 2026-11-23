@@ -59,10 +59,12 @@ def test_chat_logs_and_forwards_trace_request_id(
 ) -> None:
     captured: dict[str, str] = {}
 
-    def _fake_run_turn(_question, _history=None, *, thread_id=None, request_id=None, user_key=None, on_event=None):
+    def _fake_run_turn(_question, _history=None, *, channel, thread_id=None, request_id=None, user_key=None,
+                       on_event=None):
         del user_key, on_event
         captured["request_id"] = str(request_id)
         captured["thread_id"] = str(thread_id)
+        captured["channel"] = channel
         return Answer(status="answered", text="reply-ok")
 
     async def _fake_to_thread(func, *args, **kwargs):
@@ -92,6 +94,7 @@ def test_chat_logs_and_forwards_trace_request_id(
     assert logged_request_id
     assert captured["request_id"] == logged_request_id
     assert captured["thread_id"] == response.thread_id
+    assert captured["channel"] == "web"
 
 
 def test_chat_stream_logs_and_forwards_trace_request_id(
@@ -100,7 +103,8 @@ def test_chat_stream_logs_and_forwards_trace_request_id(
 ) -> None:
     captured: dict[str, str] = {}
 
-    def _fake_run_turn(_question, _history=None, *, thread_id=None, request_id=None, user_key=None, on_event=None):
+    def _fake_run_turn(_question, _history=None, *, channel, thread_id=None, request_id=None, user_key=None,
+                       on_event=None):
         del user_key
         on_event(Progress(stage="understanding", title="正在理解问题"))
         captured["request_id"] = str(request_id)

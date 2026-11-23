@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Callable
 
 from agent.citations import ERROR_TEXT, contains_cjk
 from agent.config import AgentConfig, load_config
-from agent.trace import finalize_request_trace, request_trace_context
 from agent.evidence import EvidenceRegistry
 from agent.graph import build_turn_graph
 from agent.graph.state import TurnRuntime
 from agent.llm import ModelCallError, ModelHandle, build_models
 from agent.tools.registry import TurnState
+from agent.trace import request_trace
 from agent.types import Answer, Event, Final
 
 
@@ -20,6 +20,7 @@ def run_turn(
     question: str,
     history: list[dict] | None = None,
     *,
+    channel: str,
     thread_id: str | None = None,
     request_id: str | None = None,
     user_key: str | None = None,
@@ -27,6 +28,7 @@ def run_turn(
     config: AgentConfig | None = None,
     models: tuple[ModelHandle, ModelHandle] | None = None,
 ) -> Answer:
+    """channel is web, telegram, cli or eval and only labels the trace."""
     config = config or load_config()
     emit = _safe_emit(on_event)
     runtime = TurnRuntime(
@@ -34,8 +36,8 @@ def run_turn(
         models=models, emit=emit, user_key=user_key,
         follows=[], tool_names=[], followed_queries=[],
     )
-    error: Exception | None = None
-    with request_trace_context(user_message=question, thread_id=thread_id, request_id=request_id) as trace:
+    with request_trace(question=question, channel=channel, thread_id=thread_id, request_id=request_id) as trace:
+        error_message = None
         try:
             runtime.models = models or build_models()
             final_state = build_turn_graph().invoke(
@@ -45,24 +47,56 @@ def run_turn(
             )
             answer = final_state["answer"]
         except ModelCallError as exc:
+            # The failing llm span already holds the exception.
             answer = Answer(status="error", text=_error_text(question), error_code=exc.code)
+            error_message = str(exc)
         except Exception as exc:
             answer = Answer(status="error", text=_error_text(question),
                             error_code=f"runtime_{type(exc).__name__.lower()}")
-            error = exc
+            trace.fail(exc)
         answer = replace(answer, request_id=trace.request_id,
                          tool_calls=tuple(runtime.tool_names),
                          followed_queries=tuple(runtime.followed_queries))
-        trace.tool_call_chain[:] = runtime.tool_names
-        finalize_request_trace(
-            final_status=answer.status,
-            evidence_count=len(answer.sources),
-            final_answer_metadata={"answer_chars": len(answer.text), "source_count": len(answer.sources)},
-            error_code=answer.error_code,
-            error=error,
-        )
+        trace.output = _request_output(runtime, answer)
+        trace.finish(status=answer.status, error_code=answer.error_code, error_message=error_message)
     emit(Final(answer))
     return answer
+
+
+def _request_output(runtime: TurnRuntime, answer: Answer) -> dict:
+    check = runtime.citations
+    return {
+        "route": runtime.route,
+        "citations": None if check is None else {
+            "status_line": check.status_line,
+            "cited": dict(check.cited),
+            "removed_eids": list(check.removed_eids),
+            "removed_urls": check.removed_urls,
+            "removed_numeric": check.removed_numeric,
+        },
+        "answer": {"text": answer.text, "sources": [asdict(source) for source in answer.sources]},
+        "evidence": _evidence_table(runtime),
+        "seen_dates": {str(story_id): seen.isoformat() for story_id, seen in runtime.registry.seen_dates.items()},
+    }
+
+
+def _evidence_table(runtime: TurnRuntime) -> list[dict]:
+    cited = dict(runtime.citations.cited) if runtime.citations else {}
+    synthesized = bool(runtime.route and runtime.route["decision"] == "synthesize")
+    rows = []
+    for evidence in runtime.registry.items():
+        row = {"eid": evidence.eid, "doc": evidence.doc, "level": evidence.level,
+               **runtime.provenance.get(evidence.eid, {})}
+        if evidence.doc == "article":
+            row.update(article_id=evidence.article.article_id, story_id=evidence.article.story_id)
+        else:
+            row.update(sighting_id=evidence.discussion.sighting_id, article_id=evidence.discussion.article_id)
+        if synthesized and evidence.level == "fulltext":
+            row["body_in_block"] = evidence.eid not in runtime.dropped_bodies
+        if evidence.eid in cited:
+            row["cited"] = cited[evidence.eid]
+        rows.append(row)
+    return rows
 
 
 def _safe_emit(on_event: Callable[[Event], None] | None) -> Callable[[Event], None]:

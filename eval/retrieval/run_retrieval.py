@@ -86,7 +86,7 @@ def _run_one_query(
 
     for cfg_name, cfg in CONFIGS.items():
         os.environ["EVAL_RECALL_PROFILE"] = cfg["recall_profile"]
-        candidates, _meta = lookup_fn(
+        candidates = lookup_fn(
             query,
             days=days,
             limit=TOP_K,

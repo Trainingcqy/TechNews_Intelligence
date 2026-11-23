@@ -177,7 +177,7 @@ def main() -> int:
         print(f"[{idx}/{len(pending)}] {case_id}: {question} ...", flush=True)
         try:
             result = call_with_retry(
-                lambda: run_turn(question, [], request_id=request_id, thread_id=thread_id),
+                lambda: run_turn(question, [], channel="eval", request_id=request_id, thread_id=thread_id),
                 label=f"{case_id} gen",
             )
             bucket = _STATUS_BUCKETS[result.status]

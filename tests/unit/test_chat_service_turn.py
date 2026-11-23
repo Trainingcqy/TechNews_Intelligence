@@ -148,7 +148,8 @@ def test_persisted_turn_uses_history_message_format(env) -> None:  # noqa: ANN00
 
     assert env.loads == [("thread-9", 7, 40)]
     assert env.run_turn_calls == [
-        ("问题", HISTORY, {"thread_id": "thread-9", "request_id": "req-1", "user_key": "email:user@example.com"})
+        ("问题", HISTORY, {"channel": "web", "thread_id": "thread-9", "request_id": "req-1",
+                         "user_key": "email:user@example.com"})
     ]
     metadata = {"request_id": "req-1"}
     assert env.appended == [

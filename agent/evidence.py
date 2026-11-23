@@ -72,15 +72,17 @@ class EvidenceRegistry:
         return evidence
 
 
-def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> str:
+def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[str, list[str]]:
+    """The evidence block, and the ids whose body was dropped to fit max_chars."""
     citable = [evidence for evidence in registry.items() if evidence.level != "listed"]
     article_eids = {e.article.article_id: e.eid for e in citable if e.doc == "article"}
-    with_body = [e.eid for e in citable if e.level == "fulltext"]
+    fulltext = [e.eid for e in citable if e.level == "fulltext"]
+    with_body = list(fulltext)
     while True:
         shown = set(with_body)
         text = "\n\n".join(_render(e, e.eid in shown, article_eids, registry.seen_dates) for e in citable)
         if len(text) <= max_chars or not with_body:
-            return text
+            return text, [eid for eid in fulltext if eid not in shown]
         with_body.pop()
 
 

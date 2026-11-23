@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from agent.config import BEIJING
+from agent.trace import warn
 from agent.types import Answer
 from common.db import db_cursor, db_transaction
 
@@ -92,6 +93,7 @@ def seen_story_dates(user_key: str, story_ids: list[int]) -> dict[int, date]:
             return {story_id: seen_at.astimezone(BEIJING).date() for story_id, seen_at in cur.fetchall()}
     except Exception:
         logger.exception("seen story lookup failed")
+        warn("seen_dates_unavailable")
         return {}
 
 

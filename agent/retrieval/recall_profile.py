@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any
 
 
 PROFILE_BASE = "base"
@@ -21,14 +20,6 @@ class RecallProfile:
     sim_floor: float
     query_cand_multiplier: int
     query_cand_max: int
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "profile": self.profile,
-            "sim_floor": self.sim_floor,
-            "query_cand_multiplier": self.query_cand_multiplier,
-            "query_cand_max": self.query_cand_max,
-        }
 
 
 # Hardcoded fallback values if profile/env parsing fails.

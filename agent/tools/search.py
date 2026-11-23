@@ -25,6 +25,21 @@ def run_search_news(args: SearchNewsArgs) -> SearchResult:
     )
 
 
+def search_trace_output(result: SearchResult) -> dict:
+    return {"stories": [
+        {
+            "story_id": hit.stats.story_id,
+            "lead": hit.lead.article_id,
+            "related": [article.article_id for article in hit.related],
+            "discussion": hit.discussion.sighting_id if hit.discussion else None,
+            "reports": hit.stats.report_count,
+            "publishers": hit.stats.publisher_count,
+            "match_score": hit.match_score,
+        }
+        for hit in result.hits
+    ]}
+
+
 def commit_search_news(args: SearchNewsArgs, result: SearchResult, *, registry) -> ToolOutcome:
     # registry.py imports this module, so the import is deferred to call time.
     from .registry import ToolOutcome

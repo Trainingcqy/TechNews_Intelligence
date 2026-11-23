@@ -51,7 +51,6 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `NEWS_RERANK_MODE` | `llm_rerank` | 设为 `none` 关闭重排。 |
 | `JINA_RERANK_MODEL`, `JINA_RERANK_TIMEOUT_SEC` | `jina-reranker-v3`, `15` | 重排模型与超时秒数。 |
 | `RETRIEVAL_POINTS_BOOST`, `RETRIEVAL_FRESHNESS_BOOST`, `RETRIEVAL_TRGM_THRESHOLD` | 关, `0`, `0.42` | 检索排序的热度加权、新鲜度加权，以及精确召回的 pg_trgm 相似度阈值。 |
-| `AGENT_TRACE_FULL_MODEL_IO`, `AGENT_TRACE_SECRET_REDACTION` | 开, 开 | Trace 是否记录完整的模型输入输出、是否对疑似凭据的内容脱敏。 |
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT` | 关 | LangSmith 外部观测；`LANGSMITH_API_KEY` 由 `langsmith` 库读取。 |
 | `TRACE_DASHBOARD_ADMIN_EMAIL` | 同 `ADMIN_EMAIL` | Trace Console 接口返回的管理员邮箱。 |
 | `BOT_SESSION_MAX_CHATS`, `BOT_SESSION_TTL_SEC`, `BOT_RATE_TRACK_MAX_CHATS`, `BOT_RATE_WINDOW_SEC`, `BOT_RATE_LIMIT`, `BOT_AUTO_DELETE_SEC`, `BOT_SEND_RETRY_ATTEMPTS`, `BOT_SEND_RETRY_BASE_SEC` | 见 `app/bot.py` | Telegram Bot 的会话缓存、限流、消息自动删除和发送重试。 |

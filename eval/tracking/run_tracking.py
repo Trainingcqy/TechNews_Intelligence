@@ -596,7 +596,8 @@ def real_deps(env_file: str) -> Deps:
             return fn(cur, arg)
 
     def ask(question: str, *, request_id: str, user_key: str | None = None):
-        return run_turn(question, [], request_id=request_id, thread_id=request_id, user_key=user_key)
+        return run_turn(question, [], channel="eval", request_id=request_id, thread_id=request_id,
+                        user_key=user_key)
 
     return Deps(
         ask=ask,

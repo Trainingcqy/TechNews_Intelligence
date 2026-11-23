@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Sequence
 
 import requests
 
+from agent.trace import trace_span
+
+logger = logging.getLogger(__name__)
 
 RERANK_MODE_NONE = "none"
 RERANK_MODE_LLM = "llm_rerank"
@@ -123,71 +127,38 @@ def _call_jina_rerank(
     return ordered
 
 
-def _rerank_meta(
-    *,
-    mode: str,
-    candidate_count: int,
-    top_k: int,
-    fallback: bool,
-    model: str | None = None,
-    error: str | None = None,
-) -> dict[str, Any]:
-    meta: dict[str, Any] = {
-        "rerank_mode": mode,
-        "candidate_count": int(candidate_count),
-        "top_k": int(top_k),
-        "fallback": bool(fallback),
-    }
-    if model:
-        meta["model"] = model
-    if error:
-        meta["error"] = error
-    return meta
-
-
 def rerank_candidates(
     query: str,
     candidates: Sequence[dict[str, Any]],
     *,
     mode: str | None = None,
     top_k: int | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Rerank candidate dictionaries and return top-k plus metadata."""
+) -> list[dict[str, Any]]:
+    """Rerank candidate dictionaries and return the top k; on failure keep the given order."""
     resolved_mode = resolve_rerank_mode(mode)
     ranked = list(candidates)
     if not ranked:
-        return [], _rerank_meta(mode=resolved_mode, candidate_count=0, top_k=0, fallback=False)
+        return []
 
     if top_k is None:
         top_k = len(ranked)
     top_k = max(1, min(int(top_k), len(ranked)))
 
     if resolved_mode == RERANK_MODE_NONE or len(ranked) <= 1:
-        return ranked[:top_k], _rerank_meta(
-            mode=resolved_mode,
-            candidate_count=len(ranked),
-            top_k=top_k,
-            fallback=False,
-        )
+        return ranked[:top_k]
 
     model = os.getenv("JINA_RERANK_MODEL", "").strip() or JINA_RERANK_MODEL
-    try:
-        reranked = _call_jina_rerank(query=query, candidates=ranked, top_k=top_k, model=model)
-        return reranked, _rerank_meta(
-            mode=resolved_mode,
-            candidate_count=len(ranked),
-            top_k=top_k,
-            fallback=False,
-            model=model,
-        )
-    except Exception as exc:
-        print(f"[Warn] rerank failed in mode '{resolved_mode}', fallback to recall order: {exc}")
-        return ranked[:top_k], _rerank_meta(
-            mode=resolved_mode,
-            candidate_count=len(ranked),
-            top_k=top_k,
-            fallback=True,
-            model=model,
-            error=type(exc).__name__,
-        )
+    with trace_span("rerank", input={"candidates": len(ranked)}, attributes={"model": model, "top_k": top_k}) as span:
+        try:
+            reranked = _call_jina_rerank(query=query, candidates=ranked, top_k=top_k, model=model)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("rerank failed, keeping the fused order: %s", exc)
+            span.fail(exc)
+            span.warn("rerank_fallback")
+            return ranked[:top_k]
+        span.output = {"ranked": [
+            {"article_id": getattr(item.get("article"), "article_id", None), "score": item["rerank_score"]}
+            for item in reranked
+        ]}
+        return reranked
 

@@ -11,6 +11,7 @@ from agent.citations import rewrite_history_citations, strip_source_section
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
 from agent.retrieval.stories import fetch_articles_by_url_keys
+from agent.trace import warn
 from common.db import get_conn, put_conn
 from common.urls import extract_urls, url_key
 
@@ -23,6 +24,8 @@ DISCUSSION_SOURCE = "HackerNews 讨论"
 class TurnContext:
     messages: list[BaseMessage]
     user_urls: set[str]
+    history_turns: int  # 历史中的完整轮数
+    turns_used: int  # 带入本轮的轮数
 
 
 def build_context(history: list[dict], registry: EvidenceRegistry, config: AgentConfig) -> TurnContext:
@@ -34,6 +37,7 @@ def build_context(history: list[dict], registry: EvidenceRegistry, config: Agent
         elif message.get("role") == "model" and pending_user is not None:
             turns.append((pending_user, message))
             pending_user = None
+    history_turns = len(turns)
     turns = turns[max(0, len(turns) - config.history_turns):]
 
     turn_sources = [_sources(reply) for _, reply in turns]
@@ -58,7 +62,7 @@ def build_context(history: list[dict], registry: EvidenceRegistry, config: Agent
         if message.get("role") == "user"
         for url in extract_urls(_text(message))
     }
-    return TurnContext(messages=messages, user_urls=user_urls)
+    return TurnContext(messages=messages, user_urls=user_urls, history_turns=history_turns, turns_used=len(turns))
 
 
 def _text(message: dict) -> str:
@@ -82,6 +86,7 @@ def _register(keys: list[str], registry: EvidenceRegistry) -> None:
         cur.close()
     except Exception:
         logger.exception("history source lookup failed")
+        warn("history_sources_unavailable")
         return
     finally:
         if conn is not None:

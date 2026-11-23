@@ -725,7 +725,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         history = conversation_histories[chat_id]
         answer = await asyncio.to_thread(
-            run_turn, user_text, history, user_key="tg:" + str(chat_id)
+            run_turn, user_text, history, channel="telegram", user_key="tg:" + str(chat_id)
         )
 
         if answer.status == "error":

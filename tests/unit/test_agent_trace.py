@@ -1,294 +1,127 @@
-"""Tests for request-level tracing in agent runtime."""
+"""Tests for the request trace: span tree, warnings, token usage and model I/O."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from langchain_core.messages import AIMessage, HumanMessage
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from agent.trace import (
-    extract_token_usage,
-    finalize_request_trace,
-    request_trace_context,
-    trace_span,
-)
-
-pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
+from agent import trace_store
+from agent.trace import request_trace, set_model_io, start_span, trace_span, usage_from_message, warn, within
 
 
-def test_extract_token_usage_counts_gemini_usage_once() -> None:
-    # Gemini reports the SAME usage in both message.usage_metadata and
-    # response_metadata.usage_metadata. It must be counted once, not summed.
-    message = SimpleNamespace(
-        usage_metadata={
-            "input_tokens": 6758,
-            "output_tokens": 708,
-            "total_tokens": 9178,
-            "output_token_details": {"reasoning": 1712},
-        },
-        response_metadata={
-            "usage_metadata": {
-                "prompt_token_count": 6758,
-                "candidates_token_count": 708,
-                "total_token_count": 9178,
-                "thoughts_token_count": 1712,
-            }
-        },
-        additional_kwargs={},
-    )
-    assert extract_token_usage([message]) == {
-        "prompt_tokens": 6758,
-        "completion_tokens": 708,
-        "total_tokens": 9178,
-    }
+def _usage(input_tokens: int, output_tokens: int) -> dict[str, int]:
+    return {"input_tokens": input_tokens, "cache_read_tokens": 0, "output_tokens": output_tokens,
+            "reasoning_tokens": 0, "total_tokens": input_tokens + output_tokens}
 
 
-def test_extract_token_usage_sums_across_messages() -> None:
-    # Distinct LLM calls in one turn must still be summed (don't over-dedupe).
-    m1 = SimpleNamespace(
-        usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
-        response_metadata={},
-        additional_kwargs={},
-    )
-    m2 = SimpleNamespace(
-        usage_metadata={"input_tokens": 50, "output_tokens": 10, "total_tokens": 60},
-        response_metadata={},
-        additional_kwargs={},
-    )
-    assert extract_token_usage([m1, m2]) == {
-        "prompt_tokens": 150,
-        "completion_tokens": 30,
-        "total_tokens": 180,
-    }
+@pytest.fixture
+def stored(monkeypatch):
+    calls: dict[str, list] = {"insert": [], "persist": []}
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: calls["insert"].append(trace.request_id))
+    monkeypatch.setattr(trace_store, "persist", lambda trace: calls["persist"].append(trace))
+    return calls
 
 
-def test_request_token_usage_accumulates_across_model_calls() -> None:
-    from agent.trace import set_request_token_usage
-
-    with request_trace_context(user_message="multi node run", request_id="req-token-sum"):
-        set_request_token_usage({"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 150})
-        set_request_token_usage({"prompt_tokens": 30, "completion_tokens": 5, "total_tokens": 60})
-        summary = finalize_request_trace(final_status="success")
-
-    assert summary is not None
-    assert summary["token_usage"] == {
-        "prompt_tokens": 130,
-        "completion_tokens": 25,
-        "total_tokens": 210,
-    }
-
-
-def test_trace_records_tool_call_spans_and_chain() -> None:
-    with request_trace_context(user_message="latest ai updates", request_id="req-trace-001"):
-        with trace_span("tool_call", "query_news", input_summary={"args": {"query": "openai", "days": 7}}) as span:
-            span.set_output({"status": "success", "evidence_count": 1, "evidence_urls": ["https://a.example.com"]})
-        with trace_span("tool_call", "query_news", input_summary={"args": {"query": "unknown", "days": 7}}) as span:
-            span.status = "empty"
-            span.set_output({"status": "empty", "evidence_count": 0})
-        with trace_span("tool_call", "read_news_content", input_summary={"args": {"url": "https://a.example.com"}}) as span:
-            err = RuntimeError("fetch failed")
-            span.set_error(error_code="tool_runtimeerror", error_message=str(err), error=err)
-
-        summary = finalize_request_trace(
-            final_status="error",
-            error_code="graph_unexpected_runtime_error",
-            error_message="runtime failed",
-            error=RuntimeError("runtime failed"),
-        )
-
-    assert summary is not None
-    assert summary["request_id"] == "req-trace-001"
-    assert summary["user_message"] == "latest ai updates"
-    assert summary["final_status"] == "error"
-    assert summary["error_code"] == "graph_unexpected_runtime_error"
-    assert summary["tool_call_chain"] == ["query_news", "query_news", "read_news_content"]
-
-    tool_spans = [span for span in summary["spans"] if span["span_type"] == "tool_call"]
-    assert [span["status"] for span in tool_spans] == ["success", "empty", "error"]
-    assert tool_spans[2]["error_code"] == "tool_runtimeerror"
-    assert tool_spans[0]["output_summary"]["evidence_urls"] == ["https://a.example.com"]
+def test_usage_follows_otel_semantics() -> None:
+    gemini = SimpleNamespace(usage_metadata={"input_tokens": 6758, "output_tokens": 708, "total_tokens": 9178,
+                                             "output_token_details": {"reasoning": 1712}})
+    assert usage_from_message(gemini) == ({"input_tokens": 6758, "cache_read_tokens": 0, "output_tokens": 2420,
+                                           "reasoning_tokens": 1712, "total_tokens": 9178}, True)
+    deepseek = SimpleNamespace(usage_metadata={"input_tokens": 100, "output_tokens": 30, "total_tokens": 130,
+                                               "input_token_details": {"cache_read": 64},
+                                               "output_token_details": {"reasoning": 12}})
+    assert usage_from_message(deepseek) == ({"input_tokens": 100, "cache_read_tokens": 64, "output_tokens": 30,
+                                             "reasoning_tokens": 12, "total_tokens": 130}, True)
+    assert usage_from_message(SimpleNamespace(usage_metadata={"input_tokens": 10, "output_tokens": 5,
+                                                              "total_tokens": 99}))[1] is False
+    assert usage_from_message(SimpleNamespace()) == (None, True)
 
 
-def test_finalize_request_trace_reentry_does_not_persist_twice(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import agent.trace as trace_mod
+def test_request_trace_builds_the_tree_usage_and_warnings(stored) -> None:
+    with request_trace(question="q", channel="web", thread_id="t1", request_id="r1") as trace:
+        with trace_span("context"):
+            warn("follows_unavailable")
+        step = start_span("step", attributes={"step": 1})
+        with within(step):
+            with trace_span("llm", "gather", attributes={"model": "flash"}) as gather:
+                gather.attributes["usage"] = _usage(100, 10)
+        with within(step):
+            with trace_span("tool", "search_news"):
+                warn("low_relevance")
+        step.finish()
+        with trace_span("llm", "final", attributes={"model": "pro"}) as final:
+            final.attributes["usage"] = _usage(50, 5)
+        warn("evidence_truncated")
+        trace.finish(status="answered")
+        trace.finish(status="error")
 
-    persisted: list[str] = []
-
-    def _fake_persist(summary: dict) -> bool:
-        persisted.append(str(summary.get("request_id")))
-        return True
-
-    monkeypatch.setattr(trace_mod, "_persist_request_trace", _fake_persist)
-
-    with request_trace_context(user_message="hello", request_id="req-reentry-1"):
-        first = finalize_request_trace(final_status="success", evidence_count=0)
-        second = finalize_request_trace(final_status="error", error_code="should_not_override")
-
-    assert first is not None
-    assert second is not None
-    assert first["request_id"] == "req-reentry-1"
-    assert second["request_id"] == "req-reentry-1"
-    assert first["final_status"] == "success"
-    assert second["final_status"] == "success"
-    assert persisted == ["req-reentry-1"]
-
-
-def test_trace_span_records_parent_child_and_full_model_io(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "true")
-    monkeypatch.setenv("AGENT_TRACE_SECRET_REDACTION", "true")
-    persisted: list[dict] = []
-    monkeypatch.setattr("agent.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
-
-    with request_trace_context(user_message="hello", request_id="req-span-1"):
-        with trace_span("graph_node", "intent_router") as parent:
-            parent.set_output({"route": "needs_tools"})
-            with trace_span("model_call", "intent_router") as child:
-                child.set_model_io(
-                    node="intent_router",
-                    provider="gemini_api",
-                    model="gemini-test",
-                    input_messages=[
-                        HumanMessage(
-                            content=(
-                                "business prompt remains intact. "
-                                "GEMINI_API_KEY=sk-12345678901234567890"
-                            )
-                        )
-                    ],
-                    raw_output=AIMessage(
-                        content=(
-                            "model output remains intact. "
-                            "Authorization: Bearer abcdefghijklmnopqrstuvwxyz"
-                        )
-                    ),
-                    token_usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-                )
-                child.set_output({"parsed": True})
-
-        summary = finalize_request_trace(final_status="success", evidence_count=0)
-
-    assert summary is not None
-    spans = summary["spans"]
-    assert [span["name"] for span in spans] == ["intent_router", "intent_router"]
-    assert spans[1]["parent_span_id"] == spans[0]["span_id"]
-    assert spans[1]["span_type"] == "model_call"
-
-    model_io = persisted[0]["model_io"]
-    assert len(model_io) == 1
-    assert model_io[0]["span_id"] == spans[1]["span_id"]
-    content = model_io[0]["input_messages"][0]["content"]
-    assert "business prompt remains intact" in content
-    assert "sk-12345678901234567890" not in content
-    assert "GEMINI_API_KEY=[REDACTED]" in content
-    raw_content = model_io[0]["raw_output"]["content"]
-    assert "model output remains intact" in raw_content
-    assert "abcdefghijklmnopqrstuvwxyz" not in raw_content
-    assert summary["model_io"] == [
-        {
-            "span_id": spans[1]["span_id"],
-            "node": "intent_router",
-            "provider": "gemini_api",
-            "model": "gemini-test",
-            "token_usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-        }
-    ]
+    assert stored == {"insert": ["r1"], "persist": [trace]}
+    assert (trace.status, trace.channel, trace.thread_id) == ("answered", "web", "t1")
+    context, step, gather, tool, final = trace.spans
+    assert [span.parent_id for span in trace.spans] == [None, None, step.span_id, step.span_id, None]
+    assert all(span.status == "ok" for span in trace.spans)
+    assert trace.token_usage == {**_usage(150, 15), "by_model": {"flash": _usage(100, 10), "pro": _usage(50, 5)}}
+    assert trace.all_warnings() == ["evidence_truncated", "follows_unavailable", "low_relevance"]
 
 
-def test_model_io_omits_provider_internal_thought_signature(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "true")
-    persisted: list[dict] = []
-    monkeypatch.setattr("agent.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
-
-    with request_trace_context(user_message="hello", request_id="req-provider-internal"):
-        with trace_span("model_call", "intent_router") as span:
-            span.set_model_io(
-                node="intent_router",
-                provider="vertex",
-                model="gemini-test",
-                input_messages=[HumanMessage(content="full prompt")],
-                raw_output=AIMessage(
-                    content=[
-                        {
-                            "type": "text",
-                            "text": "model answer text",
-                            "thought_signature": "abc123def456",
-                        }
-                    ]
-                ),
-            )
-        finalize_request_trace(final_status="success", evidence_count=0)
-
-    raw_content = persisted[0]["model_io"][0]["raw_output"]["content"][0]
-    assert raw_content["text"] == "model answer text"
-    assert raw_content["thought_signature"] == "[provider_internal_thought_signature_omitted chars=12]"
-
-
-def test_trace_full_model_io_can_be_disabled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "false")
-    monkeypatch.setattr("agent.trace._persist_request_trace", lambda _summary: True)
-
-    with request_trace_context(user_message="hello", request_id="req-no-model-io"):
-        with trace_span("model_call", "intent_router") as span:
-            span.set_model_io(
-                node="intent_router",
-                provider="gemini_api",
-                model="gemini-test",
-                input_messages=[HumanMessage(content="full prompt")],
-                raw_output=AIMessage(content="full output"),
-            )
-        summary = finalize_request_trace(final_status="success", evidence_count=0)
-
-    assert summary is not None
-    assert summary["model_io"] == []
-
-
-def test_trace_span_marks_exceptions_as_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("agent.trace._persist_request_trace", lambda _summary: True)
-
-    with request_trace_context(user_message="hello", request_id="req-span-error"):
+def test_unfinished_spans_are_aborted_and_errors_keep_the_traceback(stored) -> None:
+    with request_trace(question="q", channel="cli") as trace:
+        start_span("step")
         with pytest.raises(ValueError):
-            with trace_span("guard", "output_guard"):
-                raise ValueError("bad url")
-        summary = finalize_request_trace(final_status="error", error_code="guard_failed")
+            with trace_span("llm", "gather"):
+                raise ValueError("bad reply")
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError as exc:
+            trace.fail(exc)
+        trace.finish(status="error", error_code="runtime_runtimeerror")
 
-    assert summary is not None
-    span = summary["spans"][0]
-    assert span["status"] == "error"
-    assert span["error_code"] == "guard_valueerror"
-    assert span["exception_chain"][0]["type"] == "ValueError"
-
-
-def test_trace_span_records_interrupt_named_exceptions_as_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class GraphInterrupt(Exception):
-        pass
-
-    monkeypatch.setattr("agent.trace._persist_request_trace", lambda _summary: True)
-
-    with request_trace_context(user_message="hello", request_id="req-span-interrupt"):
-        with pytest.raises(GraphInterrupt):
-            with trace_span("graph_node", "gather"):
-                raise GraphInterrupt("paused")
-        summary = finalize_request_trace(final_status="error", error_code="graph_failed")
-
-    assert summary is not None
-    span = summary["spans"][0]
-    assert span["status"] == "error"
-    assert span["error_code"] == "graph_node_graphinterrupt"
+    step, llm = trace.spans
+    assert (step.status, step.finished_at_ms) == ("aborted", trace.finished_at_ms)
+    assert (llm.status, llm.error_code, llm.error_message) == ("error", "llm_valueerror", "bad reply")
+    assert "ValueError: bad reply" in llm.exception
+    assert (trace.error_code, trace.error_message) == ("runtime_runtimeerror", "boom")
+    assert "test_unfinished_spans_are_aborted" in trace.exception
+    assert trace.exception.rstrip().endswith("RuntimeError: boom")
 
 
-def test_runtime_metadata_holds_trace_flags_and_langsmith_only() -> None:
-    with request_trace_context(user_message="q") as trace:
-        assert set(trace.runtime) == {"trace", "langsmith"}
+def test_model_io_is_redacted_and_keeps_tool_call_ids(stored) -> None:
+    with request_trace(question="q", channel="web") as trace:
+        with trace_span("llm", "gather") as span:
+            set_model_io(
+                span,
+                [HumanMessage("prompt GEMINI_API_KEY=placeholder-value-123"),
+                 ToolMessage("result", tool_call_id="c1")],
+                AIMessage(content=[{"type": "text", "text": "answer Authorization: Bearer abcdefghijklmnopqrstuvwxyz",
+                                    "thought_signature": "abc123def456"}]),
+            )
+        trace.finish(status="answered")
+
+    io = trace.model_io[span.span_id]
+    human, tool = io["input_messages"]
+    assert human["content"] == "prompt GEMINI_API_KEY=[REDACTED]"
+    assert (tool["class"], tool["tool_call_id"]) == ("ToolMessage", "c1")
+    part = io["output"]["content"][0]
+    assert part["text"] == "answer Authorization: Bearer [REDACTED]"
+    assert part["thought_signature"] == "[provider_internal_thought_signature_omitted chars=12]"
+
+
+def test_tracing_outside_a_request_records_nothing() -> None:
+    with trace_span("tool", "search_news") as span:
+        warn("low_relevance")
+        set_model_io(span, [HumanMessage("x")], AIMessage("y"))
+    assert span.warnings == []
+    assert span.finished_at_ms is not None
+
+
+def test_store_failures_do_not_fail_the_turn(monkeypatch) -> None:
+    def broken(trace):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(trace_store, "insert_running", broken)
+    monkeypatch.setattr(trace_store, "persist", broken)
+    with request_trace(question="q", channel="web") as trace:
+        trace.finish(status="direct")
+    assert trace.status == "direct"

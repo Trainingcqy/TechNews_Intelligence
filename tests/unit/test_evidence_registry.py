@@ -119,7 +119,7 @@ DISCUSSION_BODY = "\n评论节选，前 40 字符，全文 21840 字符：\n" + 
 
 def test_render_formats_article_and_discussion() -> None:
     expected = ARTICLE_BLOCK + ARTICLE_BODY + "\n\n" + DISCUSSION_BLOCK + DISCUSSION_BODY
-    assert render_for_synthesis(_two_fulltext_registry(), 10_000) == expected
+    assert render_for_synthesis(_two_fulltext_registry(), 10_000) == (expected, [])
 
 
 def test_render_omits_optional_lines_and_marks_missing_body() -> None:
@@ -132,7 +132,9 @@ def test_render_omits_optional_lines_and_marks_missing_body() -> None:
     )
     registry.add_discussion(replace(DISCUSSION, article_id=9, score=None, comment_total=2))
     registry.set_fulltext("E3", "评论全文", 4, False)
-    assert render_for_synthesis(registry, 10_000) == (
+    text, dropped = render_for_synthesis(registry, 10_000)
+    assert dropped == []
+    assert text == (
         "[E2] 标题：Google’s Genie 4 world model adds audio, more realistic worlds\n"
         "发布方：TechCrunch，媒体｜时间：2026-11-12｜领域：ai、software\n"
         "同一故事：5 篇报道，3 个发布方，首次 2026-11-11，最近 2026-11-13\n"
@@ -149,8 +151,7 @@ def test_render_omits_optional_lines_and_marks_missing_body() -> None:
 def test_render_drops_bodies_from_the_last_registered_until_within_limit() -> None:
     registry = _two_fulltext_registry()
     without_discussion_body = ARTICLE_BLOCK + ARTICLE_BODY + "\n\n" + DISCUSSION_BLOCK
-    assert render_for_synthesis(registry, len(without_discussion_body)) == without_discussion_body
-    assert render_for_synthesis(registry, len(without_discussion_body) - 1) == (
-        ARTICLE_BLOCK + "\n\n" + DISCUSSION_BLOCK
-    )
-    assert render_for_synthesis(registry, 10) == ARTICLE_BLOCK + "\n\n" + DISCUSSION_BLOCK
+    without_bodies = ARTICLE_BLOCK + "\n\n" + DISCUSSION_BLOCK
+    assert render_for_synthesis(registry, len(without_discussion_body)) == (without_discussion_body, ["E3"])
+    assert render_for_synthesis(registry, len(without_discussion_body) - 1) == (without_bodies, ["E2", "E3"])
+    assert render_for_synthesis(registry, 10) == (without_bodies, ["E2", "E3"])

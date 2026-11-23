@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agent import context
+from agent import context, trace_store
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
+from agent.trace import request_trace
 from agent.types import Article
 from common.urls import url_key
 
@@ -70,6 +71,7 @@ def test_keeps_last_turns_but_collects_user_urls_from_all_history(monkeypatch):
     assert _pairs(ctx) == [(HumanMessage, "q2"), (AIMessage, "a2"), (HumanMessage, "q3"), (AIMessage, "a3[E1]")]
     assert lookups == [["a.com/new"]]
     assert ctx.user_urls == {"u.com/1"}
+    assert (ctx.history_turns, ctx.turns_used) == (3, 2)
 
 
 def test_new_format_registers_sources_once_skipping_discussions(monkeypatch):
@@ -103,11 +105,14 @@ def test_old_format_citation_urls_and_messages_without_sources(monkeypatch):
 
 def test_lookup_failure_still_returns_messages(monkeypatch):
     lookups = _patch(monkeypatch, urls=["https://a.com/1"], fail=True)
+    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
     history = [_user("q"), _model("a[1]", sources=[{"n": 1, "url": "https://a.com/1", "source": "TechCrunch"}])]
     registry = EvidenceRegistry()
 
-    ctx = context.build_context(history, registry, AgentConfig())
+    with request_trace(question="q", channel="web") as trace:
+        ctx = context.build_context(history, registry, AgentConfig())
 
     assert lookups == [["a.com/1"]]
     assert registry.items() == []
     assert _pairs(ctx) == [(HumanMessage, "q"), (AIMessage, "a")]
+    assert trace.warnings == ["history_sources_unavailable"]

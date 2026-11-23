@@ -24,7 +24,7 @@ def main():
                 if user_input.lower() in ["exit", "quit"]:
                     break
 
-                answer = run_turn(user_input, history)
+                answer = run_turn(user_input, history, channel="cli")
                 print(f"Agent: {answer.text}")
                 for source in answer.sources:
                     print(f"  [{source.n}] {source.title_zh or source.title} {source.url}")

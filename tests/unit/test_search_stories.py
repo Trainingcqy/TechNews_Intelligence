@@ -45,7 +45,7 @@ def _patch(monkeypatch, *, candidates=(), members=None, browse=()):
 
     def lookup(query, **kwargs):
         calls["lookup"] = kwargs
-        return list(candidates), {"rerank_mode": "none"}
+        return list(candidates)
 
     def browse_story_ids(cur, **kwargs):
         calls["browse"] = kwargs

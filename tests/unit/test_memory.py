@@ -154,10 +154,11 @@ def test_render_follows():
     follows = [Follow(1, "Anthropic 上市", CHECKED), Follow(2, "具身智能", None)]
 
     assert memory.render_follows(follows, date(2026, 11, 17)) == (
-        "用户的关注项。它们只用于决定检索什么，不是事实来源：\n"
+        "用户的关注项，不是事实来源：\n"
         "- Anthropic 上市，上次查看 2026-11-10，距今 7 天\n"
         "- 具身智能，尚未查看过\n"
-        "用户问\"我关注的有什么新进展\"一类问题时，对每个关注项各发一次 search_news：query 填关注项原文，"
-        "days 填距上次查看的天数，最少 1，尚未查看过的填 14，最多 30。"
+        "只有用户问到关注项本身时，例如\"我关注的有什么新进展\"，才对每个关注项各发一次 search_news：query 填关注项原文，"
+        "days 填距上次查看的天数，最少 1，尚未查看过的填 14，最多 30。其他问题不受关注项影响，照常按规则检索；"
+        "\"最近发生了什么\"这类没有具体对象的问题，仍然不填 query，用 topic 和 days 浏览。"
     )
     assert memory.render_follows([], date(2026, 11, 17)) == ""

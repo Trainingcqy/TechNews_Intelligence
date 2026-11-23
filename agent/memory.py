@@ -123,13 +123,14 @@ def record_turn(user_key: str, answer: Answer) -> None:
 def render_follows(follows: list[Follow], today: date) -> str:
     if not follows:
         return ""
-    lines = ["用户的关注项。它们只用于决定检索什么，不是事实来源："]
+    lines = ["用户的关注项，不是事实来源："]
     for follow in follows:
         if follow.last_checked_at is None:
             lines.append(f"- {follow.query}，尚未查看过")
         else:
             checked = follow.last_checked_at.astimezone(BEIJING).date()
             lines.append(f"- {follow.query}，上次查看 {checked:%Y-%m-%d}，距今 {(today - checked).days} 天")
-    lines.append("用户问\"我关注的有什么新进展\"一类问题时，对每个关注项各发一次 search_news：query 填关注项原文，"
-                 "days 填距上次查看的天数，最少 1，尚未查看过的填 14，最多 30。")
+    lines.append("只有用户问到关注项本身时，例如\"我关注的有什么新进展\"，才对每个关注项各发一次 search_news：query 填关注项原文，"
+                 "days 填距上次查看的天数，最少 1，尚未查看过的填 14，最多 30。其他问题不受关注项影响，照常按规则检索；"
+                 "\"最近发生了什么\"这类没有具体对象的问题，仍然不填 query，用 topic 和 days 浏览。")
     return "\n".join(lines)

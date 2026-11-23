@@ -12,6 +12,7 @@ const EXHAUSTED_PLACEHOLDER = "额度已耗尽，申请提额邮件已发送，�
 const CAPPED_PLACEHOLDER = "已达最高额度上限，如需更多请直接联系管理员";
 const DEFAULT_LOADING_STATUS = "正在理解问题";
 const TYPING_LEAVE_STYLE = { opacity: "0", transform: "translateY(-8px)", transition: "all 0.2s ease" };
+const COPIED_MS = 1500;
 
 const items = ref([]);
 const started = ref(false);
@@ -72,11 +73,37 @@ function sourceView(source) {
 
 function appendMessage(role, text, sources = []) {
   if (role === "agent") {
-    items.value.push({ id: nextItemId++, role, html: renderAnswerHtml(text, sources), sources: sources.map(sourceView) });
+    items.value.push({
+      id: nextItemId++,
+      role,
+      text,
+      html: renderAnswerHtml(text, sources),
+      sources: sources.map(sourceView),
+      sourcesOpen: false,
+      copied: false
+    });
   } else {
     items.value.push({ id: nextItemId++, role, text });
   }
   scrollToBottom();
+}
+
+// The source list follows the answer so its [n] markers still resolve once pasted.
+function copyText(item) {
+  const lines = item.sources.map((source) => [`[${source.n}]`, source.title, source.href].filter(Boolean).join(" "));
+  return lines.length ? `${item.text}\n\n${lines.join("\n")}` : item.text;
+}
+
+async function copyAnswer(item) {
+  try {
+    await navigator.clipboard.writeText(copyText(item));
+  } catch {
+    return;
+  }
+  item.copied = true;
+  setTimeout(() => {
+    item.copied = false;
+  }, COPIED_MS);
 }
 
 function showTyping() {
@@ -313,19 +340,19 @@ if (session.token) {
           <span id="quota-display" class="quota-badge" :class="{ low: quotaLow }">{{ quotaText }}</span>
         </div>
         <div class="chat-header-actions">
-          <button id="follow-btn" class="icon-btn" title="关注列表" @click="followOpen = !followOpen">
+          <button id="follow-btn" v-tip="'关注列表'" class="icon-btn" @click="followOpen = !followOpen">
             <span class="material-symbols-outlined">bookmark</span>
           </button>
-          <button id="clear-btn" class="icon-btn" title="清空对话" @click="clearChat">
+          <button id="clear-btn" v-tip="'清空对话'" class="icon-btn" @click="clearChat">
             <span class="material-symbols-outlined">delete_sweep</span>
           </button>
-          <button id="logout-btn" class="icon-btn" title="退出登录" @click="logout">
+          <button id="logout-btn" v-tip="'退出登录'" class="icon-btn" @click="logout">
             <span class="material-symbols-outlined">logout</span>
           </button>
         </div>
       </div>
 
-      <div id="messages" ref="messagesEl" class="messages">
+      <div id="messages" ref="messagesEl" class="messages" :class="{ 'scroll-fade': started }">
         <div v-if="!started" class="welcome-msg">
           <h1 class="welcome-title">TechNews Intelligence</h1>
         </div>
@@ -333,10 +360,9 @@ if (session.token) {
           <div v-if="item.role === 'typing'" class="msg agent typing-msg" :style="item.leaving ? TYPING_LEAVE_STYLE : null">
             <div class="typing-indicator">
               <div class="typing-copy">
-                <div class="typing-label" role="status" aria-live="polite" :data-text="item.status">{{ item.status }}</div>
+                <div class="typing-label" role="status" aria-live="polite">{{ item.status }}</div>
                 <div
                   class="typing-detail"
-                  :data-text="item.detail"
                   :data-empty="String(!item.detail)"
                   :aria-hidden="String(!item.detail)"
                 >{{ item.detail }}</div>
@@ -345,21 +371,30 @@ if (session.token) {
           </div>
           <div v-else-if="item.role === 'agent'" class="msg agent">
             <div class="msg-content" v-html="item.html"></div>
-            <details v-if="item.sources.length" class="msg-sources">
-              <summary>
-                来源<span class="msg-sources-count">{{ item.sources.length }}</span>
+            <div class="msg-actions">
+              <button v-tip="item.copied ? '已复制' : '复制'" type="button" class="icon-btn" @click="copyAnswer(item)">
+                <span class="material-symbols-outlined">{{ item.copied ? "check" : "content_copy" }}</span>
+              </button>
+              <button
+                v-if="item.sources.length"
+                type="button"
+                class="sources-toggle"
+                :aria-expanded="String(item.sourcesOpen)"
+                @click="item.sourcesOpen = !item.sourcesOpen"
+              >
+                来源<span class="sources-count">{{ item.sources.length }}</span>
                 <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
-              </summary>
-              <ol>
-                <li v-for="source in item.sources" :key="source.n">
-                  <span>[{{ source.n }}]</span>
-                  <span>
-                    <a :href="source.href" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
-                    <span v-if="source.meta" class="msg-sources-meta"> · {{ source.meta }}</span>
-                  </span>
-                </li>
-              </ol>
-            </details>
+              </button>
+            </div>
+            <ol v-if="item.sourcesOpen" class="msg-sources">
+              <li v-for="source in item.sources" :key="source.n">
+                <span>[{{ source.n }}]</span>
+                <span>
+                  <a :href="source.href" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
+                  <span v-if="source.meta" class="msg-sources-meta"> · {{ source.meta }}</span>
+                </span>
+              </li>
+            </ol>
           </div>
           <div v-else class="msg user">
             <div class="msg-content">{{ item.text }}</div>

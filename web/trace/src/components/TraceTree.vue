@@ -94,9 +94,9 @@ function barClass(node) {
             <button
               v-if="node.kind === 'tool' && node.children.length"
               type="button"
+              v-tip="expanded.has(node.key) ? '收起检索' : '展开检索'"
               class="caret"
               :class="{ open: expanded.has(node.key) }"
-              :title="expanded.has(node.key) ? '收起检索' : '展开检索'"
               @click.stop="toggle(node)"
             >
               <ChevronRight :size="14" />
@@ -106,8 +106,8 @@ function barClass(node) {
             <span class="tree-sub">{{ nodeSubtitle(trace, node) }}</span>
             <span
               v-if="flags(node).warnings.length"
+              v-tip="flags(node).warnings.map(warningLabel).join('、')"
               class="flag"
-              :title="flags(node).warnings.map(warningLabel).join('、')"
             >
               <CircleAlert :size="14" />
             </span>

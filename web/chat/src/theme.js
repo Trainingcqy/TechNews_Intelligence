@@ -18,14 +18,27 @@ function systemTheme() {
   return media.matches ? "dark" : "light";
 }
 
+// Elements with a color transition would otherwise reach the new theme later than the rest of the page.
+function withoutTransitions(change) {
+  const style = document.createElement("style");
+  style.textContent = "*, *::before, *::after { transition: none !important; }";
+  document.head.append(style);
+  change();
+  // Reading layout applies the new colors while transitions are still off.
+  void document.body.offsetWidth;
+  setTimeout(() => style.remove());
+}
+
 // index.html applies the initial theme before first paint; this keeps it in sync afterwards.
 export function useTheme() {
   const theme = ref(root.dataset.theme || systemTheme());
 
   function applyTheme(next, persist) {
     theme.value = next;
-    root.dataset.theme = next;
-    root.style.colorScheme = next;
+    withoutTransitions(() => {
+      root.dataset.theme = next;
+      root.style.colorScheme = next;
+    });
     if (!persist) return;
     try {
       localStorage.setItem(STORAGE_KEY, next);

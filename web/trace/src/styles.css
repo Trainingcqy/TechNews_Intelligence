@@ -4,12 +4,10 @@
   padding: 0;
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
-  scrollbar-width: thin;
 }
 
 :root {
   color-scheme: light dark;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
   --bg-color: #f7f9fc;
   --surface-color: #ffffff;
   --text-primary: #1f1f1f;
@@ -32,10 +30,15 @@
   --code-ink: #1f1f1f;
   --selected-color: #e9ecef;
   --scrollbar-thumb: #c4c7c5;
+  --scrollbar-thumb-hover: #a8abaa;
+  --tooltip-bg: #303030;
+  --tooltip-text: #f2f2f2;
   --bar-color: #c4c7c5;
   --bar-llm: #8ab4f8;
   --menu-shadow: 0 6px 20px rgba(60, 64, 67, 0.16);
   --list-width: 320px;
+  --scrollbar-size: 10px;
+  --fade-size: 48px;
   --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -64,6 +67,9 @@
     --code-ink: #e3e3e3;
     --selected-color: #333333;
     --scrollbar-thumb: #5c5c5c;
+    --scrollbar-thumb-hover: #757575;
+    --tooltip-bg: #e3e3e3;
+    --tooltip-text: #1f1f1f;
     --bar-color: #5c5c5c;
     --bar-llm: #8ab4f8;
     --menu-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
@@ -94,6 +100,9 @@
   --code-ink: #e3e3e3;
   --selected-color: #333333;
   --scrollbar-thumb: #5c5c5c;
+  --scrollbar-thumb-hover: #757575;
+  --tooltip-bg: #e3e3e3;
+  --tooltip-text: #1f1f1f;
   --bar-color: #5c5c5c;
   --bar-llm: #8ab4f8;
   --menu-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
@@ -109,6 +118,43 @@ body {
   line-height: 1.6;
   background: var(--bg-color);
   color: var(--text-primary);
+}
+
+/* Chrome ignores ::-webkit-scrollbar on elements whose scrollbar-width or scrollbar-color is set, so the standard
+   properties are left to browsers without it. A styled ::-webkit-scrollbar draws no arrow buttons. */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  :root {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  * {
+    scrollbar-width: thin;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary-blue);
+  outline-offset: 2px;
 }
 
 button,
@@ -340,24 +386,61 @@ select {
   padding: 24px;
 }
 
-/* The fade lies within the padding, so only content scrolled past the edges is faded. The strip on the right that
-   holds the scrollbar is left out of the fade. */
+/* An edge fades only while content is hidden beyond it, by up to --fade-size; the strip that holds the scrollbar
+   stays unmasked. Without scroll-driven animations the fade stays within the padding --scroll-edge. */
+@property --fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes fade-top {
+  to {
+    --fade-top: var(--fade-size);
+  }
+}
+
+@keyframes fade-bottom {
+  from {
+    --fade-bottom: var(--fade-size);
+  }
+}
+
 .scroll-fade {
-  --edge: 16px;
-  --bar-strip: 14px;
-  --fade: linear-gradient(transparent, #000 var(--edge), #000 calc(100% - var(--edge)), transparent);
+  --scroll-edge: 16px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-block: var(--edge);
-  -webkit-mask-image: var(--fade), linear-gradient(#000, #000);
-  mask-image: var(--fade), linear-gradient(#000, #000);
-  -webkit-mask-size: calc(100% - var(--bar-strip)) 100%, var(--bar-strip) 100%;
-  mask-size: calc(100% - var(--bar-strip)) 100%, var(--bar-strip) 100%;
+  padding-block: var(--scroll-edge);
+  -webkit-mask-image: linear-gradient(transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent), linear-gradient(#000, #000);
+  mask-image: linear-gradient(transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent), linear-gradient(#000, #000);
+  -webkit-mask-size: calc(100% - var(--scrollbar-size)) 100%, var(--scrollbar-size) 100%;
+  mask-size: calc(100% - var(--scrollbar-size)) 100%, var(--scrollbar-size) 100%;
   -webkit-mask-position: left top, right top;
   mask-position: left top, right top;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
+}
+
+@supports (animation-timeline: scroll(self)) {
+  .scroll-fade {
+    animation: fade-top linear both, fade-bottom linear both;
+    animation-timeline: scroll(self);
+    animation-range: 0 var(--fade-size), calc(100% - var(--fade-size)) 100%;
+  }
+}
+
+@supports not (animation-timeline: scroll(self)) {
+  .scroll-fade {
+    --fade-top: var(--scroll-edge);
+    --fade-bottom: var(--scroll-edge);
+  }
 }
 
 .toast {
@@ -370,7 +453,7 @@ select {
   padding: 8px 16px;
   border-radius: 999px;
   background: var(--status-error);
-  color: #ffffff;
+  color: var(--button-on-ink);
   font-size: 13px;
   cursor: pointer;
   animation: fadeUp 0.25s ease;
@@ -454,6 +537,21 @@ select {
 
 .search:focus {
   border-color: var(--primary-blue);
+}
+
+.search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--text-tertiary);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+  cursor: pointer;
+}
+
+.search::-webkit-search-cancel-button:hover {
+  background: var(--text-secondary);
 }
 
 .filter-row {
@@ -1053,4 +1151,26 @@ select {
   .detail-scroll {
     padding-inline: 16px;
   }
+}
+
+/* ===== Tooltip (v-tip) ===== */
+.tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2000;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  font-size: 13px;
+  line-height: 18px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tooltip.visible {
+  opacity: 1;
 }

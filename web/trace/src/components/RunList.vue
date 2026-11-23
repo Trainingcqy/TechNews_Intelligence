@@ -30,7 +30,7 @@ function update(key, value) {
   <div class="run-list">
     <div v-if="thread" class="thread-banner">
       <span>会话 {{ shortId(thread) }}，共 {{ total }} 轮</span>
-      <button type="button" class="icon-btn" title="返回全部请求" @click="emit('leave-thread')">
+      <button v-tip="'返回全部请求'" type="button" class="icon-btn" @click="emit('leave-thread')">
         <X :size="18" />
       </button>
     </div>
@@ -39,7 +39,7 @@ function update(key, value) {
         class="search"
         type="search"
         :value="filters.q"
-        placeholder="问题、request_id、thread_id、错误码"
+        aria-label="搜索问题、request_id、thread_id、错误码"
         @change="update('q', $event.target.value.trim())"
       />
       <div class="filter-row">
@@ -68,14 +68,14 @@ function update(key, value) {
         >
           <span class="run-question">{{ run.user_message }}</span>
           <span class="run-meta">
-            <span class="status" :class="`status-${run.status}`" :title="run.error_code || undefined">
+            <span v-tip="run.error_code" class="status" :class="`status-${run.status}`">
               {{ STATUS[run.status] || run.status }}
             </span>
             <span>{{ formatTime(run.started_at) }}</span>
             <span>{{ formatMs(run.latency_ms) }}</span>
             <span>{{ formatCount(run.total_tokens) }} tok</span>
             <span>{{ CHANNEL[run.channel] || run.channel }}</span>
-            <span v-if="run.warnings.length" class="flag" :title="run.warnings.map(warningLabel).join('、')">
+            <span v-if="run.warnings.length" v-tip="run.warnings.map(warningLabel).join('、')" class="flag">
               <CircleAlert :size="14" />
             </span>
           </span>

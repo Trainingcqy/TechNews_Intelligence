@@ -95,7 +95,7 @@ watch(
     <aside v-show="open" id="follow-panel" class="follow-panel">
       <div class="follow-panel-head">
         <h2 class="follow-panel-title">关注列表</h2>
-        <button id="follow-close-btn" class="icon-btn" type="button" title="关闭" @click="$emit('close')">
+        <button id="follow-close-btn" v-tip="'关闭'" class="icon-btn" type="button" @click="$emit('close')">
           <span class="material-symbols-outlined">close</span>
         </button>
       </div>
@@ -103,7 +103,7 @@ watch(
         <div class="input-group">
           <input id="follow-input" v-model="query" type="text" placeholder="添加关注的公司、产品或话题" required />
         </div>
-        <button type="submit" class="icon-btn" title="添加">
+        <button v-tip="'添加'" type="submit" class="icon-btn">
           <span class="material-symbols-outlined">add</span>
         </button>
       </form>
@@ -111,7 +111,7 @@ watch(
       <ul id="follow-list" class="follow-list">
         <li v-for="follow in follows" :key="follow.follow_id" class="follow-item">
           <span class="follow-query">{{ follow.query }}</span>
-          <button type="button" class="icon-btn" title="删除" @click="removeFollow(follow.follow_id)">
+          <button v-tip="'删除'" type="button" class="icon-btn" @click="removeFollow(follow.follow_id)">
             <span class="material-symbols-outlined">close</span>
           </button>
         </li>

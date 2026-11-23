@@ -56,7 +56,7 @@ if (session.token) showChat();
     class="theme-toggle"
     type="button"
     :aria-label="themeLabel"
-    :title="themeLabel"
+    v-tip="themeLabel"
     :aria-pressed="String(isDark)"
     @click="toggleTheme"
   >

@@ -200,8 +200,8 @@ onMounted(() => {
     <header class="topbar">
       <button
         type="button"
+        v-tip="listCollapsed ? '展开请求列表' : '收起请求列表'"
         class="icon-btn wide-only"
-        :title="listCollapsed ? '展开请求列表' : '收起请求列表'"
         @click="listCollapsed = !listCollapsed"
       >
         <PanelLeftOpen v-if="listCollapsed" :size="20" />
@@ -209,12 +209,12 @@ onMounted(() => {
       </button>
       <span class="brand">Trace Console</span>
       <span class="spacer"></span>
-      <button type="button" class="icon-btn" title="刷新列表" @click="loadRuns()"><RefreshCw :size="18" /></button>
-      <button type="button" class="icon-btn" :title="isDark ? '切换浅色模式' : '切换深色模式'" @click="toggleTheme">
+      <button v-tip="'刷新列表'" type="button" class="icon-btn" @click="loadRuns()"><RefreshCw :size="18" /></button>
+      <button v-tip="isDark ? '切换浅色模式' : '切换深色模式'" type="button" class="icon-btn" @click="toggleTheme">
         <Sun v-if="isDark" :size="18" />
         <Moon v-else :size="18" />
       </button>
-      <button type="button" class="icon-btn" title="退出" @click="signOut"><LogOut :size="18" /></button>
+      <button v-tip="'退出'" type="button" class="icon-btn" @click="signOut"><LogOut :size="18" /></button>
     </header>
 
     <p v-if="errorText" class="toast" role="alert" @click="errorText = ''">{{ errorText }}</p>
@@ -247,7 +247,7 @@ onMounted(() => {
             <span>{{ formatMs(trace.run.latency_ms) }}</span>
             <span>{{ stepCount }} 步</span>
             <span>{{ CHANNEL[trace.run.channel] || trace.run.channel }}</span>
-            <button v-if="trace.run.thread_id" type="button" class="chip-btn" title="查看同一会话的各轮" @click="openThread">
+            <button v-if="trace.run.thread_id" v-tip="'查看同一会话的各轮'" type="button" class="chip-btn" @click="openThread">
               会话 {{ shortId(trace.run.thread_id) }}
             </button>
           </div>

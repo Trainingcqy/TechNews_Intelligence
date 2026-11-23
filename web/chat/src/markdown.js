@@ -48,14 +48,13 @@ function splitTrailingUrlSuffix(rawUrl) {
 }
 
 const renderer = new Renderer();
-renderer.link = function ({ href, title, text }) {
+renderer.link = function ({ href, text }) {
   const parsed = splitTrailingUrlSuffix(href);
   const safeHref = parsed.url || String(href || "").trim();
   const suffix = parsed.suffix || "";
-  const titleAttr = title ? ` title="${title}"` : "";
   const rawText = String(text || "");
   const safeText = !rawText || rawText === href ? safeHref : rawText;
-  return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer">${safeText}</a>${suffix}`;
+  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeText}</a>${suffix}`;
 };
 marked.setOptions({ renderer });
 

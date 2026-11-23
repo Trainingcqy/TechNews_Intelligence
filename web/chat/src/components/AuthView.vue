@@ -9,19 +9,11 @@ const email = ref("");
 const tokenValue = ref("");
 const tokenInputEl = ref(null);
 const emailLoading = ref(false);
-const pressedButton = ref("");
-
-async function pressButton(name) {
-  pressedButton.value = name;
-  await new Promise((resolve) => setTimeout(resolve, 90));
-  pressedButton.value = "";
-}
 
 async function requestAccess() {
   const value = email.value.trim();
   if (!value) return;
 
-  await pressButton("email");
   emailLoading.value = true;
   setAuthStatus("", "");
 
@@ -44,10 +36,9 @@ async function requestAccess() {
   }
 }
 
-async function submitToken() {
+function submitToken() {
   const value = tokenValue.value.trim();
   if (!value) return;
-  await pressButton("token");
   signIn(value);
 }
 </script>
@@ -73,7 +64,7 @@ async function submitToken() {
           id="email-btn"
           type="submit"
           class="secondary-btn"
-          :class="{ 'btn-pressing': pressedButton === 'email', 'btn-loading': emailLoading }"
+          :class="{ 'btn-loading': emailLoading }"
           :disabled="emailLoading"
         >
           <span class="btn-label">获取访问权限</span>
@@ -90,7 +81,7 @@ async function submitToken() {
         <div class="input-group">
           <input id="token-input" ref="tokenInputEl" v-model="tokenValue" type="text" placeholder="粘贴 Token" required />
         </div>
-        <button type="submit" class="secondary-btn" :class="{ 'btn-pressing': pressedButton === 'token' }">
+        <button type="submit" class="secondary-btn">
           <span class="btn-label">开始对话</span>
         </button>
       </form>

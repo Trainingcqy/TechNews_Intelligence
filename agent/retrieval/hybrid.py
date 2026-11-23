@@ -2,12 +2,13 @@
 
 This module implements the shared SQL pipeline used by query-oriented retrieval:
 
-    FTS rank + pgvector rank + exact alias fallback + RRF fusion.
+    FTS rank + pgvector rank + exact match of the query + RRF fusion.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from typing import Any
 
@@ -29,6 +30,32 @@ _FILTERS = """
               AND (%(topic)s::text IS NULL OR a.topics @> ARRAY[%(topic)s::text])
               AND (%(kinds)s::text[] IS NULL OR a.kind = ANY(%(kinds)s::text[]))
               AND (%(publisher_kind)s::text IS NULL OR p.kind = %(publisher_kind)s)"""
+
+_TRGM_HIT = """(similarity(LOWER(COALESCE(a.title, '')), LOWER(q.raw_query)) >= %(trgm_threshold)s
+                     OR similarity(LOWER(COALESCE(a.title_zh, '')), LOWER(q.raw_query)) >= %(trgm_threshold)s)"""
+
+_REGEX_SPECIAL = re.compile(r"[\\.^$|?*+()\[\]{}]")
+
+
+def _exact_pattern(query: str) -> str | None:
+    """The regex for an ASCII query, which must not touch an ASCII letter or digit on either side; None for any
+    other query, which is matched as a substring."""
+    # Postgres regexes treat CJK characters as word characters, so \m and \M would miss an English name
+    # written directly against Chinese text.
+    if not query.isascii():
+        return None
+    pattern = _REGEX_SPECIAL.sub(lambda m: "\\" + m.group(0), query)
+    if query[0].isalnum():
+        pattern = "(?<![a-z0-9])" + pattern
+    if query[-1].isalnum():
+        pattern += "(?![a-z0-9])"
+    return pattern
+
+
+def _literal_match(column: str, pattern: str | None) -> str:
+    if pattern is None:
+        return f"{column} ILIKE ('%%' || q.raw_query || '%%')"
+    return f"{column} ~* %(exact_pattern)s"
 
 
 def _clamp_int(value: int, minimum: int, maximum: int) -> int:
@@ -106,6 +133,10 @@ def fetch_hybrid_rows(
         min_value=0.1,
         max_value=0.9,
     )
+    exact_pattern = _exact_pattern(query_clean)
+    title_hit = "(" + " OR ".join(_literal_match(column, exact_pattern)
+                                  for column in ("a.title", "COALESCE(a.title_zh, '')")) + ")"
+    summary_hit = _literal_match("COALESCE(a.summary, '')", exact_pattern)
 
     semantic_cte = f"""
         semantic AS (
@@ -137,31 +168,6 @@ def fetch_hybrid_rows(
                 (websearch_to_tsquery('english', %(query)s)
                     || websearch_to_tsquery('simple', %(query)s)) AS tsq
         ),
-        alias_terms_raw AS (
-            SELECT raw_query AS term, 1.0::float AS term_weight, LENGTH(raw_query) AS term_len
-            FROM q
-            WHERE NULLIF(BTRIM(raw_query), '') IS NOT NULL
-            UNION
-            SELECT ea.alias AS term, COALESCE(ea.weight, 1.0)::float AS term_weight, LENGTH(ea.alias) AS term_len
-            FROM entity_alias ea
-            JOIN entity_registry er ON er.entity_id = ea.entity_id
-            CROSS JOIN q
-            WHERE ea.is_active = TRUE
-              AND er.is_active = TRUE
-              AND (
-                    LOWER(ea.alias) = LOWER(q.raw_query)
-                 OR LOWER(er.canonical_name) = LOWER(q.raw_query)
-                 OR LOWER(q.raw_query) LIKE ('%%' || LOWER(ea.alias) || '%%')
-                 OR LOWER(ea.alias) LIKE ('%%' || LOWER(q.raw_query) || '%%')
-              )
-        ),
-        alias_terms AS (
-            SELECT term, MAX(term_weight)::float AS term_weight
-            FROM alias_terms_raw
-            GROUP BY term
-            ORDER BY MAX(term_weight) DESC, MAX(term_len) DESC
-            LIMIT 16
-        ),
         lexical_ranked AS (
             SELECT
                 a.article_id,
@@ -185,33 +191,18 @@ def fetch_hybrid_rows(
         exact_source AS (
             SELECT
                 a.article_id,
-                MAX(
-                    CASE
-                        WHEN a.title ILIKE ('%%' || t.term || '%%')
-                          OR COALESCE(a.title_zh, '') ILIKE ('%%' || t.term || '%%')
-                            THEN 2.0 * t.term_weight
-                        WHEN similarity(LOWER(COALESCE(a.title, '')), LOWER(t.term)) >= %(trgm_threshold)s
-                          OR similarity(LOWER(COALESCE(a.title_zh, '')), LOWER(t.term)) >= %(trgm_threshold)s
-                            THEN 1.4 * t.term_weight
-                        WHEN COALESCE(a.summary, '') ILIKE ('%%' || t.term || '%%')
-                            THEN 0.8 * t.term_weight
-                        ELSE 0.0
-                    END
-                )::float AS exact_score,
-                MAX(a.event_at) AS event_at
-            FROM news.article a
+                (CASE
+                    WHEN {title_hit} THEN 2.0
+                    WHEN {_TRGM_HIT} THEN 1.4
+                    WHEN {summary_hit} THEN 0.8
+                    ELSE 0.0
+                END)::float AS exact_score,
+                a.event_at
+            FROM q
+            JOIN news.article a ON {title_hit} OR {_TRGM_HIT} OR {summary_hit}
             JOIN news.publisher p ON p.publisher_id = a.publisher_id
-            JOIN alias_terms t ON TRUE
             WHERE a.event_at >= %(start_at)s AND a.event_at < %(end_at)s{_FILTERS}
-              AND (
-                    a.title ILIKE ('%%' || t.term || '%%')
-                 OR COALESCE(a.title_zh, '') ILIKE ('%%' || t.term || '%%')
-                 OR COALESCE(a.summary, '') ILIKE ('%%' || t.term || '%%')
-                 OR similarity(LOWER(COALESCE(a.title, '')), LOWER(t.term)) >= %(trgm_threshold)s
-                 OR similarity(LOWER(COALESCE(a.title_zh, '')), LOWER(t.term)) >= %(trgm_threshold)s
-              )
-            GROUP BY a.article_id
-            ORDER BY exact_score DESC, event_at DESC
+            ORDER BY exact_score DESC, a.event_at DESC
             LIMIT %(lexical_limit)s
         ),
         exact AS (
@@ -305,6 +296,7 @@ def fetch_hybrid_rows(
             "points_weight": points_weight,
             "freshness_weight": freshness_weight,
             "trgm_threshold": trgm_threshold,
+            "exact_pattern": exact_pattern,
             "sim_floor": floor,
         },
     )

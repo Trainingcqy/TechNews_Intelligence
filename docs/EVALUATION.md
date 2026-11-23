@@ -93,7 +93,7 @@
 
 - **方法**：题目是覆盖良好的实体与侧面组合。三个配置各取 top-10：G0 为基础召回且不重排，G1 为宽召回且不重排，G2 为宽召回加 Jina 重排。三者的结果按 TREC pooling 合并，由 LLM 判官标注 0、1、2 三级相关性，作为共享的标准答案，再计算各配置的 IR 指标；nDCG 使用指数增益 2^rel−1。召回配置由环境变量 `EVAL_RECALL_PROFILE` 切换，取值为 `base` 或 `wide`。
 - **判官校准**：判官取综合模型。人工盲标一部分结果，标注表隐藏判官的分数以免锚定；三级标签看二次加权 kappa，二元相关性看 Hit、MRR、P 所依赖的"相关与不相关"判断的 kappa。
-- **精确召回**：`queries_exact.jsonl` 是 40 条精确匹配类问题，实体名、模型名、中英文对照、罕见词各 10 条，用于检查实体别名与 pg_trgm 这一路，结果写入 `report_exact.md`。
+- **精确召回**：`queries_exact.jsonl` 是 40 条精确匹配类问题，实体名、模型名、中英文对照、罕见词各 10 条，用于检查精确这一路，结果写入 `report_exact.md`。每题只用一种写法检索，取证模型对中英文名各检索一次的做法不在这组题的覆盖范围内。
 - **文件**：`queries.jsonl`、`queries_exact.jsonl`、`run_retrieval.py`、`judge_relevance.py`、`compute_metrics.py`、`build_calibration_sheet.py`、`compute_kappa.py`、`report.md`、`calibration_report.md`。
 
 ### G3 生成忠实度

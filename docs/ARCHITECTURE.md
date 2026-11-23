@@ -16,6 +16,7 @@ TechNews Intelligence 由采集管线、存储、检索、Agent、交互入口�
 - **派生数据可重建。** 故事归并和分类标签可以从原始表重算，派生逻辑写在有单测的 Python 中，不写成数据库触发器。
 - **摘要统一为中文后生成向量。** 中英文报道落在同一向量空间，跨语言归并不需要额外处理；代价是正文细节不进入向量。
 - **向量在时间窗内精确排序，不建近似索引。** 每次检索都带时间窗。IVFFlat 的聚类中心在建索引时固定，数据增长后要定期重建；近似索引的过滤条件在索引扫描之后执行，默认配置下窄过滤时返回的结果少于上限。代价是耗时随时间窗变长而增加，`days=365` 的耗时中位数超过 1 秒时改用近似索引。
+- **中英文名的对应由取证模型处理，不维护别名表。** 模型知道公司和产品的中英文名，新出现的名字不需要登记，精确召回只匹配检索词本身。代价是有通行中文名的对象要检索两次，涉及多个对象的问题更容易用满每步 4 个调用。
 - **LangGraph 只做编排。** 图负责一步内多个工具调用的并行执行、按调用序号登记证据，以及显式的节点与路由。不使用 `create_agent`：取证与综合是两个模型，看到的证据视图不同，综合之后还有代码校验，放进 middleware 后控制流不可见。不使用 checkpointer：没有功能需要跨请求暂停和恢复。
 - **不设任务分类器。** 工具只有两个，取证模型直接选择工具和参数；问答、盘点、追踪、对照四类任务的区别体现在工具参数和综合模型收到的证据上。
 - **链接由代码管理。** 检索结果和证据块只给出证据编号，不给链接；回答的来源列表由代码按编号生成，综合模型输出的地址在引用校验中被删除。取证模型只能经 `urls` 参数读取用户消息中出现过的链接。
@@ -113,13 +114,12 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 | `news.story_member` | 文章所属的故事，以及最近邻文章和相似度 |
 | `news.channel_poll`、`news.stage_failure` | 每次轮询的结果；阶段失败记录，只追加 |
 | `news.reference_headline` | 参照渠道的头条 |
-| `entity_registry`、`entity_alias`、`entity_alias_candidate` | 实体与别名，供精确召回扩展检索词 |
 | `access_tokens` | 网页端的访问令牌与额度 |
 | `user_follow`、`user_story_seen` | 用户的关注项与阅读记录 |
 | `conversation_threads`、`conversation_messages` | 对话线程与消息 |
 | `agent_runs`、`agent_trace_spans`、`agent_model_io` | Trace |
 
-实体与别名由 `sql/seed_entities.sql` 和别名候选脚本维护。`agent_model_io` 保存完整的模型输入输出，只经 Trace Console 和受控脚本读取。
+`agent_model_io` 保存完整的模型输入输出，只经 Trace Console 和受控脚本读取。
 
 ## 检索
 
@@ -127,7 +127,7 @@ discuss    HackerNews 发现记录满 24 小时后回访一次，取评论写 di
 
 - **词法**：`news.article.search_tsv` 上的 Postgres 全文检索，使用 `websearch_to_tsquery` 的 english 与 simple 两种配置，按 `ts_rank_cd` 排序。
 - **语义**：`news.article_embedding` 上的 pgvector 余弦距离，没有查询向量时跳过这一路。
-- **精确**：用 `entity_alias` 把检索词扩展为别名，在标题和摘要上做 ILIKE 子串匹配和 pg_trgm 三元组相似度匹配，覆盖公司名、产品名等专有名词。
+- **精确**：检索词作为整体，在标题、中文标题和摘要上做字面匹配，覆盖公司名、产品名、型号等专有名词。只含 ASCII 字符的检索词要求匹配处前后不是字母或数字，其余检索词按子串匹配；标题还按 pg_trgm 三元组相似度匹配，覆盖写法与检索词略有差异的标题。
 
 三路各自排名后按带权 RRF 求和，单路得分为 `weight / (60 + rank)`，权重为词法 1.0、语义 1.0、精确 0.7。融合后的候选交给 Jina Reranker 重排，`NEWS_RERANK_MODE=none` 关闭重排，重排失败时保留融合顺序。每次检索都带时间窗。
 
@@ -311,6 +311,6 @@ LangSmith 是可选的外部观测，由 `LANGSMITH_*` 和 `LANGCHAIN_*` 环境�
 | `web/chat/` | 网页对话前端 |
 | `web/trace/` | Trace Console 前端 |
 | `eval/` | 评测与验收脚本 |
-| `scripts/` | 数据库、冒烟、实体别名和编码检查脚本 |
-| `sql/` | 表结构与 seed |
+| `scripts/` | 数据库、冒烟和编码检查脚本 |
+| `sql/` | 表结构 |
 | `tests/` | 单元测试 |

@@ -4,59 +4,7 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- 1. Entity Registry and Alias Tables
-CREATE TABLE IF NOT EXISTS public.entity_registry (
-    entity_id BIGSERIAL PRIMARY KEY,
-    canonical_name TEXT NOT NULL,
-    entity_type VARCHAR(50) NOT NULL DEFAULT 'unknown',
-    wikidata_id VARCHAR(64),
-    source VARCHAR(50) NOT NULL DEFAULT 'manual',
-    confidence NUMERIC(4, 3) NOT NULL DEFAULT 1.000,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT entity_registry_canonical_unique UNIQUE (canonical_name)
-);
-
-CREATE TABLE IF NOT EXISTS public.entity_alias (
-    alias_id BIGSERIAL PRIMARY KEY,
-    entity_id BIGINT NOT NULL
-        REFERENCES public.entity_registry(entity_id)
-        ON DELETE CASCADE,
-    alias TEXT NOT NULL,
-    language VARCHAR(20) NOT NULL DEFAULT 'unknown',
-    alias_type VARCHAR(50) NOT NULL DEFAULT 'manual',
-    weight NUMERIC(6, 3) NOT NULL DEFAULT 1.000,
-    is_exact BOOLEAN NOT NULL DEFAULT TRUE,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.entity_alias_candidate (
-    candidate_id BIGSERIAL PRIMARY KEY,
-    alias TEXT NOT NULL,
-    suggested_entity_id BIGINT
-        REFERENCES public.entity_registry(entity_id)
-        ON DELETE SET NULL,
-    canonical_name TEXT,
-    entity_type VARCHAR(50) NOT NULL DEFAULT 'unknown',
-    source VARCHAR(50) NOT NULL DEFAULT 'corpus',
-    confidence NUMERIC(4, 3) NOT NULL DEFAULT 0.000,
-    evidence_count INTEGER NOT NULL DEFAULT 0,
-    evidence_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status VARCHAR(32) NOT NULL DEFAULT 'pending',
-    reason TEXT,
-    aliases_to_add JSONB NOT NULL DEFAULT '[]'::jsonb,
-    reviewed_at TIMESTAMPTZ,
-    promoted_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT entity_alias_candidate_status_chk
-        CHECK (status IN ('pending', 'auto_approved', 'approved', 'rejected'))
-);
-
--- 2. Access_Tokens
+-- 1. Access_Tokens
 CREATE TABLE IF NOT EXISTS access_tokens (
     id          SERIAL       PRIMARY KEY,
     email       VARCHAR(255) NOT NULL,
@@ -71,7 +19,7 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     unlimited   BOOLEAN      NOT NULL DEFAULT FALSE
 );
 
--- 3. Conversation Threads (persistent chat sessions)
+-- 2. Conversation Threads (persistent chat sessions)
 CREATE TABLE IF NOT EXISTS public.conversation_threads (
     id BIGSERIAL PRIMARY KEY,
     thread_id VARCHAR(64) NOT NULL UNIQUE,
@@ -83,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.conversation_threads (
     last_message_at TIMESTAMPTZ
 );
 
--- 4. Conversation Messages (history entries per thread)
+-- 3. Conversation Messages (history entries per thread)
 CREATE TABLE IF NOT EXISTS public.conversation_messages (
     id BIGSERIAL PRIMARY KEY,
     thread_id VARCHAR(64) NOT NULL,
@@ -98,7 +46,7 @@ CREATE TABLE IF NOT EXISTS public.conversation_messages (
         ON DELETE CASCADE
 );
 
--- 5. User memory: follows and seen stories
+-- 4. User memory: follows and seen stories
 CREATE TABLE IF NOT EXISTS public.user_follow (
     follow_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_key        TEXT NOT NULL,
@@ -119,7 +67,7 @@ CREATE TABLE IF NOT EXISTS public.user_story_seen (
     PRIMARY KEY (user_key, story_id)
 );
 
--- 6. Agent request traces
+-- 5. Agent request traces
 CREATE TABLE IF NOT EXISTS public.agent_runs (
     request_id VARCHAR(64) PRIMARY KEY,
     thread_id VARCHAR(128),
@@ -171,7 +119,7 @@ CREATE TABLE IF NOT EXISTS public.agent_model_io (
     FOREIGN KEY (request_id, span_id) REFERENCES public.agent_trace_spans(request_id, span_id) ON DELETE CASCADE
 );
 
--- 7. Performance Indexes
+-- 6. Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_access_tokens_email ON access_tokens (email);
 CREATE INDEX IF NOT EXISTS idx_conversation_threads_recent
     ON public.conversation_threads (COALESCE(last_message_at, created_at) DESC);
@@ -183,20 +131,8 @@ CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
     ON public.conversation_messages (thread_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_started ON public.agent_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_thread ON public.agent_runs(thread_id, started_at);
-CREATE INDEX IF NOT EXISTS idx_entity_registry_active_type
-    ON public.entity_registry(is_active, entity_type);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_alias_entity_lower_alias
-    ON public.entity_alias(entity_id, LOWER(alias));
-CREATE INDEX IF NOT EXISTS idx_entity_alias_lower_alias
-    ON public.entity_alias(LOWER(alias));
-CREATE INDEX IF NOT EXISTS idx_entity_alias_trgm
-    ON public.entity_alias USING GIN (alias gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_entity_alias_candidate_status
-    ON public.entity_alias_candidate(status, confidence DESC, updated_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_alias_candidate_source_lower_alias
-    ON public.entity_alias_candidate(source, LOWER(alias));
 
--- 8. Update Trigger Function
+-- 7. Update Trigger Function
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -204,24 +140,6 @@ BEGIN
     RETURN NEW;
 END;
 $$ language 'plpgsql';
-
-DROP TRIGGER IF EXISTS update_entity_registry_modtime ON public.entity_registry;
-CREATE TRIGGER update_entity_registry_modtime
-    BEFORE UPDATE ON public.entity_registry
-    FOR EACH ROW
-    EXECUTE FUNCTION update_modified_column();
-
-DROP TRIGGER IF EXISTS update_entity_alias_modtime ON public.entity_alias;
-CREATE TRIGGER update_entity_alias_modtime
-    BEFORE UPDATE ON public.entity_alias
-    FOR EACH ROW
-    EXECUTE FUNCTION update_modified_column();
-
-DROP TRIGGER IF EXISTS update_entity_alias_candidate_modtime ON public.entity_alias_candidate;
-CREATE TRIGGER update_entity_alias_candidate_modtime
-    BEFORE UPDATE ON public.entity_alias_candidate
-    FOR EACH ROW
-    EXECUTE FUNCTION update_modified_column();
 
 DROP TRIGGER IF EXISTS update_conversation_threads_modtime ON public.conversation_threads;
 CREATE TRIGGER update_conversation_threads_modtime

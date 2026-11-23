@@ -2,7 +2,6 @@
 set -euo pipefail
 
 # Idempotent schema runner for deployment.
-# It intentionally does not apply seed SQL; use apply_seed.sh for data seeds.
 # Usage:
 #   bash scripts/db/apply_schema.sh
 

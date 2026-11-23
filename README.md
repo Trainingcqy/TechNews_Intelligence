@@ -19,7 +19,7 @@ TechNews Intelligence 持续采集中英文科技新闻，并由 Agent 回答关
 ## 设计要点
 
 - **采集**：常驻进程轮询官方渠道、中英文科技媒体和 HackerNews，新文章经取正文、模型摘要与分类、生成向量后，按事件归并为故事。
-- **检索**：全文、向量、实体别名三路召回，RRF 融合后重排，结果按故事返回。
+- **检索**：全文、向量、精确匹配三路召回，RRF 融合后重排，结果按故事返回。
 - **Agent**：LangGraph 编排取证与综合两个模型，工具结果登记为编号证据；回答只能引用登记过的证据，没有有效引用的回答被拦截。
 - **记忆**：关注项和阅读记录只决定检索参数，不作为证据。
 - **入口**：网页、Telegram Bot、命令行，以及暴露两个工具的 MCP stdio 服务。
@@ -35,7 +35,6 @@ cd TechNews_Intelligence
 cp .env.example .env                 # 填写模板中的变量，包括注释掉的服务器变量
 docker compose up -d postgres
 bash scripts/db/apply_schema.sh      # 建表
-bash scripts/db/apply_seed.sh        # 导入实体与别名
 docker compose up -d
 docker compose run --rm ingest python -m ingest sync-sources   # 同步来源，ingest 随后开始轮询
 ```

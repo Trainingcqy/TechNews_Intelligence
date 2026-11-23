@@ -54,7 +54,6 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT` | 关 | LangSmith 外部观测；`LANGSMITH_API_KEY` 由 `langsmith` 库读取。 |
 | `BOT_SESSION_MAX_CHATS`, `BOT_SESSION_TTL_SEC`, `BOT_RATE_TRACK_MAX_CHATS`, `BOT_RATE_WINDOW_SEC`, `BOT_RATE_LIMIT`, `BOT_AUTO_DELETE_SEC`, `BOT_SEND_RETRY_ATTEMPTS`, `BOT_SEND_RETRY_BASE_SEC` | 见 `app/bot.py` | Telegram Bot 的会话缓存、限流、消息自动删除和发送重试。 |
 | `API_RATE_LIMIT`, `API_RATE_TRACK_MAX_IPS`, `APPROVE_LINK_TTL_SEC`, `SMTP_HOST`, `SMTP_PORT` | 见 `app/rate_limit.py`、`app/security.py`、`common/mail.py` | 接口限流、审批链接有效期、发信服务器。 |
-| `DEEPSEEK_ENTITY_MODEL`, `DEEPSEEK_ENTITY_ESCALATION_MODEL`, `DEEPSEEK_ENTITY_TIMEOUT_SEC` | `deepseek-flash`, `deepseek-v4-pro`, `30` | 实体别名脚本。 |
 
 模型变量的规则：
 
@@ -91,10 +90,9 @@ pip install -r requirements.txt -c constraints.txt
 
 - `python -m ingest` 的 `run`、`loop`、`relabel`、`requeue`、`sync-sources` 写入采集数据。
 - `eval/tracking/run_tracking.py` 写入评测用的关注项。
-- 直接运行的实体别名 Python 脚本写入别名。
 - CLI 和调用 `run_turn` 的评测脚本写入 Trace。
 
-`scripts/db/` 下的脚本和实体别名脚本的默认模式经 docker compose 执行，作用于所在机器上的 compose 服务。
+`scripts/db/` 下的脚本经 docker compose 执行，作用于所在机器上的 compose 服务。
 
 各入口：
 
@@ -172,11 +170,9 @@ docker compose logs -f ingest
 
 网页对话前端 `web/chat/` 由 Cloudflare Pages 从 `main` 分支构建并发布，域名为 `agent.trainingcqy.com`。Pages 项目的构建设置：根目录 `web/chat`，构建命令 `npm run build`，输出目录 `dist`；Node 版本取 `web/chat/.node-version`。
 
-### 表结构与初始数据
+### 表结构
 
 `bash scripts/db/apply_schema.sh` 依次执行 `sql/public.sql`、`sql/news.sql`，可重复执行，由自动部署调用。
-
-`bash scripts/db/apply_seed.sh` 手动导入 `sql/seed_entities.sql` 中的实体和别名基础数据，可重复执行。来源不经 seed 导入，见「来源维护」。
 
 ### Cloudflare Tunnel
 
@@ -231,13 +227,3 @@ docker compose run --rm ingest python -m ingest requeue --status failed --error-
 - 渠道级参数在 `config` 中：`body_from_feed`、`lookback_days`、`url_pattern`、`max_path_segments`、`discussion_after_hours`、`discussion_min_comments`。
 
 `sources.toml` 随镜像发布。修改后经部署或 `docker compose build ingest` 进入镜像，再执行 `docker compose run --rm ingest python -m ingest sync-sources`。
-
-### 实体别名
-
-检索的精确召回路用 `entity_registry`、`entity_alias` 扩展查询，候选别名从 `news.article` 中已就绪的文章生成：
-
-```bash
-bash scripts/entity_alias/build_entity_alias_candidates.sh --days 14 --limit 1000 --use-deepseek
-```
-
-加 `--apply-schema` 时先执行数据库结构脚本。

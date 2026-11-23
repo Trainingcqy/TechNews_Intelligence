@@ -2,61 +2,20 @@
 import { computed, ref } from "vue";
 
 const props = defineProps({
-  title: {
-    type: String,
-    required: true
-  },
-  value: {
-    type: null,
-    required: true
-  },
-  open: {
-    type: Boolean,
-    default: true
-  }
+  title: { type: String, required: true },
+  value: { type: null, required: true },
+  open: { type: Boolean, default: false }
 });
 
 const copied = ref(false);
+const text = computed(() => JSON.stringify(props.value ?? null, null, 2));
 
-function providerInternalPlaceholder(key, value) {
-  const length = String(value ?? "").length;
-  return `[provider_internal_${key}_omitted chars=${length}]`;
-}
-
-function sanitizeDisplayValue(value) {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.length > 1 && (trimmed[0] === "{" || trimmed[0] === "[")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === "object") {
-          return sanitizeDisplayValue(parsed);
-        }
-      } catch (err) {
-        // not JSON-encoded; show the original string
-      }
-    }
-    return value;
+async function copy() {
+  try {
+    await navigator.clipboard.writeText(text.value);
+  } catch {
+    return;
   }
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeDisplayValue(item));
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        key === "thought_signature" ? providerInternalPlaceholder(key, item) : sanitizeDisplayValue(item)
-      ])
-    );
-  }
-  return value;
-}
-
-const displayValue = computed(() => sanitizeDisplayValue(props.value ?? null));
-const text = computed(() => JSON.stringify(displayValue.value, null, 2));
-
-async function copyValue() {
-  await navigator.clipboard.writeText(text.value);
   copied.value = true;
   window.setTimeout(() => {
     copied.value = false;
@@ -65,13 +24,11 @@ async function copyValue() {
 </script>
 
 <template>
-  <details class="json-block" :open="open">
+  <details class="fold" :open="open">
     <summary>
-      <span>{{ title }}</span>
-      <button type="button" class="ghost-button" @click.prevent="copyValue">
-        {{ copied ? "已复制" : "复制" }}
-      </button>
+      <span class="fold-title">{{ title }}</span>
+      <button type="button" class="text-btn" @click.prevent="copy">{{ copied ? "已复制" : "复制" }}</button>
     </summary>
-    <pre>{{ text }}</pre>
+    <pre class="code">{{ text }}</pre>
   </details>
 </template>

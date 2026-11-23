@@ -8,21 +8,12 @@ export class TraceApiError extends Error {
 }
 
 export function createTraceClient(token) {
-  async function request(path, options = {}) {
+  async function request(path) {
     const response = await fetch(path, {
-      ...options,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-        ...(options.headers || {})
-      }
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` }
     });
-
     const contentType = response.headers.get("content-type") || "";
-    const payload = contentType.includes("application/json")
-      ? await response.json()
-      : await response.text();
-
+    const payload = contentType.includes("application/json") ? await response.json() : await response.text();
     if (!response.ok) {
       const detail = typeof payload === "object" && payload !== null ? payload.detail : payload;
       throw new TraceApiError(`Trace API failed: ${response.status}`, response.status, detail);
@@ -31,20 +22,9 @@ export function createTraceClient(token) {
   }
 
   return {
-    meta: () => request("/trace-api/meta"),
     runs: (params) => request(`/trace-api/runs?${params.toString()}`),
     run: (requestId) => request(`/trace-api/runs/${encodeURIComponent(requestId)}`),
-    span: (spanId, requestId) => {
-      const params = new URLSearchParams();
-      if (requestId) params.set("request_id", requestId);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      return request(`/trace-api/spans/${encodeURIComponent(spanId)}${suffix}`);
-    },
-    modelIo: (spanId, requestId) => {
-      const params = new URLSearchParams();
-      if (requestId) params.set("request_id", requestId);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      return request(`/trace-api/spans/${encodeURIComponent(spanId)}/model-io${suffix}`);
-    }
+    modelIo: (requestId, spanId) =>
+      request(`/trace-api/runs/${encodeURIComponent(requestId)}/model-io/${encodeURIComponent(spanId)}`)
   };
 }

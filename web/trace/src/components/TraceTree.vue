@@ -58,27 +58,52 @@ function flags(node) {
   };
 }
 
+// The final model call takes most of a request, so the axis covers the gathering before it, which fills this share of
+// the track; the final call runs off the right end.
+const GATHER_SHARE = 0.85;
+
+const axis = computed(() => {
+  const { root, startMs, totalMs } = props.trace;
+  const final = root.children.find((node) => node.kind === "llm" && node.name === "final");
+  const spanMs = final ? Math.max((final.started_at_ms - startMs) / GATHER_SHARE, 1) : totalMs;
+  const rough = spanMs / 5;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const stepMs = [1, 2, 5, 10].map((factor) => factor * power).find((step) => step >= rough);
+  const ticks = [];
+  for (let i = 0; i * stepMs < spanMs; i++) ticks.push(i * stepMs);
+  return { spanMs, ticks };
+});
+
+function position(ms) {
+  return `${(ms / axis.value.spanMs) * 100}%`;
+}
+
+function tickLabel(ms) {
+  return ms ? `${Number((ms / 1000).toFixed(3))} s` : "0";
+}
+
 function bar(node) {
   const { startMs, totalMs } = props.trace;
+  const { spanMs } = axis.value;
   const start = Math.max(node.started_at_ms - startMs, 0);
   const end = (node.finished_at_ms ?? startMs + totalMs) - startMs;
   return {
-    left: `${(start / totalMs) * 100}%`,
-    width: `${Math.max(((end - start) / totalMs) * 100, 0.5)}%`
+    class: { "bar-llm": node.kind === "llm", "bar-step": node.kind === "step", "bar-cut": end > spanMs },
+    style: { left: position(start), width: `max(${position(Math.min(end, spanMs) - start)}, 2px)` }
   };
-}
-
-function barClass(node) {
-  if (node.kind === "llm") return "bar-llm";
-  return node.kind === "request" || node.kind === "step" ? "bar-group" : "";
 }
 </script>
 
 <template>
   <div class="tree">
     <div class="tree-head">
-      <span>调用链</span>
-      <span class="axis"><span>0</span><span>{{ formatMs(trace.totalMs) }}</span></span>
+      <span class="tree-head-title">调用链</span>
+      <span class="tree-time">
+        <span class="bar-track">
+          <span v-for="ms in axis.ticks" :key="ms" class="tick" :style="{ left: position(ms) }">{{ tickLabel(ms) }}</span>
+        </span>
+        <span class="duration"></span>
+      </span>
     </div>
     <ol class="tree-rows scroll-fade">
       <li v-for="{ node, depth } in rows" :key="node.key">
@@ -113,7 +138,10 @@ function barClass(node) {
             </span>
           </span>
           <span class="tree-time">
-            <span class="bar-track"><span class="bar" :class="barClass(node)" :style="bar(node)"></span></span>
+            <span class="bar-track">
+              <span v-for="ms in axis.ticks" :key="ms" class="grid-line" :style="{ left: position(ms) }"></span>
+              <span v-if="node.kind !== 'request'" class="bar" v-bind="bar(node)"></span>
+            </span>
             <span class="duration">{{ formatMs(durationMs(node)) }}</span>
           </span>
         </div>

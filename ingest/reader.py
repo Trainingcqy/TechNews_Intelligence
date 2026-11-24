@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import urlsplit
 
 from ingest.dates import parse_datetime
 from ingest.extract import extract_article, is_paywalled
@@ -29,12 +30,22 @@ def titles_match(expected: str, actual: str) -> bool:
     return len(words & set(_TITLE_WORD.findall(actual.lower()))) / len(words) >= _TITLE_MATCH
 
 
+def same_page(requested: str, final: str | None) -> bool:
+    """Whether Reader ended on the URL it was asked for: the same host, with or without www, and the same path."""
+    if not final:
+        return False
+    first, last = urlsplit(requested), urlsplit(final)
+    host = lambda parts: parts.netloc.lower().removeprefix("www.")  # noqa: E731
+    return host(first) == host(last) and first.path.rstrip("/") == last.path.rstrip("/")
+
+
 def _failure(error_kind: str, title=None, published_at=None, body: str = "", warning=None) -> ReaderResult:
     return ReaderResult(False, error_kind, title, published_at, body, warning, {})
 
 
-def parse_reader_response(status: int, text: str, *, expected_title: str | None) -> ReaderResult:
-    """expected_title is the title the feed gave, or None when there is none to compare, as for a sitemap entry."""
+def parse_reader_response(status: int, text: str, *, url: str, expected_title: str | None) -> ReaderResult:
+    """url is the article URL Reader was asked for; expected_title is the title the feed gave, or None when there is
+    none to compare, as for a sitemap entry."""
     if status != 200:
         return _failure("reader_http", body=text)
     try:
@@ -52,6 +63,9 @@ def parse_reader_response(status: int, text: str, *, expected_title: str | None)
     lowered = (warning or "").lower()
     retry_headers = {header: value for hint, header, value in _RETRY_HINTS if hint in lowered}
     body = extract_article(content, title or expected_title)
+    # Reader can end on another page, such as a redirect target or an interstitial. On the page it was asked for, a
+    # title unlike the feed's is a headline changed after publication.
+    elsewhere = not same_page(url, data.get("finalUrl"))
 
     if isinstance(site_status, int) and site_status >= 400:
         error_kind = "reader_site_status"
@@ -59,8 +73,7 @@ def parse_reader_response(status: int, text: str, *, expected_title: str | None)
         error_kind = "reader_blocked"
     elif len(body) < _EMPTY_BODY_CHARS:
         error_kind = "reader_empty"
-    elif expected_title and title and not titles_match(expected_title, title):
-        # Reader fetched some other page: a redirect, an interstitial or a stale cache entry.
+    elif expected_title and title and elsewhere and not titles_match(expected_title, title):
         error_kind = "reader_title_mismatch"
     else:
         error_kind = None

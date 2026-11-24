@@ -21,8 +21,11 @@ def _response(content: str = "x" * 500, **data) -> str:
     return json.dumps({"code": 200, "status": 20000, "data": {"title": "T", "content": content, "httpStatus": 200, **data}})
 
 
-def _parse(text: str, expected_title: str | None = None, status: int = 200):
-    return parse_reader_response(status, text, expected_title=expected_title)
+_URL = "https://www.example.com/news/kagi-email/"
+
+
+def _parse(text: str, expected_title: str | None = None, status: int = 200, url: str = _URL):
+    return parse_reader_response(status, text, url=url, expected_title=expected_title)
 
 
 def test_success_with_title_and_published_time():
@@ -137,6 +140,33 @@ def test_page_title_that_does_not_match_the_feed_title_is_a_mismatch():
     # No title to compare on either side: the check does not apply.
     assert _parse(page, None).ok is True
     assert _parse(_response(title=""), "Google alternative Kagi launches an email service").ok is True
+
+
+@pytest.mark.parametrize(
+    ("final_url", "error_kind"),
+    [
+        # Reader stayed on the requested page: a headline changed after publication is no mismatch.
+        (_URL, None),
+        ("https://EXAMPLE.com/news/kagi-email", None),
+        ("https://www.example.com/news/kagi-email/?utm_source=rss", None),
+        # Reader ended elsewhere, or did not say where: the titles must match.
+        ("https://www.example.com/plus/learnmore", "reader_title_mismatch"),
+        ("https://www.example.org/news/kagi-email/", "reader_title_mismatch"),
+        ("https://cm.adform.net/cookie?redirect_url=https%3A%2F%2Fexample.com", "reader_title_mismatch"),
+        (None, "reader_title_mismatch"),
+    ],
+)
+def test_title_check_applies_when_reader_ended_on_another_page(final_url, error_kind):
+    data = {"title": "Could a new inbox change how people pay for search?"}
+    if final_url is not None:
+        data["finalUrl"] = final_url
+    result = _parse(_response(**data), "Google alternative Kagi launches an email service")
+    assert result.error_kind == error_kind
+
+
+def test_redirect_to_a_page_with_the_same_title_is_fine():
+    page = _response(title="Kagi launches an email service | Example Blog", finalUrl="https://blog.example.org/kagi")
+    assert _parse(page, "Kagi launches an email service").ok is True
 
 
 @pytest.mark.parametrize(

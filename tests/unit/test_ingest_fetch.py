@@ -85,6 +85,13 @@ def test_sitemap_entry_skips_the_title_check_and_takes_the_page_title(recorded):
     assert recorded["failure"] == []
 
 
+def test_changed_headline_on_the_requested_page_is_fetched(recorded):
+    url = "https://www.theverge.com/kagi"
+    recorded["responses"].append(_reader(title="Could a new inbox change how people pay for search?", finalUrl=url))
+    _run(store.FetchItem(7, url, "Google alternative Kagi launches an email service"))
+    assert recorded["failure"] == [] and len(recorded["success"]) == 1
+
+
 def test_page_with_another_title_is_recorded_as_a_mismatch(recorded):
     recorded["responses"].append(_reader(title="Best gifts under $50 for 2026"))
     _run(store.FetchItem(7, "https://www.theverge.com/kagi", "Google alternative Kagi launches an email service"))

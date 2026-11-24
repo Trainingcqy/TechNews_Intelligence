@@ -44,7 +44,7 @@ def _read(item: store.FetchItem, config: IngestConfig, expected_title: str | Non
         headers={**_reader_headers(), **extra_headers},
     )
     text = response.content.decode("utf-8", errors="replace")
-    return response, parse_reader_response(response.status, text, expected_title=expected_title)
+    return response, parse_reader_response(response.status, text, url=item.url, expected_title=expected_title)
 
 
 def _fetch(item: store.FetchItem, transaction: store.Transaction, config: IngestConfig) -> None:

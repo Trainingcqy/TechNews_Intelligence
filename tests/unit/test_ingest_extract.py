@@ -101,14 +101,6 @@ def test_new_window_labels_do_not_turn_menu_items_into_statements():
     assert extract_article(content, TITLE) == ARTICLE
 
 
-def test_short_list_right_after_the_lead_keeps_the_lead():
-    lead = "Example Labs released Model X today with these features:"
-    items = "\n".join(f"* {feature}" for feature in ("Faster", "Cheaper", "Smaller", "Safer", "Private", "Offline",
-                                                    "Multilingual", "Open"))
-    content = page(lead, items, ARTICLE)
-    assert extract_article(content, None) == content
-
-
 def test_invisible_characters_do_not_hide_the_end_of_a_sentence():
     # Without the colon read as the end of a sentence, the table of contents would be the only prose on the page.
     features = ("## Key features of the app:\u200b\n\n* 🔐 Easy login with email or phone\n"

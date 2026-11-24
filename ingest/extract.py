@@ -61,8 +61,6 @@ _SHORT_COST = 3
 _LABEL_COST = 100
 # Score from which a run counts as the article found, so that a section label or a stretch without text ends it.
 _FOUND = 40
-# A list of short items is more likely navigation, but its first items cost 1, as a short list in an article does.
-_LENIENT_ITEMS = 8
 _STATEMENT_WORDS = 3
 _DIVERSITY_TOKENS, _MIN_DIVERSITY = 40, 0.5
 _REPEATED = 3
@@ -187,13 +185,15 @@ def _score_lines(lines: list[str]) -> tuple[list[int], list[bool | None]]:
         neutral.append(fence or in_code or line.strip().startswith("|"))
         if fence:
             in_code = not in_code
+    # The items of a list of statements belong to the article; a list of short items is more likely navigation.
     for block in _list_blocks(lines):
         sizes = sorted(len(_WORD.findall(_text(lines[i]))) for i in block)
-        statements = len(block) >= 2 and sizes[len(sizes) // 2] >= _STATEMENT_WORDS
-        for position, i in enumerate(block):
+        if len(block) < 2 or sizes[len(sizes) // 2] < _STATEMENT_WORDS:
+            continue
+        for i in block:
             if scores[i] == -_SHORT_COST:
-                scores[i] = 0 if statements else (-1 if position < _LENIENT_ITEMS else -_SHORT_COST)
-            if statements and scores[i] == 0:
+                scores[i] = 0
+            if scores[i] == 0:
                 neutral[i] = True
     filler = [None if not line.strip() or not _text(line) else not neutral[i] and scores[i] <= 0
               for i, line in enumerate(lines)]

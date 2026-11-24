@@ -406,7 +406,7 @@ def take_embed(cur) -> list[EmbedItem]:
 
 
 def record_fetch_success(
-    cur, article_id: int, *, body: str, published_at: datetime | None, title: str | None
+    cur, article_id: int, *, body: str, body_level: str, published_at: datetime | None, title: str | None
 ) -> None:
     """published_at fills an empty value only; title, when given, replaces the stored placeholder."""
     _write_body(cur, article_id, "reader", body)
@@ -415,11 +415,12 @@ def record_fetch_success(
         UPDATE news.article SET
             title = COALESCE(%(title)s, title),
             published_at = COALESCE(published_at, %(published_at)s),
-            body_level = 'full',
+            body_level = %(body_level)s,
             {_SET_STATE}
         WHERE article_id = %(article_id)s
         """,
-        {"article_id": article_id, "title": title, "published_at": published_at, **_state("fetched")},
+        {"article_id": article_id, "title": title, "published_at": published_at, "body_level": body_level,
+         **_state("fetched")},
     )
 
 

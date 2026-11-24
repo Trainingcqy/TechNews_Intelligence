@@ -66,6 +66,8 @@ def _fetch(item: store.FetchItem, transaction: store.Transaction, config: Ingest
                 cur,
                 item.article_id,
                 body=clean_body(result.body),
+                # The free part of a paywalled article is an excerpt: no later attempt gets more of it.
+                body_level="excerpt" if result.paywalled else "full",
                 published_at=result.published_at,
                 title=result.title if expected_title is None else None,
             )

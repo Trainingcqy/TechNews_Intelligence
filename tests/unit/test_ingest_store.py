@@ -48,7 +48,7 @@ _ANALYSIS = Analysis(summary="Acme released a model that answers questions twice
     [
         (
             lambda cur: store.record_fetch_success(
-                cur, 7, body="b" * 500, published_at=datetime(2026, 11, 17, tzinfo=UTC), title=None
+                cur, 7, body="b" * 500, body_level="full", published_at=datetime(2026, 11, 17, tzinfo=UTC), title=None
             ),
             "fetched",
         ),
@@ -61,6 +61,14 @@ def test_success_advances_and_clears_attempts(record, status) -> None:
     record(cur)
     assert _article_update(cur)[1]["article_id"] == 7
     assert _state(cur) == (status, 0, None, 0)
+
+
+@pytest.mark.parametrize("body_level", ["full", "excerpt"])
+def test_fetch_success_records_the_body_level(body_level) -> None:
+    cur = FakeCursor()
+    store.record_fetch_success(cur, 7, body="b" * 500, body_level=body_level, published_at=None, title=None)
+    sql, params = _article_update(cur)
+    assert "body_level = %(body_level)s" in sql and params["body_level"] == body_level
 
 
 def _channel(**config) -> store.DueChannel:

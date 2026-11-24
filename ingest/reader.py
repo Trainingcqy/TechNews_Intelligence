@@ -1,4 +1,5 @@
-"""Jina Reader JSON responses: parsing, and the checks that the content is the article that was asked for."""
+"""Jina Reader JSON responses: parsing, taking the article out of the page, and the checks that it is the article
+that was asked for."""
 
 from __future__ import annotations
 
@@ -6,9 +7,11 @@ import json
 import re
 
 from ingest.dates import parse_datetime
+from ingest.extract import extract_article, is_paywalled
 from ingest.models import ReaderResult
 
-_EMPTY_BODY_CHARS = 400
+# Shorter article text means Reader got no article: a broken page, or a video page with a one-line description.
+_EMPTY_BODY_CHARS = 200
 _TITLE_MATCH = 0.5
 _TITLE_WORD = re.compile(r"[a-z0-9]{3,}")
 # Warnings in which Reader suggests a request option, and the header that applies it.
@@ -41,13 +44,14 @@ def parse_reader_response(status: int, text: str, *, expected_title: str | None)
     if not isinstance(data, dict):
         return _failure("reader_invalid", body=text)
 
-    body = (data.get("content") or "").strip()
+    content = (data.get("content") or "").strip()
     title = (data.get("title") or "").strip() or None
     published_at = parse_datetime(data.get("publishedTime"))
     warning = (data.get("warning") or "").strip() or None
     site_status = data.get("httpStatus")
     lowered = (warning or "").lower()
     retry_headers = {header: value for hint, header, value in _RETRY_HINTS if hint in lowered}
+    body = extract_article(content, title or expected_title)
 
     if isinstance(site_status, int) and site_status >= 400:
         error_kind = "reader_site_status"
@@ -60,4 +64,6 @@ def parse_reader_response(status: int, text: str, *, expected_title: str | None)
         error_kind = "reader_title_mismatch"
     else:
         error_kind = None
-    return ReaderResult(error_kind is None, error_kind, title, published_at, body, warning, retry_headers)
+    if error_kind is not None:
+        return ReaderResult(False, error_kind, title, published_at, content, warning, retry_headers)
+    return ReaderResult(True, None, title, published_at, body, warning, retry_headers, is_paywalled(content))

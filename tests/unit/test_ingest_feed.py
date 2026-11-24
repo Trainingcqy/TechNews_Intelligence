@@ -31,6 +31,22 @@ def test_rss_content_encoded_is_preferred_over_summary():
     assert len(first.feed_text) > 5000
     assert first.feed_text.startswith("Meta’s Reality Labs builds products such as AI glasses.")
     assert "<" not in first.feed_text
+    # WordPress ends every entry with "The post <title> appeared first on <site>."; the line is dropped.
+    assert first.feed_text.endswith("subsequent productization work.")
+
+
+def test_wordpress_footer_is_the_only_line_dropped():
+    def entry(body: str) -> str:
+        return ('<?xml version="1.0"?><rss version="2.0"><channel><item><title>T</title>'
+                f"<link>https://example.com/a</link><description><![CDATA[{body}]]></description>"
+                "</item></channel></rss>")
+
+    footer = ('<p>The post <a href="https://example.com/a">T</a> appeared first on '
+              '<a href="https://example.com">Site</a>.</p>')
+    (candidate,) = _parse(entry("<p>The post office opened a new branch.</p>" + footer))
+    assert candidate.feed_text == "The post office opened a new branch."
+    (only_footer,) = _parse(entry(footer))
+    assert only_footer.feed_text is None
 
 
 def test_longest_content_item_is_the_body_and_double_escaped_markup_is_removed():

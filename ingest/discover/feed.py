@@ -13,6 +13,8 @@ from ingest.models import Candidate
 
 _BLOCK_TAGS = frozenset({"p", "br", "div", "li", "ul", "ol", "tr", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6"})
 _MARKUP_RE = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*(\s[^<>]*)?/?>")
+# The line that WordPress adds to the end of every entry: "The post <title> appeared first on <site>."
+_WORDPRESS_FOOTER_RE = re.compile(r"(?:^|\n)The post .+ appeared first on .+$")
 
 
 class _TextExtractor(HTMLParser):
@@ -59,7 +61,7 @@ def _feed_text(entry) -> str | None:
     # An entry can carry several content items; Tom's Hardware puts the author bio first and the article second.
     texts = [strip_html(content.get("value") or "") for content in entry.get("content") or []]
     text = max(texts, key=len, default="") or strip_html(entry.get("summary") or "")
-    return text or None
+    return _WORDPRESS_FOOTER_RE.sub("", text) or None
 
 
 def parse_feed(content: bytes, *, now: datetime) -> list[Candidate]:

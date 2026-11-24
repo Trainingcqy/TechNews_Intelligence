@@ -30,7 +30,9 @@ def test_success_with_title_and_published_time():
     assert (result.ok, result.error_kind, result.retry_headers) == (True, None, {})
     assert result.title == "How genome mapping can help researchers better understand disease"
     assert result.published_at == datetime(2026, 11, 17, 22, 0, tzinfo=UTC)
-    assert result.body.startswith("Nov 17, 2026")
+    # The date and reading time above the standfirst are not article text.
+    assert result.body.startswith("In our latest installment of the Ask a Scientist series")
+    assert result.paywalled is False
 
 
 def test_published_time_in_rfc2822_form():
@@ -72,13 +74,61 @@ def test_other_warnings_do_not_fail_the_result():
     assert _parse(_response(warning="This is a cached snapshot")).ok is True
 
 
-@pytest.mark.parametrize(("length", "expected"), [(399, "reader_empty"), (400, None)])
+@pytest.mark.parametrize(("length", "expected"), [(199, "reader_empty"), (200, None)])
 def test_body_length_at_threshold(length, expected):
     assert _parse(_response("x" * length)).error_kind == expected
 
 
 def test_body_length_ignores_surrounding_whitespace():
-    assert _parse(_response("\n\n" + "x" * 300 + "\n\n\n" + " " * 300)).error_kind == "reader_empty"
+    assert _parse(_response("\n\n" + "x" * 150 + "\n\n\n" + " " * 300)).error_kind == "reader_empty"
+
+
+_MENU = "\n".join(f"* {item}" for item in ("Products", "Research", "Safety", "Company", "Careers", "Pricing", "Docs",
+                                         "Developers", "Business", "Enterprise", "Education", "Stories", "Podcast",
+                                         "Livestreams", "Help center", "Status", "Terms of use", "Privacy policy"))
+_ARTICLE = ("Example Labs released Model X on Tuesday, a language model that reads documents of up to two million "
+            "words and answers questions about them in a few seconds, the company said.\n\n"
+            "Early customers include three law firms and a hospital network in Ohio that tested the model for six "
+            "months, and pricing starts at four dollars per million words read.")
+
+
+_TEASERS = (
+    "A chip designer in Austin said its newest accelerator uses half the power of the previous generation, and that "
+    "two large hosting companies have agreed to test it in their data centers next spring.",
+    "A startup in Berlin raised forty million dollars to build robots that sort recycling at municipal plants, "
+    "according to people familiar with the deal and filings seen by reporters this week.",
+    "Regulators in Brussels opened an inquiry into how three cloud providers price storage for public agencies, the "
+    "commission said, adding that the review would take at least nine months to complete.",
+    "Shares of a satellite operator rose after it won a contract to provide internet service to rural schools, a deal "
+    "that analysts said could be worth several hundred million dollars over the next decade.",
+)
+
+
+@pytest.mark.parametrize(
+    ("page_title", "expected_title"),
+    [("Example Labs ships Model X | Example Blog", None), ("", "Example Labs ships Model X")],
+)
+def test_body_is_the_article_text_of_the_page(page_title, expected_title):
+    # The heading that repeats the title, from the page or else from the feed, marks where the article starts; after
+    # it, "Related" ends the article although more prose follows.
+    teasers = "\n\n".join(_TEASERS)
+    content = f"{_MENU}\n\n# Example Labs ships Model X\n\nNovember 20, 2026\n\n{_ARTICLE}\n\n## Related\n\n{teasers}"
+    result = _parse(_response(content, title=page_title), expected_title)
+    assert (result.ok, result.body) == (True, _ARTICLE)
+
+
+def test_length_check_applies_to_the_article_text():
+    content = f"{_MENU}\n\nWatch a walkthrough of the new feature in this short video.\n\n{_MENU}"
+    result = _parse(_response(content))
+    assert (result.ok, result.error_kind) == (False, "reader_empty")
+    # The failure keeps Reader's whole content for the failure detail.
+    assert result.body == content
+
+
+def test_free_part_of_a_paywalled_article_is_flagged():
+    content = f"{_ARTICLE}\n\n## This post is for paid members only\n\nBecome a paid member for unlimited access."
+    result = _parse(_response(content))
+    assert (result.ok, result.paywalled, result.body) == (True, True, _ARTICLE)
 
 
 def test_page_title_that_does_not_match_the_feed_title_is_a_mismatch():

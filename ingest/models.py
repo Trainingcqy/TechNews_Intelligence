@@ -23,9 +23,10 @@ class ReaderResult:
     error_kind: str | None
     title: str | None
     published_at: datetime | None
-    body: str
+    body: str  # the article text when ok; otherwise Reader's whole content, for the failure detail
     warning: str | None
     retry_headers: dict[str, str]  # request headers that the warning suggests for one more request
+    paywalled: bool = False  # the body is only the free part of a paywalled article
 
 
 class Analysis(BaseModel):

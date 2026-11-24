@@ -64,6 +64,17 @@ def test_reader_is_asked_for_json_and_the_suggested_option_is_tried_once(recorde
     assert second["X-Timeout"] == "30"
     (success,) = recorded["success"]
     assert success["body"].startswith("full article") and success["title"] is None
+    assert success["body_level"] == "full"
+
+
+def test_free_part_of_a_paywalled_article_is_an_excerpt(recorded):
+    article = ("Federal agents posed as both the victim and the attacker to catch a ransomware operator, according to "
+               "court records reviewed for this story, which describe a sting that ran for most of last year. The "
+               "operator offered data recovery services to the companies that his own group had attacked.")
+    recorded["responses"].append(_reader(f"{article}\n\n## This post is for paid members only\n\nSubscribe now."))
+    _run(store.FetchItem(7, "https://www.404media.co/fbi-sting", "Kagi launches an email service"))
+    (success,) = recorded["success"]
+    assert (success["body"], success["body_level"]) == (article, "excerpt")
 
 
 def test_sitemap_entry_skips_the_title_check_and_takes_the_page_title(recorded):

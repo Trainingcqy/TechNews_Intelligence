@@ -4,7 +4,8 @@ Reader returns either the article alone or the whole page around it: navigation,
 links, newsletter boxes, the footer. The article is one contiguous block of the page, so it is taken as the run of lines
 with the highest total score. Prose scores its word count, short lines such as menu items cost a little, boilerplate
 costs its length and a section label such as "Related" costs a lot. When the page repeats the title as a heading, the
-run starts after it.
+run starts after it. What follows an article can read as prose too, such as a company description under "About AMD",
+acknowledgements or the author's bio, so the article ends at the first such heading or bio.
 """
 
 from __future__ import annotations
@@ -48,6 +49,17 @@ _SECTION_END = re.compile(
     re.I,
 )
 _READ_MORE = re.compile(r"read more", re.I)
+# A heading that opens what follows an article: a description, acknowledgements, a legal notice, an earnings call, tags.
+_ATTACHMENT = re.compile(
+    r"about .{1,40}|acknowledg(?:e)?ments?|(?:\w+ )?(?:cautionary statement|forward-looking statements)|disclaimers?"
+    r"|conference call(?: and webcast)?(?: information)?|(?:\w+ )?teleconference|topics|posted in",
+    re.I,
+)
+# "Ashley is a senior policy reporter for Ars Technica, dedicated to tracking ..."
+_AUTHOR_BIO = re.compile(
+    r"[A-Z][\w.'’-]+(?: [A-Z][\w.'’-]+){0,3} (?:is|was|has been) (?:a|an|the)\b[^.]{0,80}"
+    r"\b(?:reporter|editor|writer|journalist)s?\b"
+)
 _TITLE_WORD = re.compile(r"[a-z0-9]{3,}")
 _TITLE_SEPARATOR = re.compile(r"\s+[|–—·-]\s+")
 _LIST_ITEM = re.compile(r"^\s*(?:(?:[*+-]|\d+[.)])\s+|[•▪◦‣\u2600-\u27bf\U0001f300-\U0001faff]\ufe0f?\s*)\S")
@@ -59,7 +71,8 @@ _PAYWALL = re.compile(
 _LONG_WORDS, _PROSE_WORDS, _SHORT_WORDS = 20, 10, 3
 _SHORT_COST = 3
 _LABEL_COST = 100
-# Score from which a run counts as the article found, so that a section label or a stretch without text ends it.
+# Score from which the article counts as found, so that a section label, a stretch without text or what follows an
+# article ends it.
 _FOUND = 40
 _STATEMENT_WORDS = 3
 _DIVERSITY_TOKENS, _MIN_DIVERSITY = 40, 0.5
@@ -233,4 +246,13 @@ def _article_span(lines: list[str], title: str | None) -> tuple[int, int] | None
     while end + 1 < len(lines) and scores[end + 1] >= 0 and taken < _EXTEND_FILLER:
         end += 1
         taken += bool(filler[end])
+    # What follows the article ends it, although it can score as prose. A heading does not end like a sentence.
+    found = 0
+    for i in range(start, end + 1):
+        text = _text(lines[i])
+        label = text.rstrip(":")
+        heading = _ATTACHMENT.fullmatch(label) and not _TERMINAL.search(label)
+        if found >= _FOUND and (heading or _AUTHOR_BIO.match(text)):
+            return start, i - 1
+        found += max(scores[i], 0)
     return start, end

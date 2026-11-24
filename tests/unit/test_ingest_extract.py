@@ -64,6 +64,49 @@ def test_single_emoji_label_after_the_article_is_not_a_list_of_statements():
     assert extract_article(content, TITLE) == ARTICLE
 
 
+@pytest.mark.parametrize(
+    "attachment",
+    [
+        "## About Example Labs\n\nExample Labs (NASDAQ: EXL) builds language models for businesses and governments, "
+        "and employs more than two thousand people in offices across Europe, Asia and North America.",
+        "## Acknowledgements\n\nWe thank our partners at three universities and the many early testers whose feedback "
+        "on reliability, speed and safety shaped the model during six months of trials.",
+        "**Cautionary Statement**\n\nThis press release contains forward-looking statements about the timing, pricing "
+        "and capabilities of products, which involve risks that could cause actual results to differ.",
+        "**Conference Call and Webcast Information**\n\nExample Labs will hold a conference call with analysts and "
+        "investors today at two in the afternoon to discuss its results for the third quarter of the fiscal year.",
+        "Posted in:\n\nAI, Enterprise\n\nExample News is an independent publication whose work is written, reported "
+        "and owned by journalists, and is funded by readers who subscribe to support it.",
+        "Jane Doe is a senior reporter at Example News, covering artificial intelligence, chips and the companies that "
+        "build them. She previously wrote about science for a daily newspaper in Boston.",
+    ],
+)
+def test_article_ends_where_what_follows_it_begins(attachment: str):
+    # No blank line in between: the article ends on the line right before the attachment.
+    assert extract_article(f"{ARTICLE}\n{attachment}", None) == ARTICLE
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "## Questions about safety",
+        "About half of the early testers were lawyers.",
+        "The lawsuit was filed in federal court in Ohio on Monday. Roe is a former reporter at the newspaper and says "
+        "she was fired after asking questions about pay.",
+    ],
+)
+def test_article_line_that_resembles_what_follows_an_article_is_kept(line: str):
+    content = page(P1, P2, line, P3)
+    assert extract_article(content, None) == content
+
+
+def test_heading_before_the_article_is_found_does_not_end_it():
+    # Tags under the headline: little prose comes before them.
+    standfirst = "Model X reads long documents and answers questions about them in seconds."
+    content = page(f"# {TITLE}", standfirst, "Posted in:", ARTICLE)
+    assert ARTICLE in extract_article(content, TITLE)
+
+
 def test_standfirst_next_to_the_first_paragraph_is_kept():
     standfirst = "Model X reads long documents and answers questions about them in seconds"
     content = page(NAV, f"# {TITLE}", standfirst, ARTICLE)

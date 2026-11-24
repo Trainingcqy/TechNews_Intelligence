@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -81,6 +82,11 @@ def parse_sources(text: str) -> Sources:
             raise ValueError(f"duplicate channel key {channel.key}")
         if channel.publisher is not None and channel.publisher not in names:
             raise ValueError(f"channel {channel.key} references unknown publisher {channel.publisher}")
+        if "exclude_url" in channel.config:
+            try:
+                re.compile(channel.config["exclude_url"])
+            except re.error as exc:
+                raise ValueError(f"channel {channel.key} has an invalid exclude_url: {exc}") from exc
         keys.add(channel.key)
         channels.append(channel)
     return Sources(publishers=publishers, channels=tuple(channels), hosts=hosts)

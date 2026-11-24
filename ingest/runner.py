@@ -12,7 +12,6 @@ from ingest import monitor, store
 from ingest.analyze import run_analyze
 from ingest.config import IngestConfig
 from ingest.discover import run_discover
-from ingest.discuss import run_discuss
 from ingest.embed import run_embed
 from ingest.fetch import run_fetch
 from ingest.stories import link_pending
@@ -21,7 +20,7 @@ from common.db import db_transaction, get_conn, put_conn
 logger = logging.getLogger(__name__)
 
 LOCKED_MESSAGE = "已有采集进程在运行"
-STAGES = ("discover", "fetch", "analyze", "embed", "link", "discuss")
+STAGES = ("discover", "fetch", "analyze", "embed", "link")
 
 # Kept in memory only: after a restart the monitor runs at most once more that day.
 _monitor_done_on: date | None = None
@@ -44,8 +43,6 @@ def _run_stage(name: str, config: IngestConfig, transaction: store.Transaction, 
         run_embed(config, transaction=transaction)
     elif name == "link":
         link_pending(transaction=transaction)
-    elif name == "discuss":
-        run_discuss(config, transaction=transaction)
 
 
 def _run_monitor_if_due(transaction: store.Transaction) -> None:

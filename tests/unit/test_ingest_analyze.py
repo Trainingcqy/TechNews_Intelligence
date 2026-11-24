@@ -22,8 +22,7 @@ from ingest.config import IngestConfig
 from ingest.store import AnalyzeItem
 
 _VALID = {
-    "title_zh": "Lovable 2 月 ARR 达 4 亿美元",
-    "summary": "瑞典 AI 开发平台 Lovable 2 月 ARR 达 4 亿美元。",
+    "summary": "Swedish AI app builder Lovable reached $400 million in annual recurring revenue in February.",
     "topics": ["ai", "business"],
     "kind": "news",
 }
@@ -49,7 +48,7 @@ def test_parse_analysis_accepts_valid_output():
     assert analysis.model_dump() == _VALID
 
 
-@pytest.mark.parametrize("raw", ["以下是结果：{}", '```json\n{"kind": "news"}\n```', "[]"])
+@pytest.mark.parametrize("raw", ["Here is the result: {}", '```json\n{"kind": "news"}\n```', "[]"])
 def test_parse_analysis_rejects_non_object(raw):
     with pytest.raises(InvalidJson):
         parse_analysis(raw)
@@ -60,9 +59,10 @@ def test_parse_analysis_rejects_non_object(raw):
     [
         {"topics": ["ai", "crypto"]},
         {"kind": "announcement"},
-        {"summary": "长" * 220 + "。"},
-        {"summary": "瑞典 AI 开发平台 Lovable 2 月 ARR 达 4 亿美元"},
-        {"summary": "瑞典 AI 开发平台 Lovable 2 月 ARR 达 4 亿美元."},
+        {"summary": "word " * 160 + "end."},
+        {"summary": "Too short."},
+        {"summary": "Swedish AI app builder Lovable reached $400 million in annual recurring revenue"},
+        {"summary": "Swedish AI app builder Lovable reached $400 million in annual recurring revenue。"},
     ],
 )
 def test_parse_analysis_rejects_schema_violations(changes):
@@ -73,13 +73,13 @@ def test_parse_analysis_rejects_schema_violations(changes):
 def test_build_messages_truncates_body():
     system, user = build_messages("Title", "TechCrunch", "a" * 10 + "b" * 5, "full", body_chars=10)
     assert system["role"] == "system" and user["role"] == "user"
-    assert user["content"].endswith("标题：Title\n来源：TechCrunch\n正文：\n" + "a" * 10 + "\n</article>")
+    assert user["content"].endswith("Title: Title\nPublisher: TechCrunch\nBody:\n" + "a" * 10 + "\n</article>")
 
 
 @pytest.mark.parametrize(("body_level", "noted"), [("full", False), ("excerpt", True), ("none", True)])
 def test_build_messages_body_note(body_level, noted):
     _, user = build_messages("t", "p", "body", body_level, body_chars=100)
-    expected = f"中文引号。\n{NO_BODY_NOTE}\n\n三、topics" if noted else "中文引号。\n\n\n三、topics"
+    expected = f"complete sentences.\n{NO_BODY_NOTE}\n\n2. topics" if noted else "complete sentences.\n\n\n2. topics"
     assert expected in user["content"]
 
 

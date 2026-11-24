@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ingest import http, store
 from ingest.config import IngestConfig
 from ingest.discover.sitemap import placeholder_title
+from ingest.models import ReaderResult
 from ingest.reader import parse_reader_response
 
 logger = logging.getLogger(__name__)
@@ -27,27 +28,38 @@ def clean_body(text: str) -> str:
 
 
 def _reader_headers() -> dict[str, str]:
-    headers = {"X-Retain-Images": "none", "X-Retain-Links": "text"}
+    headers = {"Accept": "application/json", "X-Retain-Images": "none", "X-Retain-Links": "text"}
     api_key = os.getenv("JINA_API_KEY", "").strip()
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     return headers
 
 
+def _read(item: store.FetchItem, config: IngestConfig, expected_title: str | None,
+          extra_headers: dict[str, str]) -> tuple[http.HttpResponse, ReaderResult]:
+    response = http.get(
+        READER_URL + item.url,
+        user_agent=http.USER_AGENT,
+        timeout=config.reader_timeout,
+        headers={**_reader_headers(), **extra_headers},
+    )
+    text = response.content.decode("utf-8", errors="replace")
+    return response, parse_reader_response(response.status, text, expected_title=expected_title)
+
+
 def _fetch(item: store.FetchItem, transaction: store.Transaction, config: IngestConfig) -> None:
+    # A sitemap entry has only a placeholder title, so there is no title to compare with the page.
+    expected_title = None if item.title == placeholder_title(item.url) else item.title
     try:
-        response = http.get(
-            READER_URL + item.url,
-            user_agent=http.USER_AGENT,
-            timeout=config.reader_timeout,
-            headers=_reader_headers(),
-        )
+        response, result = _read(item, config, expected_title, {})
+        if result.retry_headers:
+            # Reader suggested an option, such as waiting longer for a page that had not finished loading.
+            response, result = _read(item, config, expected_title, result.retry_headers)
     except http.TransportError as exc:
         with transaction() as cur:
             store.record_failure(cur, item.article_id, "fetch", exc.kind, str(exc), config)
         return
 
-    result = parse_reader_response(response.status, response.content.decode("utf-8", errors="replace"))
     with transaction() as cur:
         if result.ok:
             store.record_fetch_success(
@@ -55,10 +67,11 @@ def _fetch(item: store.FetchItem, transaction: store.Transaction, config: Ingest
                 item.article_id,
                 body=clean_body(result.body),
                 published_at=result.published_at,
-                title=result.title if item.title == placeholder_title(item.url) else None,
+                title=result.title if expected_title is None else None,
             )
         else:
-            detail = f"status: {response.status}\nwarning: {result.warning}\n{result.body[:_DETAIL_BODY_CHARS]}"
+            detail = (f"status: {response.status}\nwarning: {result.warning}\n"
+                      f"expected title: {expected_title}\npage title: {result.title}\n{result.body[:_DETAIL_BODY_CHARS]}")
             store.record_failure(cur, item.article_id, "fetch", result.error_kind, detail.replace("\x00", ""), config)
 
 

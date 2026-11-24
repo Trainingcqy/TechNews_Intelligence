@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
 
 from ingest import monitor, runner, store
 from ingest.config import IngestConfig
-from ingest.relabel import run_relabel
 from ingest.sources import load_sources
 from common.db import init_db_pool
 from common.script_env import load_env
@@ -29,9 +27,6 @@ def _parser() -> argparse.ArgumentParser:
     requeue.add_argument("--error-kind")
     monitor_command = commands.add_parser("monitor")
     monitor_command.add_argument("--dry-run", action="store_true")
-    relabel = commands.add_parser("relabel")
-    relabel.add_argument("--limit", type=int)
-    relabel.add_argument("--keys-file", type=Path)
     return parser
 
 
@@ -80,10 +75,4 @@ def main(argv: list[str] | None = None) -> int:
         print(f"恢复 {count} 篇")
     elif args.command == "monitor":
         monitor.run_monitor(transaction=runner.transaction, dry_run=args.dry_run)
-    elif args.command == "relabel":
-        keys = None
-        if args.keys_file is not None:
-            keys = [line.strip() for line in args.keys_file.read_text(encoding="utf-8").splitlines() if line.strip()]
-        done, failed = run_relabel(config, transaction=runner.transaction, limit=args.limit, url_keys=keys)
-        print(f"重标 {done} 篇，失败 {failed} 篇")
     return 0

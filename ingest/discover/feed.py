@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 
@@ -11,6 +12,7 @@ from ingest.dates import parse_datetime
 from ingest.models import Candidate
 
 _BLOCK_TAGS = frozenset({"p", "br", "div", "li", "ul", "ol", "tr", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6"})
+_MARKUP_RE = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*(\s[^<>]*)?/?>")
 
 
 class _TextExtractor(HTMLParser):
@@ -30,12 +32,20 @@ class _TextExtractor(HTMLParser):
         self.parts.append(data)
 
 
-def strip_html(html: str) -> str:
+def _strip_once(html: str) -> str:
     extractor = _TextExtractor()
     extractor.feed(html)
     extractor.close()
     lines = (line.strip() for line in "".join(extractor.parts).splitlines())
     return "\n".join(line for line in lines if line)
+
+
+def strip_html(html: str) -> str:
+    text = _strip_once(html)
+    # Some feeds escape their markup twice, so the first pass leaves the tags as literal text.
+    if _MARKUP_RE.search(text):
+        text = _strip_once(text)
+    return text
 
 
 def entry_published_at(entry, *, now: datetime) -> datetime | None:
@@ -46,9 +56,9 @@ def entry_published_at(entry, *, now: datetime) -> datetime | None:
 
 
 def _feed_text(entry) -> str | None:
-    contents = entry.get("content")
-    raw = contents[0].get("value") if contents else None
-    text = strip_html(raw or entry.get("summary") or "")
+    # An entry can carry several content items; Tom's Hardware puts the author bio first and the article second.
+    texts = [strip_html(content.get("value") or "") for content in entry.get("content") or []]
+    text = max(texts, key=len, default="") or strip_html(entry.get("summary") or "")
     return text or None
 
 
@@ -65,9 +75,6 @@ def parse_feed(content: bytes, *, now: datetime) -> list[Candidate]:
                 published_at=entry_published_at(entry, now=now),
                 external_id=entry.get("id"),
                 feed_text=_feed_text(entry),
-                score=None,
-                comment_count=None,
-                channel_time=None,
             )
         )
     return candidates

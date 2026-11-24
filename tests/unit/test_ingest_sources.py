@@ -12,9 +12,10 @@ def test_repository_sources_toml_is_valid() -> None:
     channels = {channel.key: channel for channel in sources.channels}
     names = {publisher.name for publisher in sources.publishers}
 
-    assert len(channels) == 36
+    assert len(channels) == 30
     assert all(channel.publisher in names for channel in sources.channels if channel.publisher)
-    assert channels["hn_frontpage"].publisher is None
+    assert {channel.lang for channel in sources.channels} == {"en"}
+    assert {channel.fetch_kind for channel in sources.channels} == {"feed", "sitemap"}
     assert channels["techmeme"].purpose == "reference"
     assert channels["anthropic_news"].config == {"url_pattern": "/news/"}
     assert {key for key, channel in channels.items() if not channel.enabled} == {
@@ -22,7 +23,16 @@ def test_repository_sources_toml_is_valid() -> None:
         "aws_ml_blog",
         "nvidia_dev_blog",
     }
-    assert sources.hosts[("huggingface.co", "qwen")].name == "阿里巴巴"
+    assert sources.hosts[("huggingface.co", "qwen")].name == "Alibaba"
+
+
+def test_invalid_exclude_url_is_rejected() -> None:
+    text = (
+        '[[channel]]\nkey = "x"\nname = "X"\nfetch_kind = "feed"\nendpoint = "https://x.example/feed"\n'
+        'lang = "en"\nconfig = { exclude_url = "(unclosed" }\n'
+    )
+    with pytest.raises(ValueError, match="invalid exclude_url"):
+        parse_sources(text)
 
 
 @pytest.mark.parametrize(

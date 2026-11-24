@@ -17,7 +17,6 @@ class IngestConfig:
     analyze_workers: int = 4
     analyze_limit: int = 60
     embed_batch_size: int = 32
-    discuss_limit: int = 20
 
     # Request timeouts, seconds.
     discover_timeout: int = 30

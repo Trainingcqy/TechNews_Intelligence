@@ -20,8 +20,7 @@ RUN_HOUR = 9
 _BEIJING = timezone(timedelta(hours=8))
 
 UNLABELED = "可检索文章中 topics 或 kind 为空"
-ASCII_QUOTE = "摘要含英文双引号"
-TOO_LONG = "摘要超过 200 字符的比例"
+TOO_LONG = f"摘要超过 {store.SUMMARY_TOO_LONG_CHARS} 字符的比例"
 VOLUME = "新增可检索文章数"
 ANALYZE_FAILED = "analyze 阶段失败率"
 DEGRADED = "正文降级率"
@@ -58,8 +57,6 @@ def evaluate(
     breaches = []
     if current.unlabeled > 0:
         breaches.append(f"{UNLABELED}：{current.unlabeled} 篇，上限 0")
-    if current.ascii_quote > 2:
-        breaches.append(f"{ASCII_QUOTE}：{current.ascii_quote} 篇，上限 2")
     if len(baseline) >= MIN_BASELINE_DAYS:
         for name, rate, floor in _RATE_RULES:
             base = median(rate(day) for day in baseline)
@@ -77,7 +74,7 @@ def evaluate(
 def metrics_line(current: store.WindowCounts, baseline: list[store.WindowCounts], failing_channels: list[str]) -> str:
     line = (
         f"窗口内文章 {current.articles}，可检索 {current.ready}，topics 或 kind 为空 {current.unlabeled}，"
-        f"摘要含英文双引号 {current.ascii_quote}，摘要超长 {current.too_long}（{too_long_rate(current):.1%}），"
+        f"摘要超长 {current.too_long}（{too_long_rate(current):.1%}），"
         f"analyze 失败 {current.analyze_failed}（{analyze_failed_rate(current):.1%}），"
         f"正文降级 {current.degraded}/{current.fetched}（{degraded_rate(current):.1%}），"
         f"连续失败渠道 {', '.join(failing_channels) or '无'}；基线 {len(baseline)} 天"

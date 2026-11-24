@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
@@ -12,7 +13,6 @@ from urllib.parse import urlsplit
 from ingest import http, store
 from ingest.config import IngestConfig
 from ingest.discover.feed import parse_feed
-from ingest.discover.hn import parse_hn
 from ingest.discover.reference import parse_reference_feed
 from ingest.discover.sitemap import parse_sitemap
 from ingest.models import Candidate
@@ -36,6 +36,10 @@ def keep_candidate(candidate: Candidate, config: dict, *, now: datetime) -> bool
     lookback = timedelta(days=config.get("lookback_days", _DEFAULT_LOOKBACK_DAYS))
     if candidate.published_at is not None and candidate.published_at < now - lookback:
         return False
+    # Shopping posts, event promotions and other non-news sections that the source's URLs identify.
+    exclude = config.get("exclude_url")
+    if exclude and re.search(exclude, candidate.url, re.IGNORECASE):
+        return False
     max_segments = config.get("max_path_segments")
     return max_segments is None or path_depth(candidate.url) <= max_segments
 
@@ -49,9 +53,8 @@ def _parse(channel: store.DueChannel, content: bytes, now: datetime) -> list[Can
             url_pattern=channel.config["url_pattern"],
             now=now,
             lookback_days=channel.config.get("lookback_days", _DEFAULT_LOOKBACK_DAYS),
+            require_lastmod=not channel.config.get("lastmod_optional", False),
         )
-    if channel.fetch_kind == "hn":
-        return parse_hn(content)
     raise ValueError(f"unknown fetch_kind {channel.fetch_kind!r}")
 
 

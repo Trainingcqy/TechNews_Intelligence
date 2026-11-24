@@ -19,9 +19,6 @@ MIDTERMS = Candidate(
     published_at=None,
     external_id=None,
     feed_text=None,
-    score=None,
-    comment_count=None,
-    channel_time=None,
 )
 
 
@@ -48,3 +45,12 @@ def test_entry_without_lastmod_is_not_taken():
     # /news/product matches the pattern but has no <lastmod>, so even a huge window leaves it out
     result = parse_sitemap(CONTENT, url_pattern="/news/", now=NOW, lookback_days=3650)
     assert [c.url for c in result] == [MIDTERMS.url]
+
+
+def test_optional_lastmod_takes_undated_entries_and_still_drops_old_ones():
+    # DeepSeek's sitemap has no <lastmod> at all; dated entries keep the lookback window.
+    after = MIDTERMS_LASTMOD + timedelta(days=4)
+    result = parse_sitemap(CONTENT, url_pattern="/news/", now=after, require_lastmod=False)
+    assert [c.url for c in result] == ["https://www.anthropic.com/news/product"]
+    result = parse_sitemap(CONTENT, url_pattern="/news/", now=NOW, require_lastmod=False)
+    assert [c.url for c in result] == [MIDTERMS.url, "https://www.anthropic.com/news/product"]

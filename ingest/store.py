@@ -16,8 +16,8 @@ from common.taxonomy import TAXONOMY_VERSION
 from common.urls import url_key
 
 _FEED_FULL_BODY_CHARS = 1500
-_HN_STORY_BODY_CHARS = 200
 _EXCERPT_CHARS = 200
+SUMMARY_TOO_LONG_CHARS = 700
 
 _ADVISORY_LOCK_KEY = 0x6E657773  # ASCII "news"
 
@@ -81,30 +81,16 @@ class NearestStory:
 
 
 @dataclass(frozen=True)
-class DiscussItem:
-    sighting_id: int
-    external_id: str
-
-
-@dataclass(frozen=True)
 class WindowCounts:
     """Monitor counts over the articles first seen in one 24-hour window."""
 
     articles: int = 0
     ready: int = 0
     unlabeled: int = 0  # ready with empty topics or kind
-    ascii_quote: int = 0  # ready with an ASCII double quote in the summary
-    too_long: int = 0  # ready with a summary over 200 characters
+    too_long: int = 0  # ready with a summary over SUMMARY_TOO_LONG_CHARS characters
     analyze_failed: int = 0  # failed, with analyze as the stage of the latest failure
     fetched: int = 0  # reached fetched: every status but discovered
     degraded: int = 0  # reached fetched with body_level other than full
-
-
-@dataclass(frozen=True)
-class RelabelItem:
-    article_id: int
-    title: str
-    summary: str
 
 
 def sync_sources(cur, sources: Sources) -> None:
@@ -258,10 +244,9 @@ def enabled_channel(cur, key: str) -> DueChannel | None:
 def _initial_state(channel: DueChannel, candidate: Candidate) -> tuple[str, str, str | None]:
     """Status, body_level and body source of a newly discovered article."""
     text = candidate.feed_text or ""
-    if channel.fetch_kind == "hn" and candidate.url == f"https://news.ycombinator.com/item?id={candidate.external_id}":
-        if len(text) >= _HN_STORY_BODY_CHARS:
-            return "fetched", "full", "hn"
-        return "fetched", "none", None
+    if channel.config.get("excerpt_only"):
+        # A paywalled source: its feed summary, however short, is all that is stored, and Reader is never called.
+        return ("fetched", "excerpt", "feed") if text else ("fetched", "none", None)
     if channel.config.get("body_from_feed") and len(text) >= _FEED_FULL_BODY_CHARS:
         return "fetched", "full", "feed"
     if len(text) >= _EXCERPT_CHARS:
@@ -311,29 +296,18 @@ def insert_candidate(cur, channel: DueChannel, candidate: Candidate, publisher_n
         cur.execute("SELECT article_id FROM news.article WHERE url_key = %s", (key,))
         article_id = cur.fetchone()[0]
 
-    # A URL submitted to HackerNews several times keeps one sighting, that of the highest-scoring submission.
-    adopt = "(EXCLUDED.external_id IS NOT DISTINCT FROM s.external_id OR EXCLUDED.score > s.score)"
     cur.execute(
-        f"""
-        INSERT INTO news.sighting AS s
-            (article_id, channel_id, external_id, title, first_seen_at, score, comment_count)
-        VALUES (%(article_id)s, %(channel_id)s, %(external_id)s, %(title)s,
-                COALESCE(%(channel_time)s, now()), %(score)s, %(comment_count)s)
+        """
+        INSERT INTO news.sighting (article_id, channel_id, external_id, title)
+        VALUES (%(article_id)s, %(channel_id)s, %(external_id)s, %(title)s)
         ON CONFLICT (channel_id, article_id) DO UPDATE SET
-            last_seen_at = now(),
-            external_id = CASE WHEN {adopt} THEN EXCLUDED.external_id ELSE s.external_id END,
-            title = CASE WHEN {adopt} THEN EXCLUDED.title ELSE s.title END,
-            score = CASE WHEN {adopt} THEN EXCLUDED.score ELSE s.score END,
-            comment_count = CASE WHEN {adopt} THEN EXCLUDED.comment_count ELSE s.comment_count END
+            last_seen_at = now(), external_id = EXCLUDED.external_id, title = EXCLUDED.title
         """,
         {
             "article_id": article_id,
             "channel_id": channel.channel_id,
             "external_id": candidate.external_id,
             "title": candidate.title,
-            "channel_time": candidate.channel_time,
-            "score": candidate.score,
-            "comment_count": candidate.comment_count,
         },
     )
     return is_new
@@ -450,22 +424,23 @@ def record_fetch_success(
 
 
 def record_analyze_success(cur, article_id: int, analysis: Analysis) -> None:
+    # Promotional content keeps its row, so that discover does not insert the URL again, but is never embedded.
+    status = "excluded" if analysis.kind == "promo" else "analyzed"
     cur.execute(
         f"""
         UPDATE news.article SET
-            title_zh = %(title_zh)s, summary = %(summary)s, topics = %(topics)s, kind = %(kind)s,
+            summary = %(summary)s, topics = %(topics)s, kind = %(kind)s,
             taxonomy_version = %(taxonomy_version)s, label_source = 'model',
             {_SET_STATE}
         WHERE article_id = %(article_id)s
         """,
         {
             "article_id": article_id,
-            "title_zh": analysis.title_zh,
             "summary": analysis.summary,
             "topics": list(analysis.topics),
             "kind": analysis.kind,
             "taxonomy_version": TAXONOMY_VERSION,
-            **_state("analyzed"),
+            **_state(status),
         },
     )
 
@@ -611,48 +586,6 @@ def mark_ready(cur, article_id: int) -> None:
     )
 
 
-def take_discuss(
-    cur, limit: int, *, default_after_hours: int, default_min_comments: int, max_age_days: int
-) -> list[DiscussItem]:
-    """HackerNews sightings due for a discussion visit; the thresholds come from the channel config."""
-    cur.execute(
-        """
-        SELECT s.sighting_id, s.external_id
-        FROM news.sighting s
-        JOIN news.channel c ON c.channel_id = s.channel_id
-        WHERE c.fetch_kind = 'hn'
-          AND s.external_id IS NOT NULL
-          AND s.first_seen_at <= now() - make_interval(
-                hours => COALESCE((c.config ->> 'discussion_after_hours')::int, %(after_hours)s))
-          AND s.first_seen_at > now() - make_interval(days => %(max_age_days)s)
-          AND s.comment_count >= COALESCE((c.config ->> 'discussion_min_comments')::int, %(min_comments)s)
-          AND NOT EXISTS (SELECT 1 FROM news.discussion d WHERE d.sighting_id = s.sighting_id)
-        ORDER BY s.first_seen_at
-        LIMIT %(limit)s
-        """,
-        {
-            "after_hours": default_after_hours,
-            "min_comments": default_min_comments,
-            "max_age_days": max_age_days,
-            "limit": limit,
-        },
-    )
-    return [DiscussItem(*row) for row in cur.fetchall()]
-
-
-def record_discussion(
-    cur, sighting_id: int, *, url: str, comment_total: int, text: str, score: int | None
-) -> None:
-    cur.execute(
-        "INSERT INTO news.discussion (sighting_id, url, comment_total, text, char_count) VALUES (%s, %s, %s, %s, %s)",
-        (sighting_id, url, comment_total, text, len(text)),
-    )
-    cur.execute(
-        "UPDATE news.sighting SET score = COALESCE(%s, score), comment_count = %s WHERE sighting_id = %s",
-        (score, comment_total, sighting_id),
-    )
-
-
 def monitor_counts(cur, windows: int) -> tuple[int, dict[int, WindowCounts]]:
     """Whole days of polling before the last 24 hours, and the counts of windows 0..windows-1.
 
@@ -668,8 +601,7 @@ def monitor_counts(cur, windows: int) -> tuple[int, dict[int, WindowCounts]]:
                count(*),
                count(*) FILTER (WHERE a.status = 'ready'),
                count(*) FILTER (WHERE a.status = 'ready' AND (cardinality(a.topics) = 0 OR a.kind IS NULL)),
-               count(*) FILTER (WHERE a.status = 'ready' AND a.summary ~ '"'),
-               count(*) FILTER (WHERE a.status = 'ready' AND char_length(a.summary) > 200),
+               count(*) FILTER (WHERE a.status = 'ready' AND char_length(a.summary) > %s),
                count(*) FILTER (WHERE a.status = 'failed' AND f.stage = 'analyze'),
                count(*) FILTER (WHERE a.status <> 'discovered'),
                count(*) FILTER (WHERE a.status <> 'discovered' AND a.body_level <> 'full')
@@ -686,7 +618,7 @@ def monitor_counts(cur, windows: int) -> tuple[int, dict[int, WindowCounts]]:
           AND a.first_seen_at <= now()
         GROUP BY 1
         """,
-        (windows,),
+        (SUMMARY_TOO_LONG_CHARS, windows),
     )
     counts = {row[0]: WindowCounts(*row[1:]) for row in cur.fetchall()}
     return max(polled_days or 0, 0), counts
@@ -718,29 +650,6 @@ def recent_failure_counts(cur) -> list[tuple[str, str, int]]:
         "WHERE created_at >= now() - interval '24 hours' GROUP BY stage, error_kind ORDER BY stage, error_kind"
     )
     return cur.fetchall()
-
-
-def take_relabel(cur, *, limit: int | None, url_keys: list[str] | None) -> list[RelabelItem]:
-    cur.execute(
-        """
-        SELECT article_id, title, summary FROM news.article
-        WHERE (label_source = 'mapped' OR taxonomy_version IS NULL)
-          AND summary IS NOT NULL
-          AND (%(url_keys)s::text[] IS NULL OR url_key = ANY(%(url_keys)s::text[]))
-        ORDER BY article_id
-        LIMIT %(limit)s
-        """,
-        {"url_keys": url_keys, "limit": limit},
-    )
-    return [RelabelItem(*row) for row in cur.fetchall()]
-
-
-def record_relabel(cur, article_id: int, topics: list[str], kind: str) -> None:
-    cur.execute(
-        "UPDATE news.article SET topics = %s, kind = %s, taxonomy_version = %s, label_source = 'model', "
-        "updated_at = now() WHERE article_id = %s",
-        (topics, kind, TAXONOMY_VERSION, article_id),
-    )
 
 
 def try_advisory_lock(cur) -> bool:

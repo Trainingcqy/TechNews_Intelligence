@@ -20,9 +20,7 @@ def _names(breaches):
     ("current", "failing", "expected"),
     [
         (WindowCounts(unlabeled=1), [], [monitor.UNLABELED]),
-        (WindowCounts(ascii_quote=2), [], []),
-        (WindowCounts(ascii_quote=3), [], [monitor.ASCII_QUOTE]),
-        (WindowCounts(), ["hn_frontpage"], [monitor.FAILING_CHANNELS]),
+        (WindowCounts(), ["techcrunch"], [monitor.FAILING_CHANNELS]),
     ],
 )
 def test_fixed_rules(current, failing, expected):

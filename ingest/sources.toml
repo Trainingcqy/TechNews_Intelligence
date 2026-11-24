@@ -66,30 +66,55 @@ name = "GitHub"
 kind = "official"
 hosts = ["github.blog"]
 
-# Official publishers without channels
-
-[[publisher]]
-name = "阿里巴巴"
-kind = "official"
-hosts = ["qwen.ai", "qwencloud.com", "huggingface.co/Qwen", "github.com/alibaba"]
-
 [[publisher]]
 name = "DeepSeek"
 kind = "official"
 hosts = ["deepseek.com", "huggingface.co/deepseek-ai", "github.com/deepseek-ai"]
 
 [[publisher]]
-name = "智谱"
+name = "Mistral AI"
+kind = "official"
+hosts = ["mistral.ai", "huggingface.co/mistralai", "github.com/mistralai"]
+
+[[publisher]]
+name = "Cohere"
+kind = "official"
+hosts = ["cohere.com"]
+
+[[publisher]]
+name = "Samsung"
+kind = "official"
+hosts = ["samsung.com"]
+
+[[publisher]]
+name = "Cloudflare"
+kind = "official"
+hosts = ["cloudflare.com"]
+
+[[publisher]]
+name = "AMD"
+kind = "official"
+hosts = ["amd.com"]
+
+# Official publishers without channels
+
+[[publisher]]
+name = "Alibaba"
+kind = "official"
+hosts = ["qwen.ai", "qwencloud.com", "huggingface.co/Qwen", "github.com/alibaba"]
+
+[[publisher]]
+name = "Zhipu AI"
 kind = "official"
 hosts = ["z.ai", "huggingface.co/zai-org", "github.com/zai-org"]
 
 [[publisher]]
-name = "月之暗面"
+name = "Moonshot AI"
 kind = "official"
 hosts = ["kimi.com", "kimi.ai", "huggingface.co/moonshotai"]
 
 [[publisher]]
-name = "小米"
+name = "Xiaomi"
 kind = "official"
 hosts = ["xiaomi.com", "xiaomimimo.com"]
 
@@ -99,26 +124,26 @@ kind = "official"
 hosts = ["minimax.io"]
 
 [[publisher]]
-name = "阶跃星辰"
+name = "StepFun"
 kind = "official"
 hosts = ["stepfun.com"]
 
 [[publisher]]
-name = "百度"
+name = "Baidu"
 kind = "official"
 hosts = ["ernie.baidu.com", "github.com/baidu"]
 
 [[publisher]]
-name = "字节跳动"
+name = "ByteDance"
 kind = "official"
 hosts = ["bytedance.com"]
 
 [[publisher]]
-name = "腾讯"
+name = "Tencent"
 kind = "official"
 hosts = ["tencent-hunyuan.github.io"]
 
-# Media
+# Media publishers
 
 [[publisher]]
 name = "TechCrunch"
@@ -126,19 +151,9 @@ kind = "media"
 hosts = ["techcrunch.com"]
 
 [[publisher]]
-name = "The Verge"
-kind = "media"
-hosts = ["theverge.com"]
-
-[[publisher]]
 name = "Ars Technica"
 kind = "media"
 hosts = ["arstechnica.com"]
-
-[[publisher]]
-name = "Wired"
-kind = "media"
-hosts = ["wired.com"]
 
 [[publisher]]
 name = "MIT Technology Review"
@@ -156,61 +171,51 @@ kind = "media"
 hosts = ["thehackernews.com"]
 
 [[publisher]]
-name = "Tom's Hardware"
+name = "CNBC"
 kind = "media"
-hosts = ["tomshardware.com"]
+hosts = ["cnbc.com"]
 
 [[publisher]]
-name = "InfoQ"
+name = "The Record"
 kind = "media"
-hosts = ["infoq.com"]
+hosts = ["therecord.media"]
 
 [[publisher]]
-name = "The Decoder"
+name = "Data Center Dynamics"
 kind = "media"
-hosts = ["the-decoder.com"]
+hosts = ["datacenterdynamics.com"]
 
 [[publisher]]
-name = "36氪"
+name = "South China Morning Post"
 kind = "media"
-hosts = ["36kr.com"]
+hosts = ["scmp.com"]
 
 [[publisher]]
-name = "钛媒体"
+name = "Bloomberg"
 kind = "media"
-hosts = ["tmtpost.com"]
+hosts = ["bloomberg.com"]
 
 [[publisher]]
-name = "雷峰网"
+name = "The New York Times"
 kind = "media"
-hosts = ["leiphone.com"]
+hosts = ["nytimes.com"]
 
 [[publisher]]
-name = "量子位"
+name = "The Information"
 kind = "media"
-hosts = ["qbitai.com"]
+hosts = ["theinformation.com"]
 
 [[publisher]]
-name = "InfoQ 中国"
+name = "Financial Times"
 kind = "media"
-hosts = ["infoq.cn"]
+hosts = ["ft.com"]
 
 [[publisher]]
-name = "Solidot"
+name = "The Washington Post"
 kind = "media"
-hosts = ["solidot.org"]
+hosts = ["washingtonpost.com"]
 
-[[publisher]]
-name = "虎嗅"
-kind = "media"
-hosts = ["huxiu.com"]
-
-# Community, hosting and social platforms
-
-[[publisher]]
-name = "HackerNews"
-kind = "community"
-hosts = ["news.ycombinator.com"]
+# Hosting and social platforms
 
 [[publisher]]
 name = "GitHub Repositories"
@@ -256,6 +261,7 @@ fetch_kind = "feed"
 endpoint = "https://openai.com/news/rss.xml"
 publisher = "OpenAI"
 lang = "en"
+config = { exclude_url = '/business/learn/' }
 
 [[channel]]
 key = "anthropic_news"
@@ -283,26 +289,10 @@ publisher = "Google"
 lang = "en"
 
 [[channel]]
-key = "google_research"
-name = "Google Research Blog"
-fetch_kind = "feed"
-endpoint = "https://research.google/blog/rss/"
-publisher = "Google"
-lang = "en"
-
-[[channel]]
 key = "meta_newsroom"
 name = "Meta Newsroom"
 fetch_kind = "feed"
 endpoint = "https://about.fb.com/news/feed/"
-publisher = "Meta"
-lang = "en"
-
-[[channel]]
-key = "meta_engineering"
-name = "Engineering at Meta"
-fetch_kind = "feed"
-endpoint = "https://engineering.fb.com/feed/"
 publisher = "Meta"
 lang = "en"
 config = { body_from_feed = true }
@@ -315,14 +305,6 @@ endpoint = "https://blogs.microsoft.com/?feed=rss2"
 publisher = "Microsoft"
 lang = "en"
 config = { body_from_feed = true }
-
-[[channel]]
-key = "microsoft_source"
-name = "Microsoft Source"
-fetch_kind = "feed"
-endpoint = "https://news.microsoft.com/source/feed/"
-publisher = "Microsoft"
-lang = "en"
 
 [[channel]]
 key = "nvidia_newsroom"
@@ -350,24 +332,32 @@ lang = "en"
 config = { body_from_feed = true }
 
 [[channel]]
-key = "huggingface_blog"
-name = "Hugging Face Blog"
-fetch_kind = "feed"
-endpoint = "https://huggingface.co/blog/feed.xml"
-publisher = "Hugging Face"
+key = "deepseek_news"
+name = "DeepSeek News"
+fetch_kind = "sitemap"
+endpoint = "https://api-docs.deepseek.com/sitemap.xml"
+publisher = "DeepSeek"
 lang = "en"
-config = { max_path_segments = 2 }
+config = { url_pattern = "/news/", lastmod_optional = true }
 
 [[channel]]
-key = "github_blog"
-name = "The GitHub Blog"
-fetch_kind = "feed"
-endpoint = "https://github.blog/feed/"
-publisher = "GitHub"
+key = "mistral_news"
+name = "Mistral AI News"
+fetch_kind = "sitemap"
+endpoint = "https://mistral.ai/sitemap-0.xml"
+publisher = "Mistral AI"
 lang = "en"
-config = { body_from_feed = true }
+config = { url_pattern = "/news/", exclude_url = 'mistral\.ai/(fr|es|de|it|ja|ko|zh|pt)/|/news/$' }
 
-# English media channels
+[[channel]]
+key = "amd_news"
+name = "AMD Press Releases"
+fetch_kind = "feed"
+endpoint = "https://ir.amd.com/news-events/press-releases/rss"
+publisher = "AMD"
+lang = "en"
+
+# Media channels
 
 [[channel]]
 key = "techcrunch"
@@ -376,14 +366,7 @@ fetch_kind = "feed"
 endpoint = "https://techcrunch.com/feed/"
 publisher = "TechCrunch"
 lang = "en"
-
-[[channel]]
-key = "theverge"
-name = "The Verge"
-fetch_kind = "feed"
-endpoint = "https://www.theverge.com/rss/index.xml"
-publisher = "The Verge"
-lang = "en"
+config = { exclude_url = 'techcrunch-disrupt|disrupt-20\d\d|startup-battlefield|strictlyvc|tc-sessions|techcrunch-sessions|founder-summit|-tickets?(-|/|$)|-passes(-|/|$)|early-bird|days-left-to|hours-left-to' }
 
 [[channel]]
 key = "arstechnica"
@@ -392,14 +375,7 @@ fetch_kind = "feed"
 endpoint = "https://feeds.arstechnica.com/arstechnica/index"
 publisher = "Ars Technica"
 lang = "en"
-
-[[channel]]
-key = "wired"
-name = "Wired"
-fetch_kind = "feed"
-endpoint = "https://www.wired.com/feed/rss"
-publisher = "Wired"
-lang = "en"
+config = { exclude_url = '/staff/' }
 
 [[channel]]
 key = "mit_tech_review"
@@ -417,6 +393,7 @@ fetch_kind = "feed"
 endpoint = "https://www.404media.co/rss/"
 publisher = "404 Media"
 lang = "en"
+config = { body_from_feed = true }
 
 [[channel]]
 key = "thehackernews"
@@ -427,100 +404,85 @@ publisher = "The Hacker News"
 lang = "en"
 
 [[channel]]
-key = "tomshardware"
-name = "Tom's Hardware"
+key = "cnbc_tech"
+name = "CNBC Technology"
 fetch_kind = "feed"
-endpoint = "https://www.tomshardware.com/feeds/all"
-publisher = "Tom's Hardware"
-lang = "en"
-config = { body_from_feed = true }
-
-[[channel]]
-key = "infoq_en"
-name = "InfoQ"
-fetch_kind = "feed"
-endpoint = "https://feed.infoq.com/"
-publisher = "InfoQ"
+endpoint = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
+publisher = "CNBC"
 lang = "en"
 
 [[channel]]
-key = "the_decoder"
-name = "The Decoder"
+key = "therecord"
+name = "The Record"
 fetch_kind = "feed"
-endpoint = "https://the-decoder.com/feed/"
-publisher = "The Decoder"
+endpoint = "https://therecord.media/feed"
+publisher = "The Record"
 lang = "en"
 
-# Chinese media channels
-
 [[channel]]
-key = "36kr"
-name = "36氪"
+key = "dcd"
+name = "Data Center Dynamics"
 fetch_kind = "feed"
-endpoint = "https://www.36kr.com/feed"
-publisher = "36氪"
-lang = "zh"
-
-[[channel]]
-key = "tmtpost"
-name = "钛媒体"
-fetch_kind = "feed"
-endpoint = "https://www.tmtpost.com/rss.xml"
-publisher = "钛媒体"
-lang = "zh"
-config = { body_from_feed = true }
-
-[[channel]]
-key = "leiphone"
-name = "雷峰网"
-fetch_kind = "feed"
-endpoint = "https://www.leiphone.com/feed"
-publisher = "雷峰网"
-lang = "zh"
-config = { body_from_feed = true }
-
-[[channel]]
-key = "qbitai"
-name = "量子位"
-fetch_kind = "feed"
-endpoint = "https://www.qbitai.com/feed"
-publisher = "量子位"
-lang = "zh"
-
-[[channel]]
-key = "infoq_cn"
-name = "InfoQ 中国"
-fetch_kind = "feed"
-endpoint = "https://www.infoq.cn/feed"
-publisher = "InfoQ 中国"
-lang = "zh"
-
-[[channel]]
-key = "solidot"
-name = "Solidot"
-fetch_kind = "feed"
-endpoint = "https://www.solidot.org/index.rss"
-publisher = "Solidot"
-lang = "zh"
-
-[[channel]]
-key = "huxiu"
-name = "虎嗅"
-fetch_kind = "feed"
-endpoint = "https://rss.huxiu.com/"
-publisher = "虎嗅"
-lang = "zh"
-config = { body_from_feed = true }
-
-# Community signal and reference
-
-[[channel]]
-key = "hn_frontpage"
-name = "HackerNews"
-fetch_kind = "hn"
-endpoint = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=60&numericFilters=points>=30,num_comments>=5"
+endpoint = "https://www.datacenterdynamics.com/en/rss/"
+publisher = "Data Center Dynamics"
 lang = "en"
-config = { discussion_min_comments = 20, discussion_after_hours = 24 }
+
+[[channel]]
+key = "scmp_tech"
+name = "SCMP Technology"
+fetch_kind = "feed"
+endpoint = "https://www.scmp.com/rss/36/feed/"
+publisher = "South China Morning Post"
+lang = "en"
+
+# Paywalled media: the feed summary is stored as the excerpt and Reader is not called
+
+[[channel]]
+key = "bloomberg_tech"
+name = "Bloomberg Technology"
+fetch_kind = "feed"
+endpoint = "https://feeds.bloomberg.com/technology/news.rss"
+publisher = "Bloomberg"
+lang = "en"
+config = { excerpt_only = true }
+
+[[channel]]
+key = "nyt_tech"
+name = "The New York Times Technology"
+fetch_kind = "feed"
+endpoint = "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml"
+publisher = "The New York Times"
+lang = "en"
+config = { excerpt_only = true }
+
+[[channel]]
+key = "theinformation"
+name = "The Information"
+fetch_kind = "feed"
+endpoint = "https://www.theinformation.com/feed"
+publisher = "The Information"
+lang = "en"
+config = { excerpt_only = true }
+
+[[channel]]
+key = "ft_tech"
+name = "Financial Times Technology"
+fetch_kind = "feed"
+endpoint = "https://www.ft.com/technology?format=rss"
+publisher = "Financial Times"
+lang = "en"
+config = { excerpt_only = true }
+
+[[channel]]
+key = "wapo_tech"
+name = "The Washington Post Technology"
+fetch_kind = "feed"
+endpoint = "https://feeds.washingtonpost.com/rss/business/technology"
+publisher = "The Washington Post"
+lang = "en"
+config = { excerpt_only = true }
+
+# Reference
 
 [[channel]]
 key = "techmeme"

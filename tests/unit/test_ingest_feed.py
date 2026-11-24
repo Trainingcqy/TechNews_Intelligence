@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -30,7 +31,22 @@ def test_rss_content_encoded_is_preferred_over_summary():
     assert len(first.feed_text) > 5000
     assert first.feed_text.startswith("Meta’s Reality Labs builds products such as AI glasses.")
     assert "<" not in first.feed_text
-    assert (first.score, first.comment_count, first.channel_time) == (None, None, None)
+
+
+def test_longest_content_item_is_the_body_and_double_escaped_markup_is_removed():
+    # Tom's Hardware puts the author bio, its markup escaped twice, in the first content item and the article second.
+    bio = "&lt;p&gt;Brandon has been tinkering with PCs since childhood.&lt;/p&gt;"
+    article = "<p>" + "The router is 55 percent off this week. " * 50 + "</p>"
+    feed = (
+        '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>T</title>'
+        '<link href="https://www.tomshardware.com/a"/><id>1</id>'
+        f'<content type="html">{bio}</content><content type="html"><![CDATA[{article}]]></content>'
+        "</entry></feed>"
+    )
+    (candidate,) = _parse(feed)
+    assert candidate.feed_text.startswith("The router is 55 percent off this week.")
+    assert strip_html(html.unescape(bio)) == "Brandon has been tinkering with PCs since childhood."
+    assert strip_html("&lt;p&gt;a &lt;b&gt;b&lt;/b&gt;&lt;/p&gt;") == "a b"
 
 
 def test_atom_content_and_time_zone():

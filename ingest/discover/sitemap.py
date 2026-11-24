@@ -16,8 +16,15 @@ def placeholder_title(url: str) -> str:
     return urlsplit(url).path.rstrip("/").rpartition("/")[2]
 
 
-def parse_sitemap(content: bytes, *, url_pattern: str, now: datetime, lookback_days: int = 3) -> list[Candidate]:
-    # Entries without <lastmod> are skipped: on Anthropic's sitemap that is only the /news/<category> index pages.
+def parse_sitemap(
+    content: bytes, *, url_pattern: str, now: datetime, lookback_days: int = 3, require_lastmod: bool = True
+) -> list[Candidate]:
+    """Entries under url_pattern modified within lookback_days.
+
+    By default entries without <lastmod> are skipped: on Anthropic's sitemap that is only the /news/<category> index
+    pages. A sitemap that never carries <lastmod>, such as DeepSeek's, sets require_lastmod to False; its entries are
+    all returned and discover keeps only the URLs not stored yet.
+    """
     cutoff = now - timedelta(days=lookback_days)
     candidates = []
     for node in ET.fromstring(content).iter(f"{_NS}url"):
@@ -26,18 +33,12 @@ def parse_sitemap(content: bytes, *, url_pattern: str, now: datetime, lookback_d
         if url_pattern not in path:
             continue
         lastmod = parse_datetime(node.findtext(f"{_NS}lastmod"), now=now)
-        if lastmod is None or lastmod < cutoff:
+        if lastmod is None:
+            if require_lastmod:
+                continue
+        elif lastmod < cutoff:
             continue
         candidates.append(
-            Candidate(
-                url=loc,
-                title=placeholder_title(loc),
-                published_at=None,
-                external_id=None,
-                feed_text=None,
-                score=None,
-                comment_count=None,
-                channel_time=None,
-            )
+            Candidate(url=loc, title=placeholder_title(loc), published_at=None, external_id=None, feed_text=None)
         )
     return candidates

@@ -15,9 +15,6 @@ class Candidate:
     published_at: datetime | None
     external_id: str | None
     feed_text: str | None  # feed entry's own body or excerpt, HTML tags removed
-    score: int | None
-    comment_count: int | None
-    channel_time: datetime | None  # when the entry appeared in the channel; submission time for HackerNews
 
 
 @dataclass(frozen=True)
@@ -28,11 +25,11 @@ class ReaderResult:
     published_at: datetime | None
     body: str
     warning: str | None
+    retry_headers: dict[str, str]  # request headers that the warning suggests for one more request
 
 
 class Analysis(BaseModel):
-    title_zh: str = Field(min_length=2, max_length=80)
-    summary: str = Field(min_length=10, max_length=220)
+    summary: str = Field(min_length=40, max_length=800)
     topics: list[str] = Field(min_length=1, max_length=3)
     kind: str
 

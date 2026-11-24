@@ -60,9 +60,9 @@ CREATE TABLE IF NOT EXISTS news.article (
     label_source     TEXT CHECK (label_source IN ('model', 'mapped')),
     body_level       TEXT NOT NULL DEFAULT 'none' CHECK (body_level IN ('full', 'excerpt', 'none')),
 
-    -- pipeline state
+    -- pipeline state; excluded is promotional content, kept only so that its URL is not inserted again
     status           TEXT NOT NULL DEFAULT 'discovered'
-        CHECK (status IN ('discovered', 'fetched', 'analyzed', 'embedded', 'ready', 'failed')),
+        CHECK (status IN ('discovered', 'fetched', 'analyzed', 'embedded', 'ready', 'failed', 'excluded')),
     attempts         SMALLINT NOT NULL DEFAULT 0,
     next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     error_kind       TEXT,
@@ -86,6 +86,15 @@ CREATE INDEX IF NOT EXISTS idx_article_topics ON news.article USING GIN (topics)
 CREATE INDEX IF NOT EXISTS idx_article_search_tsv ON news.article USING GIN (search_tsv);
 CREATE INDEX IF NOT EXISTS idx_article_title_trgm ON news.article USING GIN (title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_article_title_zh_trgm ON news.article USING GIN (title_zh gin_trgm_ops);
+
+-- CREATE TABLE IF NOT EXISTS leaves an existing table as it is, so checks added later are (re)created here.
+-- A ready article must carry its labels; rows labelled by the legacy mapping are exempt until they are rebuilt.
+ALTER TABLE news.article DROP CONSTRAINT IF EXISTS article_status_check;
+ALTER TABLE news.article ADD CONSTRAINT article_status_check
+    CHECK (status IN ('discovered', 'fetched', 'analyzed', 'embedded', 'ready', 'failed', 'excluded'));
+ALTER TABLE news.article DROP CONSTRAINT IF EXISTS chk_article_ready_labels;
+ALTER TABLE news.article ADD CONSTRAINT chk_article_ready_labels
+    CHECK (status <> 'ready' OR label_source = 'mapped' OR (kind IS NOT NULL AND cardinality(topics) > 0));
 
 -- 4. Body text
 CREATE TABLE IF NOT EXISTS news.article_body (

@@ -40,7 +40,7 @@ def _state(cur: FakeCursor) -> tuple:
     return params["status"], params["attempts"], params["error_kind"], params["delay_minutes"]
 
 
-_ANALYSIS = Analysis(title_zh="标题", summary="一句完整的摘要内容。", topics=["ai"], kind="news")
+_ANALYSIS = Analysis(summary="Acme released a model that answers questions twice as fast.", topics=["ai"], kind="news")
 
 
 @pytest.mark.parametrize(
@@ -61,6 +61,37 @@ def test_success_advances_and_clears_attempts(record, status) -> None:
     record(cur)
     assert _article_update(cur)[1]["article_id"] == 7
     assert _state(cur) == (status, 0, None, 0)
+
+
+def _channel(**config) -> store.DueChannel:
+    return store.DueChannel(1, "c", "feed", "https://example.com/feed", "corpus", "en", config, None, None)
+
+
+def _candidate(feed_text: str | None) -> store.Candidate:
+    return store.Candidate("https://example.com/a", "t", None, None, feed_text)
+
+
+@pytest.mark.parametrize(
+    ("config", "feed_text", "expected"),
+    [
+        # A paywalled source never goes to Reader; any feed summary is the excerpt.
+        ({"excerpt_only": True}, "A short dek.", ("fetched", "excerpt", "feed")),
+        ({"excerpt_only": True}, None, ("fetched", "none", None)),
+        ({"body_from_feed": True}, "x" * 1500, ("fetched", "full", "feed")),
+        ({"body_from_feed": True}, "x" * 1499, ("discovered", "excerpt", "feed")),
+        ({}, "x" * 1500, ("discovered", "excerpt", "feed")),
+        ({}, "x" * 199, ("discovered", "none", None)),
+    ],
+)
+def test_initial_state(config, feed_text, expected) -> None:
+    assert store._initial_state(_channel(**config), _candidate(feed_text)) == expected
+
+
+def test_promotional_analysis_is_excluded() -> None:
+    cur = FakeCursor()
+    store.record_analyze_success(cur, 7, _ANALYSIS.model_copy(update={"kind": "promo"}))
+    assert _state(cur) == ("excluded", 0, None, 0)
+    assert _article_update(cur)[1]["kind"] == "promo"
 
 
 @pytest.mark.parametrize(

@@ -21,7 +21,7 @@ from .search import commit_search_news, run_search_news, search_trace_output
 
 
 class SearchNewsArgs(BaseModel):
-    query: str | None = Field(default=None, description="检索词。问题没有具体对象时留空。")
+    query: str | None = Field(default=None, description="检索词，用英文。问题没有具体对象时留空。")
     days: int = Field(default=14, ge=1, le=365, description="时间窗：最近多少天。")
     start_date: date | None = Field(default=None, description="过去某一时段的起始日期，YYYY-MM-DD。填写后 days 不生效。")
     end_date: date | None = Field(default=None, description="该时段的结束日期，含当天。只能与 start_date 一起填写，不填时到今天。")

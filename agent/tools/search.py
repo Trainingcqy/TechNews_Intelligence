@@ -46,7 +46,7 @@ def commit_search_news(args: SearchNewsArgs, result: SearchResult, *, registry) 
 
     scope = _scope(args)
     if not result.hits:
-        text = f"search_news 没有找到结果，{scope}。可以放宽时间窗、换一种说法，中英文都可以，或去掉过滤条件。"
+        text = f"search_news 没有找到结果，{scope}。可以放宽时间窗、换一种英文说法，或去掉过滤条件。"
         return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text=text)
 
     lines = [f"search_news 结果，{scope}，{SORT_LABELS[args.sort]}：{len(result.hits)} 个故事"]

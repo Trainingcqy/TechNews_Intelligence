@@ -10,26 +10,24 @@ from common import prompt_text
 # Read at call time, so that an evaluation run can replace it.
 FINAL_SYSTEM_PROMPT = prompt_text.text("final.system")
 
-_WEEKDAYS_ZH = "一二三四五六日"
-_WEEKDAYS_EN = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
-def _zone_text(now: datetime, separator: str) -> str:
-    """The zone's name and UTC offset; only the offset for a zone without a name, such as the CLI machine's."""
+def _clock(key: str, now: datetime) -> str:
     offset = now.strftime("%z")
     utc = f"UTC{offset[:3]}:{offset[3:]}"
+    # A fixed-offset zone, such as the CLI machine's, has no name.
     name = getattr(now.tzinfo, "key", None)
-    return f"{name}{separator}{utc}" if name else utc
+    return prompt_text.render(key, now=f"{now:%Y-%m-%d} {_WEEKDAYS[now.weekday()]} {now:%H:%M}",
+                              zone=f"{name}, {utc}" if name else utc)
 
 
 def gather_clock(now: datetime) -> str:
-    return prompt_text.render("gather.clock", now=f"{now:%Y-%m-%d} 星期{_WEEKDAYS_ZH[now.weekday()]} {now:%H:%M}",
-                              zone=_zone_text(now, "，"))
+    return _clock("gather.clock", now)
 
 
 def final_clock(now: datetime) -> str:
-    return prompt_text.render("final.clock", now=f"{now:%Y-%m-%d} {_WEEKDAYS_EN[now.weekday()]} {now:%H:%M}",
-                              zone=_zone_text(now, ", "))
+    return _clock("final.clock", now)
 
 
 def render_gather_system(now: datetime, corpus: str, follows: str) -> str:

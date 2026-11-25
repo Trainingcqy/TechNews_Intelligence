@@ -30,11 +30,14 @@ class SearchNewsArgs(BaseModel):
     days: int = Field(default=14, ge=1, le=365, description=_field("search_news", "days"))
     start_date: date | None = Field(default=None, description=_field("search_news", "start_date"))
     end_date: date | None = Field(default=None, description=_field("search_news", "end_date"))
-    topic: Literal[tuple(TOPICS)] | None = None
-    kind: Literal[tuple(KINDS)] | None = None
-    publisher_kind: Literal["official", "media"] | None = None
-    sort: Literal["relevance", "importance", "time"] | None = None
+    topic: Literal[tuple(TOPICS)] | None = Field(default=None, description=_field("search_news", "topic"))
+    kind: Literal[tuple(KINDS)] | None = Field(default=None, description=_field("search_news", "kind"))
+    publisher_kind: Literal["official", "media"] | None = Field(
+        default=None, description=_field("search_news", "publisher_kind"))
+    sort: Literal["relevance", "importance", "time"] | None = Field(
+        default=None, description=_field("search_news", "sort"))
     limit: int = Field(default=8, ge=1, le=20, description=_field("search_news", "limit"))
+    follow: str | None = Field(default=None, description=_field("search_news", "follow"))
 
     @field_validator("query")
     @classmethod
@@ -57,7 +60,7 @@ class SearchNewsArgs(BaseModel):
 class ReadArticlesArgs(BaseModel):
     ids: list[str] = Field(default_factory=list, max_length=5, description=_field("read_articles", "ids"))
     urls: list[str] = Field(default_factory=list, max_length=5, description=_field("read_articles", "urls"))
-    max_chars: int = Field(default=4000, ge=800, le=12000)
+    max_chars: int = Field(default=4000, ge=800, le=12000, description=_field("read_articles", "max_chars"))
 
     @model_validator(mode="after")
     def _check_targets(self) -> ReadArticlesArgs:

@@ -1,4 +1,4 @@
-"""config/prompts/*.toml, their loader, and the wording the synthesis prompt shares with the evidence block."""
+"""config/prompts/*.toml, their loader, and the wording the synthesis prompt shares with the evidence brief."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import pytest
 
 from agent.evidence import EvidenceRegistry, render_for_synthesis
 from agent.prompts import FINAL_SYSTEM_PROMPT
+from agent.tools.registry import tool_schemas
 from agent.types import Article, StoryStats
 from common import prompt_text
 
@@ -26,10 +27,16 @@ PLACEHOLDERS = {
     "tools.search_news.fields.days": set(),
     "tools.search_news.fields.start_date": set(),
     "tools.search_news.fields.end_date": set(),
+    "tools.search_news.fields.topic": set(),
+    "tools.search_news.fields.kind": set(),
+    "tools.search_news.fields.publisher_kind": set(),
+    "tools.search_news.fields.sort": set(),
     "tools.search_news.fields.limit": set(),
+    "tools.search_news.fields.follow": set(),
     "tools.read_articles.description": set(),
     "tools.read_articles.fields.ids": set(),
     "tools.read_articles.fields.urls": set(),
+    "tools.read_articles.fields.max_chars": set(),
     "analyze.system": set(),
     "analyze.user": {"body_note", "topic_table", "kind_table", "title", "publisher", "body"},
     "analyze.no_body_note": set(),
@@ -53,6 +60,17 @@ def test_every_prompt_takes_exactly_its_placeholders():
     assert sorted(found) == sorted(PLACEHOLDERS)
     for key, names in PLACEHOLDERS.items():
         prompt_text.render(key, **{name: "x" for name in names})
+
+
+def test_tool_schemas_carry_every_description_of_tools_toml():
+    for schema in tool_schemas():
+        name = schema["function"]["name"]
+        assert schema["function"]["description"] == prompt_text.text(f"tools.{name}.description")
+        properties = schema["function"]["parameters"]["properties"]
+        described = {field: spec["description"] for field, spec in properties.items() if "description" in spec}
+        prefix = f"tools.{name}.fields."
+        assert described == {key.removeprefix(prefix): prompt_text.text(key)
+                             for key in PLACEHOLDERS if key.startswith(prefix)}
 
 
 def test_render_does_not_substitute_inside_values():
@@ -80,7 +98,7 @@ def test_the_synthesis_prompt_and_the_evidence_block_use_the_same_wording():
         ('"同一故事"', "同一故事："),
         ('"没有入库正文"', "没有入库正文"),
         ('"此前已在 MM-DD 的回答中提及"', "此前已在 11-10 的回答中提及"),
-        ("publisher role is 官方", "，官方"),
+        ('publisher role is "官方"', "，官方"),
     ]:
         assert quoted in FINAL_SYSTEM_PROMPT
         assert shown in block

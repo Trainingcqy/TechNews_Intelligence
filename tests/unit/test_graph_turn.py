@@ -134,13 +134,12 @@ def test_direct_reply(turn):
 
 def test_clock_lines_name_the_zone_and_its_offset():
     now = datetime(2026, 11, 25, 9, 15, tzinfo=ZoneInfo("Asia/Shanghai"))
-    assert prompts.gather_clock(now) == (
-        "现在是 2026-11-25 星期三 09:15（Asia/Shanghai，UTC+08:00），下文和工具结果里的日期都按这个时区。")
-    assert prompts.final_clock(now) == ("Current time: 2026-11-25 Wednesday 09:15 (Asia/Shanghai, UTC+08:00). "
-                                        "Dates in the evidence brief are in this time zone.")
+    moment = "2026-11-25 Wednesday 09:15"
+    assert prompts.gather_clock(now) == prompt_text.render("gather.clock", now=moment, zone="Asia/Shanghai, UTC+08:00")
+    assert prompts.final_clock(now) == prompt_text.render("final.clock", now=moment, zone="Asia/Shanghai, UTC+08:00")
     # The CLI passes the machine's zone as a fixed offset, which has no name.
     fixed = now.astimezone(timezone(timedelta(hours=8)))
-    assert prompts.gather_clock(fixed).startswith("现在是 2026-11-25 星期三 09:15（UTC+08:00），")
+    assert prompts.gather_clock(fixed) == prompt_text.render("gather.clock", now=moment, zone="UTC+08:00")
 
 
 def test_turn_runs_in_the_user_zone(turn, monkeypatch):
@@ -320,16 +319,18 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
                         lambda user_key, ids: lookups.append(("seen", user_key, ids)) or {5: date(2026, 11, 10)})
 
     def search(args):
-        if args.query == "具身智能":
+        if args.query == "embodied AI":
             raise RuntimeError("search failed")
         hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=0.9)]
         return SearchResult(hits=hits if (args.query or "").lower() == "genie 4" else [], weak_match=False)
 
     monkeypatch.setattr(registry, "run_search_news", search)
     gather = FakeChat([
-        _calls(("c1", "search_news", {"query": "genie 4", "days": 7}), ("c2", "search_news", {"query": "具身智能"}),
-               ("c3", "search_news", {"query": "GENIE 4", "days": 30}), ("c4", "search_news", {"topic": "ai"})),
-        _calls(("c5", "read_articles", {"ids": ["E1"]})),
+        _calls(("c1", "search_news", {"query": "Genie 4", "follow": "genie 4", "days": 7}),
+               ("c2", "search_news", {"query": "embodied AI", "follow": "具身智能"}),
+               ("c3", "search_news", {"query": "GENIE 4", "follow": "GENIE 4", "days": 30}),
+               ("c4", "search_news", {"topic": "ai"})),
+        _calls(("c5", "read_articles", {"ids": ["E1"]}), ("c6", "search_news", {"query": "具身智能"})),
         DONE,
     ])
     final = FakeChat([ANSWERED])
@@ -338,7 +339,8 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
                       config=AgentConfig(),
                       models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
 
-    # A failed search does not count as checking a follow; a follow hit twice is recorded once.
+    # Only a successful search marked with a follow checks it: not the failed c2, nor c6, whose query is the follow
+    # but which is not marked. A follow checked twice is recorded once.
     assert answer.followed_queries == ("Genie 4",)
     assert answer.story_ids == (5,)
     assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5, 5]), ("seen", "tg:1", [])]
@@ -347,7 +349,7 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
         {"query": "Genie 4", "last_checked_at": "2026-11-09T17:00:00+00:00"},
         {"query": "具身智能", "last_checked_at": None}]
     failed = next(span for span in _spans(trace, "tool") if span.status == "error")
-    assert (failed.input["query"], failed.output["text"]) == ("具身智能", "工具执行失败：RuntimeError")
+    assert (failed.input["query"], failed.output["text"]) == ("embodied AI", "工具执行失败：RuntimeError")
     assert trace.output["seen_dates"] == {"5": "2026-11-10"}
     system = gather.calls[0][0]
     now = _turn_now(trace)
@@ -356,9 +358,7 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     assert "- Genie 4，上次查看 2026-11-10，距今" in system.content
     first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
     assert "｜同一故事 1 篇报道、1 个发布方，此前已在 11-10 的回答中提及\n" in first_result.content
-    assert ('5. A story marked "此前已在 MM-DD 的回答中提及" was already shown to the user; mention it only briefly '
-            'unless there is '
-            'a new development.') in final.calls[0][0].content
+    assert '"此前已在 MM-DD 的回答中提及"' in final.calls[0][0].content
     brief = final.calls[0][-1].content
     assert "同一故事：1 篇报道，1 个发布方，首次 2026-11-12，最近 2026-11-12，此前已在 11-10 的回答中提及\n" in brief
 

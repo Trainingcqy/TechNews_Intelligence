@@ -1,20 +1,26 @@
-# 花括号里的小写名字是占位符，由代码填入；其余文字原样发给模型。
-# 取证模型看到的工具描述与字段描述，以及检索无结果时附在结果后的提示。
-
 [search_news]
-description = '在新闻库中查找报道，结果按故事归并。有具体对象时填 query；没有具体对象、想看一段时间内发生了什么时不填 query，用 topic 和 days 限定范围。问的是过去的某一时段，例如"10 月份""上周"时，用 start_date 和 end_date，此时 days 不生效。topic 是领域，kind 是文章类型，publisher_kind 只看官方发布或只看媒体报道。sort：relevance 按相关性，time 按时间，两者用于有 query 的检索；importance 按报道的发布方数量，有 query 时，标题提到检索词、有多家发布方报道的故事排在前面，其余按相关性补齐。'
-no_result_hint = '可以放宽时间窗、换一种英文说法，或去掉过滤条件。'
+description = '''
+Search the news database for reports. Reports on the same event are grouped into a story. For each story, the result gives the evidence id, title, publisher, date and summary of its lead report, the number of reports and publishers in the story, and the ids and titles of its other reports.
+
+With query, the tool finds stories related to it; without query, it browses the stories in the time window, ranked by the number of publishers that reported them.'''
+no_result_hint = 'You can widen the time window, use different English wording, or remove filters, and try again.'
 
 [search_news.fields]
-query = '检索词，用英文。问题没有具体对象时留空。'
-days = '时间窗：最近多少天。'
-start_date = '过去某一时段的起始日期，YYYY-MM-DD。填写后 days 不生效。'
-end_date = '该时段的结束日期，含当天。只能与 start_date 一起填写，不填时到今天。'
-limit = '返回的故事数。'
+query = 'Search terms, which MUST be in English. Leave empty to browse.'
+days = 'Time window: the number of most recent days. Ignored when start_date is set.'
+start_date = 'Start date of a past period, in YYYY-MM-DD format.'
+end_date = 'End date of the period, inclusive. MUST be set together with start_date. When empty, the period ends today.'
+topic = 'Topic. Set it ONLY when the question names a topic; when empty, all topics are covered.'
+kind = 'Article type. When empty, browsing covers only news, release and research, and a search with query covers all types.'
+publisher_kind = 'official for official releases only, media for media reports only. When empty, both are included.'
+sort = 'relevance ranks by relevance to query; it is the default when query is set and MUST be used with query. importance ranks by the number of publishers and is the default without query; with query, stories whose titles mention the query and that several publishers reported come first, and relevance fills the remaining places. time ranks by publication time, newest first.'
+limit = 'Number of stories to return.'
+follow = 'The follow being checked, which MUST be copied exactly as written in <follows>. Set it ONLY when searching a follow.'
 
 [read_articles]
-description = '读取正文。ids 填检索结果里的证据编号；urls 只能填用户消息中出现过的链接。摘要不足以回答细节时使用。'
+description = 'Read the full text of reports. Returns the title, publisher, date, text length and opening text of each report. The full text read is passed to the model that writes the answer.'
 
 [read_articles.fields]
-ids = '证据编号，如 E3。'
-urls = '用户消息里出现的链接。'
+ids = 'Evidence ids from search results, such as E3.'
+urls = "Links that appear in the user's messages. No other links are accepted."
+max_chars = 'Maximum number of characters to read from each report.'

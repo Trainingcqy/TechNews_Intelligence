@@ -219,11 +219,13 @@ def _note_registration(runtime: TurnRuntime, before: dict[str, str], step: int, 
 
 
 def _record_followed(runtime: TurnRuntime, payload: ToolPayload) -> None:
-    if not (payload.ok and payload.name == "search_news" and payload.args.query):
+    # Only a search the gather model marks with a follow counts as checking it, so an incidental search for the same
+    # words does not, and the English query need not match a follow written in another language.
+    marked = payload.args.follow if payload.ok and payload.name == "search_news" else None
+    if not marked:
         return
-    query = payload.args.query.lower()
     for follow in runtime.follows:
-        if follow.query.lower() == query and follow.query not in runtime.followed_queries:
+        if follow.query.lower() == marked.lower() and follow.query not in runtime.followed_queries:
             runtime.followed_queries.append(follow.query)
 
 

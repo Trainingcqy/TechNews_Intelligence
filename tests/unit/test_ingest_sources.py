@@ -26,12 +26,19 @@ def test_repository_sources_toml_is_valid() -> None:
     assert sources.hosts[("huggingface.co", "qwen")].name == "Alibaba"
 
 
-def test_invalid_exclude_url_is_rejected() -> None:
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        ('{ exclude_url = "(unclosed" }', "invalid exclude_url"),
+        ('{ feed_timezone = "Pacific/Nowhere" }', "invalid feed_timezone"),
+    ],
+)
+def test_invalid_channel_config_is_rejected(config: str, message: str) -> None:
     text = (
         '[[channel]]\nkey = "x"\nname = "X"\nfetch_kind = "feed"\nendpoint = "https://x.example/feed"\n'
-        'lang = "en"\nconfig = { exclude_url = "(unclosed" }\n'
+        f'lang = "en"\nconfig = {config}\n'
     )
-    with pytest.raises(ValueError, match="invalid exclude_url"):
+    with pytest.raises(ValueError, match=message):
         parse_sources(text)
 
 

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from ingest.discover import keep_candidate
+from ingest.discover import _parse, keep_candidate
 from ingest.models import Candidate
+from ingest.store import DueChannel
 
 NOW = datetime(2026, 11, 19, tzinfo=UTC)
 
@@ -31,3 +32,14 @@ def test_exclude_url_drops_matching_urls_ignoring_case():
     assert not keep_candidate(_candidate("https://example.com/Big-SALE/"), config, now=NOW)
     assert keep_candidate(_candidate("https://example.com/gta-vi-sales"), config, now=NOW)
     assert keep_candidate(_candidate("https://openai.com/index/introducing-shirudo"), config, now=NOW)
+
+
+def test_feed_timezone_overrides_the_stated_offset():
+    # OpenAI's feed writes Pacific clock times labelled GMT.
+    rss = ('<?xml version="1.0"?><rss version="2.0"><channel><item><title>T</title>'
+           '<link>https://openai.com/index/a</link><pubDate>Tue, 17 Nov 2026 13:00:00 GMT</pubDate>'
+           '</item></channel></rss>')
+    channel = DueChannel(1, "openai_news", "feed", "https://openai.com/news/rss.xml", "corpus", "en",
+                         {"feed_timezone": "America/Los_Angeles"}, None, None)
+    (candidate,) = _parse(channel, rss.encode("utf-8"), NOW)
+    assert candidate.published_at == datetime(2026, 11, 17, 21, 0, tzinfo=UTC)

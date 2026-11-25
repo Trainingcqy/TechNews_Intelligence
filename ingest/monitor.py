@@ -1,4 +1,5 @@
-"""Daily contract metrics over the last 24 hours, judged against the 14-day medians, with an alert email."""
+"""Daily contract metrics over the last 24 hours, judged against the 14-day medians, with an alert email. The
+discovery-lag rule looks at the last 7 days, since official channels publish only a few articles a week."""
 
 from __future__ import annotations
 
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 BASELINE_DAYS = 14
 MIN_BASELINE_DAYS = 7
 FAILING_STREAK = 3
+LAG_DAYS = 7
+LAG_MIN_ARTICLES = 3
+LAG_GRACE_MINUTES = 120
 RUN_HOUR = 9
 _BEIJING = timezone(timedelta(hours=8))
 
@@ -25,6 +29,7 @@ VOLUME = "新增可检索文章数"
 ANALYZE_FAILED = "analyze 阶段失败率"
 DEGRADED = "正文降级率"
 FAILING_CHANNELS = "连续失败不少于 3 次的渠道"
+DISCOVERY_LAG = f"首次发现比发布时间晚超过轮询间隔加 {LAG_GRACE_MINUTES // 60} 小时的渠道"
 
 
 def _ratio(part: int, whole: int) -> float:
@@ -51,7 +56,10 @@ _RATE_RULES = (
 
 
 def evaluate(
-    current: store.WindowCounts, baseline: list[store.WindowCounts], failing_channels: list[str]
+    current: store.WindowCounts,
+    baseline: list[store.WindowCounts],
+    failing_channels: list[str],
+    lagging_channels: list[tuple[str, float, int]],
 ) -> list[str]:
     """Breached rules as "name：detail". baseline holds one entry per whole day of polling, at most 14."""
     breaches = []
@@ -68,16 +76,25 @@ def evaluate(
             breaches.append(f"{VOLUME}：{current.ready}，下限为 14 天中位数 {base_ready:g} 的一半")
     if failing_channels:
         breaches.append(f"{FAILING_CHANNELS}：{', '.join(failing_channels)}")
+    if lagging_channels:
+        details = "；".join(f"{key} 中位数 {minutes / 60:.1f} 小时（{count} 篇）" for key, minutes, count in lagging_channels)
+        breaches.append(f"{DISCOVERY_LAG}：{details}")
     return breaches
 
 
-def metrics_line(current: store.WindowCounts, baseline: list[store.WindowCounts], failing_channels: list[str]) -> str:
+def metrics_line(
+    current: store.WindowCounts,
+    baseline: list[store.WindowCounts],
+    failing_channels: list[str],
+    lagging_channels: list[tuple[str, float, int]],
+) -> str:
     line = (
         f"窗口内文章 {current.articles}，可检索 {current.ready}，topics 或 kind 为空 {current.unlabeled}，"
         f"摘要超长 {current.too_long}（{too_long_rate(current):.1%}），"
         f"analyze 失败 {current.analyze_failed}（{analyze_failed_rate(current):.1%}），"
         f"正文降级 {current.degraded}/{current.fetched}（{degraded_rate(current):.1%}），"
-        f"连续失败渠道 {', '.join(failing_channels) or '无'}；基线 {len(baseline)} 天"
+        f"连续失败渠道 {', '.join(failing_channels) or '无'}，"
+        f"发现滞后渠道 {', '.join(key for key, _, _ in lagging_channels) or '无'}；基线 {len(baseline)} 天"
     )
     if baseline:
         line += (
@@ -101,11 +118,14 @@ def run_monitor(*, transaction: store.Transaction, dry_run: bool = False) -> lis
     with transaction() as cur:
         polled_days, windows = store.monitor_counts(cur, BASELINE_DAYS + 1)
         failing = store.failing_channels(cur, FAILING_STREAK)
+        lagging = store.lagging_channels(
+            cur, days=LAG_DAYS, min_articles=LAG_MIN_ARTICLES, grace_minutes=LAG_GRACE_MINUTES
+        )
     empty = store.WindowCounts()
     current = windows.get(0, empty)
     baseline = [windows.get(day, empty) for day in range(1, min(polled_days, BASELINE_DAYS) + 1)]
-    breaches = evaluate(current, baseline, failing)
-    line = metrics_line(current, baseline, failing)
+    breaches = evaluate(current, baseline, failing, lagging)
+    line = metrics_line(current, baseline, failing, lagging)
     logger.info("monitor: %s", line)
     if breaches:
         logger.warning("monitor 越限：%s", "；".join(breaches))

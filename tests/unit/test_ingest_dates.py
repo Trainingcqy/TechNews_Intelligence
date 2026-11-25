@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -76,3 +77,18 @@ def test_other_early_dates_are_kept(value, expected):
 
 def test_now_defaults_to_current_time():
     assert parse_datetime("2999-01-01T00:00:00Z") <= datetime.now(UTC)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # OpenAI's feed writes Pacific clock times labelled GMT.
+        ("Tue, 17 Nov 2026 13:00:00 GMT", datetime(2026, 11, 17, 21, 0, tzinfo=UTC)),
+        ("Tue, 14 Jul 2026 13:00:00 GMT", datetime(2026, 7, 14, 20, 0, tzinfo=UTC)),
+        ("2026-11-17T13:00:00", datetime(2026, 11, 17, 21, 0, tzinfo=UTC)),
+        # A placeholder is recognized as written.
+        ("Thu, 01 Jan 1970 00:00:00 GMT", None),
+    ],
+)
+def test_zone_reads_the_clock_time_in_it(value, expected):
+    assert parse_datetime(value, now=NOW, zone=ZoneInfo("America/Los_Angeles")) == expected

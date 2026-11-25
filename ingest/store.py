@@ -646,6 +646,49 @@ def failing_channels(cur, min_streak: int) -> list[str]:
     return [row[0] for row in cur.fetchall()]
 
 
+def lagging_channels(cur, *, days: int, min_articles: int, grace_minutes: int) -> list[tuple[str, float, int]]:
+    """Channels whose articles of the last days were first seen, at the median, more than the poll interval plus
+    grace_minutes after their published time, as when a source states its clock times in the wrong zone. Returns
+    the key, the median lag in minutes and the article count.
+
+    Each article counts for the channel that saw it first. Left out are the channel's first stored poll, which holds
+    its backlog, and times of exactly midnight in the feed's zone, which carry only a date.
+    """
+    cur.execute(
+        """
+        WITH recent AS (
+            SELECT article_id, first_seen_at, published_at FROM news.article
+            WHERE first_seen_at > now() - make_interval(days => %(days)s) AND published_at IS NOT NULL
+        ),
+        first_sight AS (
+            SELECT DISTINCT ON (s.article_id) s.article_id, s.channel_id
+            FROM news.sighting s JOIN recent r ON r.article_id = s.article_id
+            ORDER BY s.article_id, s.first_seen_at
+        ),
+        started AS (
+            SELECT channel_id, min(first_seen_at) AS started_at FROM news.sighting GROUP BY channel_id
+        ),
+        lags AS (
+            SELECT ch.key, ch.poll_minutes, extract(epoch FROM r.first_seen_at - r.published_at) / 60 AS minutes
+            FROM recent r
+            JOIN first_sight f ON f.article_id = r.article_id
+            JOIN news.channel ch ON ch.channel_id = f.channel_id
+            JOIN started s ON s.channel_id = ch.channel_id
+            WHERE r.first_seen_at > s.started_at + make_interval(mins => ch.poll_minutes / 2)
+              AND (r.published_at AT TIME ZONE COALESCE(ch.config ->> 'feed_timezone', 'UTC'))::time <> time '00:00'
+        )
+        SELECT key, percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes), count(*)
+        FROM lags
+        GROUP BY key, poll_minutes
+        HAVING count(*) >= %(min_articles)s
+           AND percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes) > poll_minutes + %(grace_minutes)s
+        ORDER BY key
+        """,
+        {"days": days, "min_articles": min_articles, "grace_minutes": grace_minutes},
+    )
+    return [(key, float(median), count) for key, median, count in cur.fetchall()]
+
+
 def channel_last_ok(cur) -> list[tuple[str, datetime | None]]:
     cur.execute("SELECT key, last_ok_at FROM news.channel WHERE enabled ORDER BY key")
     return cur.fetchall()

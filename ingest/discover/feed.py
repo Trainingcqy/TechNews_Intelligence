@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from html.parser import HTMLParser
 
 import feedparser
@@ -50,13 +50,14 @@ def strip_html(html: str) -> str:
     return text
 
 
-def entry_published_at(entry, *, now: datetime) -> datetime | None:
+def entry_published_at(entry, *, now: datetime, zone: tzinfo | None = None) -> datetime | None:
     # An Atom entry may carry only <updated>, as Apple Newsroom's do; it then dates the entry.
     for field in ("published", "updated"):
         parsed = entry.get(f"{field}_parsed")
-        if parsed:
+        # feedparser has applied the offset the entry states, which the channel's zone overrides.
+        if parsed and zone is None:
             return min(datetime(*parsed[:6], tzinfo=UTC), now)
-        value = parse_datetime(entry.get(field), now=now)
+        value = parse_datetime(entry.get(field), now=now, zone=zone)
         if value is not None:
             return value
     return None
@@ -69,7 +70,7 @@ def _feed_text(entry) -> str | None:
     return _WORDPRESS_FOOTER_RE.sub("", text) or None
 
 
-def parse_feed(content: bytes, *, now: datetime) -> list[Candidate]:
+def parse_feed(content: bytes, *, now: datetime, zone: tzinfo | None = None) -> list[Candidate]:
     candidates = []
     for entry in feedparser.parse(content).entries:
         url = (entry.get("link") or "").strip()
@@ -79,7 +80,7 @@ def parse_feed(content: bytes, *, now: datetime) -> list[Candidate]:
             Candidate(
                 url=url,
                 title=(entry.get("title") or "").strip(),
-                published_at=entry_published_at(entry, now=now),
+                published_at=entry_published_at(entry, now=now, zone=zone),
                 external_id=entry.get("id"),
                 feed_text=_feed_text(entry),
             )

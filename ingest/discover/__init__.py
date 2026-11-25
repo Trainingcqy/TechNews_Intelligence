@@ -9,6 +9,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from ingest import http, store
 from ingest.config import IngestConfig
@@ -46,7 +47,8 @@ def keep_candidate(candidate: Candidate, config: dict, *, now: datetime) -> bool
 
 def _parse(channel: store.DueChannel, content: bytes, now: datetime) -> list[Candidate]:
     if channel.fetch_kind == "feed":
-        return parse_feed(content, now=now)
+        zone = channel.config.get("feed_timezone")
+        return parse_feed(content, now=now, zone=ZoneInfo(zone) if zone else None)
     if channel.fetch_kind == "sitemap":
         return parse_sitemap(
             content,

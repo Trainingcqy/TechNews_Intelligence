@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from common.urls import host_of
 
@@ -87,6 +88,11 @@ def parse_sources(text: str) -> Sources:
                 re.compile(channel.config["exclude_url"])
             except re.error as exc:
                 raise ValueError(f"channel {channel.key} has an invalid exclude_url: {exc}") from exc
+        if "feed_timezone" in channel.config:
+            try:
+                ZoneInfo(channel.config["feed_timezone"])
+            except (ZoneInfoNotFoundError, ValueError) as exc:
+                raise ValueError(f"channel {channel.key} has an invalid feed_timezone: {exc}") from exc
         keys.add(channel.key)
         channels.append(channel)
     return Sources(publishers=publishers, channels=tuple(channels), hosts=hosts)

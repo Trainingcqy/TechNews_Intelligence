@@ -17,14 +17,15 @@ def _names(breaches):
 
 
 @pytest.mark.parametrize(
-    ("current", "failing", "expected"),
+    ("current", "failing", "lagging", "expected"),
     [
-        (WindowCounts(unlabeled=1), [], [monitor.UNLABELED]),
-        (WindowCounts(), ["techcrunch"], [monitor.FAILING_CHANNELS]),
+        (WindowCounts(unlabeled=1), [], [], [monitor.UNLABELED]),
+        (WindowCounts(), ["techcrunch"], [], [monitor.FAILING_CHANNELS]),
+        (WindowCounts(), [], [("openai_news", 1156.2, 6)], [monitor.DISCOVERY_LAG]),
     ],
 )
-def test_fixed_rules(current, failing, expected):
-    assert _names(monitor.evaluate(current, [], failing)) == expected
+def test_fixed_rules(current, failing, lagging, expected):
+    assert _names(monitor.evaluate(current, [], failing, lagging)) == expected
 
 
 def _day(**counts):
@@ -55,16 +56,16 @@ def _day(**counts):
     ],
 )
 def test_rolling_rules(current, baseline_day, expected):
-    assert _names(monitor.evaluate(current, [baseline_day] * 14, [])) == expected
+    assert _names(monitor.evaluate(current, [baseline_day] * 14, [], [])) == expected
 
 
 def test_rolling_rules_use_the_median():
     low = WindowCounts(articles=100, ready=10, fetched=100)
     high = WindowCounts(articles=100, ready=100, too_long=50, fetched=100)
     baseline = [low] * 7 + [high] * 6
-    assert _names(monitor.evaluate(WindowCounts(articles=6, ready=6, fetched=6), baseline, [])) == []
-    assert _names(monitor.evaluate(WindowCounts(articles=4, ready=4, fetched=4), baseline, [])) == [monitor.VOLUME]
-    assert _names(monitor.evaluate(WindowCounts(articles=10, ready=10, too_long=1, fetched=10), baseline, [])) == [
+    assert _names(monitor.evaluate(WindowCounts(articles=6, ready=6, fetched=6), baseline, [], [])) == []
+    assert _names(monitor.evaluate(WindowCounts(articles=4, ready=4, fetched=4), baseline, [], [])) == [monitor.VOLUME]
+    assert _names(monitor.evaluate(WindowCounts(articles=10, ready=10, too_long=1, fetched=10), baseline, [], [])) == [
         monitor.TOO_LONG
     ]
 
@@ -72,7 +73,7 @@ def test_rolling_rules_use_the_median():
 @pytest.mark.parametrize(("days", "expected"), [(6, []), (7, [monitor.TOO_LONG, monitor.VOLUME])])
 def test_rolling_rules_need_seven_days(days, expected):
     current = WindowCounts(articles=10, ready=10, too_long=10, fetched=10)
-    assert _names(monitor.evaluate(current, [BASE] * days, [])) == expected
+    assert _names(monitor.evaluate(current, [BASE] * days, [], [])) == expected
 
 
 @pytest.mark.parametrize(

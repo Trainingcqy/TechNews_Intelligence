@@ -261,7 +261,8 @@ fetch_kind = "feed"
 endpoint = "https://openai.com/news/rss.xml"
 publisher = "OpenAI"
 lang = "en"
-config = { exclude_url = '/business/learn/' }
+# The feed writes Pacific clock times labelled GMT.
+config = { exclude_url = '/business/learn/', feed_timezone = "America/Los_Angeles" }
 
 [[channel]]
 key = "anthropic_news"

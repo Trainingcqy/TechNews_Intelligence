@@ -12,8 +12,8 @@ temperature = 0.1
 
 # 综合：依据证据块撰写回答。评测的判官默认也用它。
 [final]
-provider = "vertex"
-model = "gemini-3.1-pro-preview"
+provider = "deepseek"
+model = "deepseek-flash"
 temperature = 0.1
 
 # 采集分析：写摘要、领域与类型。失败分类与 max_tokens 只适配 deepseek；

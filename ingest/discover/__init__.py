@@ -61,6 +61,7 @@ def _parse(channel: store.DueChannel, content: bytes, now: datetime) -> list[Can
 def _store_candidates(channel: store.DueChannel, candidates: list[Candidate], transaction: store.Transaction) -> int:
     with transaction() as cur:
         hosts = store.load_publisher_hosts(cur)
+        first_poll = not store.channel_has_sightings(cur, channel.channel_id)
     items_new = 0
     for candidate in candidates:
         with transaction() as cur:
@@ -68,7 +69,7 @@ def _store_candidates(channel: store.DueChannel, candidates: list[Candidate], tr
             # A miss returns a fresh auto publisher whose only entry is not registered.
             if publisher.hosts[0] not in hosts:
                 store.ensure_auto_publisher(cur, publisher.name)
-            items_new += store.insert_candidate(cur, channel, candidate, publisher.name)
+            items_new += store.insert_candidate(cur, channel, candidate, publisher.name, first_poll=first_poll)
     return items_new
 
 

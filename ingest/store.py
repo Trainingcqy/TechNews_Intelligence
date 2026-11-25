@@ -241,8 +241,21 @@ def enabled_channel(cur, key: str) -> DueChannel | None:
     return DueChannel(*row) if row else None
 
 
-def _initial_state(channel: DueChannel, candidate: Candidate) -> tuple[str, str, str | None]:
-    """Status, body_level and body source of a newly discovered article."""
+def channel_has_sightings(cur, channel_id: int) -> bool:
+    cur.execute("SELECT EXISTS (SELECT 1 FROM news.sighting WHERE channel_id = %s)", (channel_id,))
+    return cur.fetchone()[0]
+
+
+def _initial_state(channel: DueChannel, candidate: Candidate, *, first_poll: bool) -> tuple[str, str, str | None]:
+    """Status, body_level and body source of a newly discovered article.
+
+    first_poll: nothing from the channel is stored yet, as on its first poll or the first after the articles were
+    cleared. Such a poll returns the channel's whole backlog, and an entry without any date may be months old while
+    its event time would fall back to first_seen_at; it is stored as excluded so that later polls do not take it as
+    new.
+    """
+    if first_poll and candidate.published_at is None and candidate.lastmod is None:
+        return "excluded", "none", None
     text = candidate.feed_text or ""
     if channel.config.get("excerpt_only"):
         # A paywalled source: its feed summary, however short, is all that is stored, and Reader is never called.
@@ -263,9 +276,9 @@ def _write_body(cur, article_id: int, source: str, text: str) -> None:
     )
 
 
-def insert_candidate(cur, channel: DueChannel, candidate: Candidate, publisher_name: str) -> bool:
+def insert_candidate(cur, channel: DueChannel, candidate: Candidate, publisher_name: str, *, first_poll: bool) -> bool:
     """Steps 4-8 of candidate ingestion. Returns whether the article is new."""
-    status, body_level, body_source = _initial_state(channel, candidate)
+    status, body_level, body_source = _initial_state(channel, candidate, first_poll=first_poll)
     key = url_key(candidate.url)
     cur.execute(
         """

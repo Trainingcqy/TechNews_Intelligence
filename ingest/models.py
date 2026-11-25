@@ -15,6 +15,7 @@ class Candidate:
     published_at: datetime | None
     external_id: str | None
     feed_text: str | None  # feed entry's own body or excerpt, HTML tags removed
+    lastmod: datetime | None = None  # sitemap <lastmod>: when the page last changed, not when it was published
 
 
 @dataclass(frozen=True)

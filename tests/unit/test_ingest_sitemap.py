@@ -19,6 +19,7 @@ MIDTERMS = Candidate(
     published_at=None,
     external_id=None,
     feed_text=None,
+    lastmod=MIDTERMS_LASTMOD,
 )
 
 

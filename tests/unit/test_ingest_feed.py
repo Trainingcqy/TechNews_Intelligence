@@ -110,5 +110,15 @@ def test_published_time_falls_back_to_raw_string():
     assert entry_published_at({}, now=NOW) is None
 
 
+def test_updated_dates_an_entry_without_published():
+    # Apple Newsroom's Atom entries carry only <updated>.
+    atom = ('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>T</title>'
+            '<link href="https://www.apple.com/newsroom/2026/10/a/"/><updated>2026-10-23T06:10:35.677Z</updated>'
+            '</entry></feed>')
+    assert _parse(atom)[0].published_at == datetime(2026, 10, 23, 6, 10, 35, tzinfo=UTC)
+    both = {"published": "2026-11-01T00:00:00+00:00", "updated": "2026-11-05T00:00:00+00:00"}
+    assert entry_published_at(both, now=NOW) == datetime(2026, 11, 1, tzinfo=UTC)
+
+
 def test_strip_html_separates_blocks_and_unescapes():
     assert strip_html("<p>a</p><p>b &amp; <b>c</b></p>") == "a\nb & c"

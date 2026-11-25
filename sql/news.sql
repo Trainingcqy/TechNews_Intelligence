@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS news.article (
     label_source     TEXT CHECK (label_source IN ('model', 'mapped')),
     body_level       TEXT NOT NULL DEFAULT 'none' CHECK (body_level IN ('full', 'excerpt', 'none')),
 
-    -- pipeline state; excluded is promotional content, kept only so that its URL is not inserted again
+    -- pipeline state; excluded rows are kept only so that their URLs are not inserted again: promotional content,
+    -- and entries without a date found on a channel's first poll
     status           TEXT NOT NULL DEFAULT 'discovered'
         CHECK (status IN ('discovered', 'fetched', 'analyzed', 'embedded', 'ready', 'failed', 'excluded')),
     attempts         SMALLINT NOT NULL DEFAULT 0,

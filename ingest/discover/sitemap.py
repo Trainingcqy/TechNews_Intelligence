@@ -39,6 +39,9 @@ def parse_sitemap(
         elif lastmod < cutoff:
             continue
         candidates.append(
-            Candidate(url=loc, title=placeholder_title(loc), published_at=None, external_id=None, feed_text=None)
+            Candidate(
+                url=loc, title=placeholder_title(loc), published_at=None, external_id=None, feed_text=None,
+                lastmod=lastmod,
+            )
         )
     return candidates

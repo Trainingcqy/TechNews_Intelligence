@@ -51,10 +51,15 @@ def strip_html(html: str) -> str:
 
 
 def entry_published_at(entry, *, now: datetime) -> datetime | None:
-    parsed = entry.get("published_parsed")
-    if parsed:
-        return min(datetime(*parsed[:6], tzinfo=UTC), now)
-    return parse_datetime(entry.get("published"), now=now)
+    # An Atom entry may carry only <updated>, as Apple Newsroom's do; it then dates the entry.
+    for field in ("published", "updated"):
+        parsed = entry.get(f"{field}_parsed")
+        if parsed:
+            return min(datetime(*parsed[:6], tzinfo=UTC), now)
+        value = parse_datetime(entry.get(field), now=now)
+        if value is not None:
+            return value
+    return None
 
 
 def _feed_text(entry) -> str | None:

@@ -92,7 +92,25 @@ def _candidate(feed_text: str | None) -> store.Candidate:
     ],
 )
 def test_initial_state(config, feed_text, expected) -> None:
-    assert store._initial_state(_channel(**config), _candidate(feed_text)) == expected
+    assert store._initial_state(_channel(**config), _candidate(feed_text), first_poll=False) == expected
+
+
+_DATE = datetime(2026, 11, 20, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("first_poll", "published_at", "lastmod", "expected"),
+    [
+        # The channel's first poll returns its backlog; an entry without any date is kept out of the corpus.
+        (True, None, None, ("excluded", "none", None)),
+        (True, _DATE, None, ("discovered", "excerpt", "feed")),
+        (True, None, _DATE, ("discovered", "excerpt", "feed")),
+        (False, None, None, ("discovered", "excerpt", "feed")),
+    ],
+)
+def test_undated_entry_of_a_first_poll_is_excluded(first_poll, published_at, lastmod, expected) -> None:
+    candidate = store.Candidate("https://example.com/a", "t", published_at, None, "x" * 1500, lastmod)
+    assert store._initial_state(_channel(), candidate, first_poll=first_poll) == expected
 
 
 def test_promotional_analysis_is_excluded() -> None:

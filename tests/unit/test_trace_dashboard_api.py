@@ -95,12 +95,11 @@ def test_list_runs_by_thread_or_channel_includes_eval_runs(trace_api_mod, monkey
 
 
 def test_get_run_returns_spans_and_resolves_referenced_materials(trace_api_mod, monkeypatch) -> None:  # noqa: ANN001
-    output = {"evidence": [{"eid": "E1", "doc": "article", "article_id": 30},
-                           {"eid": "E2", "doc": "discussion", "sighting_id": 70, "article_id": 30}]}
+    output = {"evidence": [{"eid": "E1", "article_id": 30}]}
     spans = [
         ("s1", None, "step", None, "ok", 1, 9, {}, {"calls": []}, {"step": 1}, [], None, None, None),
         ("s2", "s1", "tool", "search_news", "ok", 2, 8, {"query": "Genie 4"},
-         {"stories": [{"story_id": 5, "lead": 30, "related": [31], "discussion": 70}]}, {}, [], None, None, None),
+         {"stories": [{"story_id": 5, "lead": 30, "related": [31]}]}, {}, [], None, None, None),
         ("s3", "s2", "retrieval", None, "ok", 3, 4, {}, {"candidates": [{"article_id": 32, "score": 0.1}]}, {},
          [], None, None, None),
     ]
@@ -111,13 +110,9 @@ def test_get_run_returns_spans_and_resolves_referenced_materials(trace_api_mod, 
         if "FROM public.agent_trace_spans" in sql:
             return (["span_id", "parent_span_id", "kind", "name", "status", "started_at_ms", "finished_at_ms",
                      "input", "output", "attributes", "warnings", "error_code", "error_message", "exception"], spans)
-        if "FROM news.article" in sql:
-            assert params == ([30, 31, 32],)
-            return (["article_id", "title", "title_zh", "publisher", "url", "event_at"],
-                    [(30, "Genie 4 adds audio", "", "TechCrunch", "https://techcrunch.com/genie-4", STARTED)])
-        assert "FROM news.discussion" in sql and params == ([70],)
-        return (["sighting_id", "article_id", "url", "title", "score", "comment_total"],
-                [(70, 30, "https://news.ycombinator.com/item?id=1", "Genie 4 adds audio", 955, 312)])
+        assert "FROM news.article" in sql and params == ([30, 31, 32],)
+        return (["article_id", "title", "title_zh", "publisher", "url", "event_at"],
+                [(30, "Genie 4 adds audio", "", "TechCrunch", "https://techcrunch.com/genie-4", STARTED)])
 
     _install_db(monkeypatch, trace_api_mod, _handler)
     response = _get(trace_api_mod, "/trace-api/runs/r1")
@@ -130,7 +125,6 @@ def test_get_run_returns_spans_and_resolves_referenced_materials(trace_api_mod, 
     assert payload["articles"] == {"30": {"title": "Genie 4 adds audio", "title_zh": "", "publisher": "TechCrunch",
                                           "url": "https://techcrunch.com/genie-4",
                                           "event_at": "2026-11-22T08:30:00+00:00"}}
-    assert payload["discussions"]["70"]["comment_total"] == 312
 
 
 def test_get_run_not_found(trace_api_mod, monkeypatch) -> None:  # noqa: ANN001

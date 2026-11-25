@@ -54,7 +54,7 @@ class _FakeResponse:
 def _row(article_id: int, title: str, title_zh: str, publisher: str, *, score: float, match_score: float = 0.5) -> tuple:
     return (
         article_id, f"https://{article_id}.com", title, title_zh, f"Summary {article_id}", ["ai"], "news",
-        publisher, "media", "en", datetime(2026, 4, 10, 10, 0, 0), "full", None, None, None, 100 + article_id,
+        publisher, "media", "en", datetime(2026, 4, 10, 10, 0, 0), "full", 100 + article_id,
         score, 0.1, 0.2, 0.0, match_score,
     )
 

@@ -16,14 +16,7 @@ from .embeddings import get_query_embedding as _get_query_embedding
 from .hybrid import _clamp_int, candidate_from_row, fetch_hybrid_rows
 from .recall_profile import resolve_recall_profile
 from .rerank import RERANK_MODE_NONE, rerank_candidates, resolve_rerank_mode
-from .stories import (
-    RELATED_LIMIT,
-    browse_story_ids,
-    fetch_discussions,
-    fetch_story_members,
-    pick_lead,
-    stats_from_members,
-)
+from .stories import RELATED_LIMIT, browse_story_ids, fetch_story_members, pick_lead, stats_from_members
 
 MAX_ARTICLE_LIMIT = 45
 WEAK_MATCH_THRESHOLD = 0.30
@@ -163,9 +156,6 @@ def search_stories(
             for story_id in story_ids
             if members.get(story_id)
         ]
-        discussions = fetch_discussions(
-            cur, [stats.hn_sighting_id for _, _, stats in stories if stats.hn_sighting_id is not None]
-        )
         cur.close()
     finally:
         put_conn(conn)
@@ -178,7 +168,6 @@ def search_stories(
             lead=lead,
             stats=stats,
             related=_related(lead, group),
-            discussion=discussions.get(stats.hn_sighting_id),
             match_score=candidate["match_score"] if candidate else None,
         ))
     if query and sort == "time":

@@ -9,10 +9,10 @@ from agent.types import Answer, Evidence, Source
 from common.urls import _URL_RE
 
 NOT_FOUND_TEXT = {
-    "zh": "新闻库中没有找到相关报道。新闻库只收录固定的科技媒体、公司官方渠道和 HackerNews 首页的文章，"
+    "zh": "新闻库中没有找到相关报道。新闻库只收录固定的科技媒体和公司官方渠道的文章，"
     "这件事可能不在收录范围内。也可以换一种说法或放宽时间范围再问。",
-    "en": "No relevant reports were found in the news library. The library only covers a fixed set of tech media, "
-    "official company channels, and articles from the HackerNews front page, so this may be outside its coverage. "
+    "en": "No relevant reports were found in the news library. The library only covers a fixed set of tech media "
+    "and official company channels, so this may be outside its coverage. "
     "You can also rephrase the question or widen the time range and ask again.",
 }
 BLOCKED_TEXT = {
@@ -134,9 +134,8 @@ def resolve_citations(
     for eid, n in numbers.items():
         evidence = registry.get(eid)
         sources.append(_source(n, evidence))
-        story_id = _story_id(evidence, registry)
-        if story_id is not None and story_id not in story_ids:
-            story_ids.append(story_id)
+        if evidence.article.story_id not in story_ids:
+            story_ids.append(evidence.article.story_id)
     check = CitationCheck(cited=tuple(numbers.items()), removed_eids=tuple(removed),
                           removed_urls=removed_urls, removed_numeric=removed_numeric)
     return text, tuple(sources), tuple(story_ids), check
@@ -185,11 +184,6 @@ def _close_gap(match: re.Match[str]) -> str:
 
 
 def _source(n: int, evidence: Evidence) -> Source:
-    if evidence.doc == "discussion":
-        discussion = evidence.discussion
-        return Source(
-            n=n, url=discussion.url, title=discussion.title, title_zh="", source="HackerNews 讨论", published_at=""
-        )
     article = evidence.article
     return Source(
         n=n,
@@ -199,12 +193,3 @@ def _source(n: int, evidence: Evidence) -> Source:
         source=article.publisher,
         published_at=f"{article.published_at.astimezone(user_zone()):%Y-%m-%d}",
     )
-
-
-def _story_id(evidence: Evidence, registry: EvidenceRegistry) -> int | None:
-    if evidence.doc == "article":
-        return evidence.article.story_id
-    for item in registry.items():
-        if item.doc == "article" and item.article.article_id == evidence.discussion.article_id:
-            return item.article.story_id
-    return None

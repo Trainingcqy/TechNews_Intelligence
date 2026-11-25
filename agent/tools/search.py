@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .registry import SearchNewsArgs, ToolOutcome
 
 INDENT = "     "
-SORT_LABELS = {"relevance": "按相关性", "importance": "按重要性", "time": "按时间", "hn": "按 HackerNews 分数"}
+SORT_LABELS = {"relevance": "按相关性", "importance": "按重要性", "time": "按时间"}
 
 
 def run_search_news(args: SearchNewsArgs) -> SearchResult:
@@ -31,7 +31,6 @@ def search_trace_output(result: SearchResult) -> dict:
             "story_id": hit.stats.story_id,
             "lead": hit.lead.article_id,
             "related": [article.article_id for article in hit.related],
-            "discussion": hit.discussion.sighting_id if hit.discussion else None,
             "reports": hit.stats.report_count,
             "publishers": hit.stats.publisher_count,
             "match_score": hit.match_score,
@@ -54,10 +53,8 @@ def commit_search_news(args: SearchNewsArgs, result: SearchResult, *, registry) 
     for hit in result.hits:
         lead = registry.add_article(hit.lead, "summary", hit.stats)
         related = [registry.add_article(article, "listed") for article in hit.related]
-        discussion = registry.add_discussion(hit.discussion) if hit.discussion else None
         leads.append(lead)
-        lines.extend(_render_hit(hit, lead.eid, [e.eid for e in related], discussion.eid if discussion else None,
-                                 registry.seen_dates.get(hit.stats.story_id)))
+        lines.extend(_render_hit(hit, lead.eid, [e.eid for e in related], registry.seen_dates.get(hit.stats.story_id)))
     if result.weak_match:
         lines.append("提示：最相关的结果匹配度偏低，可能不切题。")
     return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text="\n".join(lines),
@@ -81,8 +78,7 @@ def _scope(args: SearchNewsArgs) -> str:
     return "，".join(parts)
 
 
-def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], discussion_eid: str | None,
-                seen: date | None) -> list[str]:
+def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], seen: date | None) -> list[str]:
     lead = hit.lead
     lines = [f"[{lead_eid}] {lead.title}"]
     if lead.title_zh:
@@ -102,10 +98,6 @@ def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], discussio
             for eid, a in zip(related_eids, hit.related)
         ]
         lines.append(f"{INDENT}同故事其他报道：" + "；".join(others))
-    if discussion_eid:
-        score = f"{hit.discussion.score} 分，" if hit.discussion.score is not None else ""
-        lines.append(f"{INDENT}社区讨论：[{discussion_eid}] HackerNews 讨论，{score}"
-                     f"{hit.discussion.comment_total} 条评论，可用 read_articles 读取")
     return lines
 
 
@@ -113,8 +105,4 @@ def _render_stats(stats: StoryStats) -> str:
     text = f"同一故事 {stats.report_count} 篇报道、{stats.publisher_count} 个发布方"
     if "official" in stats.publisher_kinds:
         text += "，含官方发布"
-    if stats.hn_score is not None:
-        text += f"，HN 最高 {stats.hn_score} 分"
-        if stats.hn_comments is not None:
-            text += f"、{stats.hn_comments} 条评论"
     return text

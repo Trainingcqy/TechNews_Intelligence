@@ -40,9 +40,7 @@ export function buildTrace(detail) {
     startMs,
     totalMs,
     articles: detail.articles || {},
-    discussions: detail.discussions || {},
-    evidenceByArticle: new Map(evidence.filter((row) => row.doc === "article").map((row) => [row.article_id, row])),
-    evidenceBySighting: new Map(evidence.filter((row) => row.doc === "discussion").map((row) => [row.sighting_id, row]))
+    evidenceByArticle: new Map(evidence.map((row) => [row.article_id, row]))
   };
 }
 
@@ -139,14 +137,6 @@ export function nodeSubtitle(trace, node) {
 export function articleTitle(trace, articleId) {
   const article = trace.articles[String(articleId)];
   return article ? article.title_zh || article.title : `文章 ${articleId}`;
-}
-
-export function evidenceTitle(trace, row) {
-  if (row.doc === "discussion") {
-    const discussion = trace.discussions[String(row.sighting_id)];
-    return `HackerNews 讨论：${discussion ? discussion.title : row.sighting_id}`;
-  }
-  return articleTitle(trace, row.article_id);
 }
 
 export function location(where) {

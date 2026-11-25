@@ -15,7 +15,7 @@ from agent.citations import (
     split_status,
 )
 from agent.evidence import EvidenceRegistry
-from agent.types import Article, Discussion, Source
+from agent.types import Article, Source
 
 ARTICLE = Article(
     article_id=1,
@@ -30,15 +30,12 @@ ARTICLE = Article(
     lang="en",
     published_at=datetime(2026, 11, 11, 16, tzinfo=timezone.utc),  # 2026-11-12 00:00 in Beijing
     body_level="full",
-    hn_score=None,
-    hn_comments=None,
-    hn_sighting_id=None,
     story_id=10,
 )
 
 
 def _registry() -> EvidenceRegistry:
-    """E1 summary (story 10), E2 listed, E3 summary (story 30), E4 discussion of E2 read in full."""
+    """E1 summary (story 10), E2 listed, E3 summary (story 30), E4 another report of story 30 read in full."""
     registry = EvidenceRegistry()
     registry.add_article(ARTICLE, "summary")
     registry.add_article(replace(ARTICLE, article_id=2, url="https://a.com/2", story_id=20), "listed")
@@ -47,11 +44,12 @@ def _registry() -> EvidenceRegistry:
                 published_at=datetime(2026, 11, 10, 16, tzinfo=timezone.utc), story_id=30),
         "summary",
     )
-    registry.add_discussion(
-        Discussion(sighting_id=7, article_id=2, url="https://news.ycombinator.com/item?id=7", title="Title 1",
-                   score=10, comment_total=3)
+    registry.add_article(
+        replace(ARTICLE, article_id=4, url="https://c.com/4", title="Title 4", title_zh="", publisher="The Verge",
+                story_id=30),
+        "listed",
     )
-    registry.set_fulltext("E4", "comments", 8, False)
+    registry.set_fulltext("E4", "body", 4, False)
     return registry
 
 
@@ -77,10 +75,10 @@ def test_resolve_renumbers_in_first_appearance_order() -> None:
         Source(n=1, url="https://b.com/3", title="Title 3", title_zh="", source="Google", published_at="2026-11-11"),
         Source(n=2, url="https://a.com/1", title="Title 1", title_zh="标题 1", source="TechCrunch",
                published_at="2026-11-12"),
-        Source(n=3, url="https://news.ycombinator.com/item?id=7", title="Title 1", title_zh="",
-               source="HackerNews 讨论", published_at=""),
+        Source(n=3, url="https://c.com/4", title="Title 4", title_zh="", source="The Verge",
+               published_at="2026-11-12"),
     )
-    assert story_ids == (30, 10, 20)
+    assert story_ids == (30, 10)
 
 
 def test_resolve_expands_lists_and_merges_duplicates() -> None:

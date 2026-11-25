@@ -167,12 +167,10 @@ def get_run(request_id: str, _: None = Depends(_verify_trace_token)) -> dict[str
         "ORDER BY started_at_ms, span_id",
         (request_id,),
     )
-    article_ids, sighting_ids = _referenced_ids(run, spans)
     return _json_safe({
         "run": run,
         "spans": spans,
-        "articles": _articles(article_ids),
-        "discussions": _discussions(sighting_ids),
+        "articles": _articles(_referenced_article_ids(run, spans)),
     })
 
 
@@ -188,16 +186,13 @@ def get_model_io(request_id: str, span_id: str, _: None = Depends(_verify_trace_
     return {"model_io": _json_safe(row)}
 
 
-def _referenced_ids(run: dict[str, Any], spans: list[dict[str, Any]]) -> tuple[set[int], set[int]]:
-    """Article and discussion ids that the request record and its spans refer to."""
+def _referenced_article_ids(run: dict[str, Any], spans: list[dict[str, Any]]) -> set[int]:
+    """Article ids that the request record and its spans refer to."""
     article_ids: set[int] = set()
-    sighting_ids: set[int] = set()
 
     def note(item: dict[str, Any]) -> None:
         if item.get("article_id") is not None:
             article_ids.add(item["article_id"])
-        if item.get("sighting_id") is not None:
-            sighting_ids.add(item["sighting_id"])
 
     for row in (run.get("output") or {}).get("evidence") or []:
         note(row)
@@ -205,11 +200,9 @@ def _referenced_ids(run: dict[str, Any], spans: list[dict[str, Any]]) -> tuple[s
         output = span.get("output") or {}
         for story in output.get("stories") or []:
             article_ids.update([story["lead"], *story["related"]])
-            if story.get("discussion") is not None:
-                sighting_ids.add(story["discussion"])
         for item in [*(output.get("items") or []), *(output.get("candidates") or []), *(output.get("ranked") or [])]:
             note(item)
-    return article_ids, sighting_ids
+    return article_ids
 
 
 def _articles(article_ids: set[int]) -> dict[int, dict[str, Any]]:
@@ -225,22 +218,6 @@ def _articles(article_ids: set[int]) -> dict[int, dict[str, Any]]:
         (sorted(article_ids),),
     )
     return {row.pop("article_id"): row for row in rows}
-
-
-def _discussions(sighting_ids: set[int]) -> dict[int, dict[str, Any]]:
-    if not sighting_ids:
-        return {}
-    rows = _fetch_all(
-        """
-        SELECT d.sighting_id, s.article_id, d.url, a.title, s.score, d.comment_total
-        FROM news.discussion d
-        JOIN news.sighting s ON s.sighting_id = d.sighting_id
-        JOIN news.article a ON a.article_id = s.article_id
-        WHERE d.sighting_id = ANY(%s)
-        """,
-        (sorted(sighting_ids),),
-    )
-    return {row.pop("sighting_id"): row for row in rows}
 
 
 def _render_missing_dashboard() -> HTMLResponse:

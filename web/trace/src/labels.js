@@ -52,7 +52,7 @@ export const REASON = {
 
 export const LEVEL = { listed: "列出", summary: "摘要", fulltext: "全文" };
 
-export const SORT = { relevance: "按相关性", importance: "按重要性", time: "按时间", hn: "按 HackerNews 分数" };
+export const SORT = { relevance: "按相关性", importance: "按重要性", time: "按时间" };
 
 export const ROUTE = { direct: "直接回复", not_found: "未找到", synthesize: "进入综合" };
 

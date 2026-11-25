@@ -22,11 +22,11 @@ def _hit(story_id: int, name: str) -> StoryHit:
     article = Article(
         article_id=story_id, url=f"https://example.com/{name}", title=f"{name} launches", title_zh="", summary="",
         topics=(), kind=None, publisher="TechCrunch", publisher_kind="media", lang="en", published_at=PUBLISHED,
-        body_level="full", hn_score=None, hn_comments=None, hn_sighting_id=None, story_id=story_id,
+        body_level="full", story_id=story_id,
     )
     stats = StoryStats(story_id=story_id, report_count=1, publisher_count=1, publisher_kinds=("media",),
-                       hn_score=None, hn_comments=None, hn_sighting_id=None, first_at=PUBLISHED, last_at=PUBLISHED)
-    return StoryHit(lead=article, stats=stats, related=(), discussion=None, match_score=0.9)
+                       first_at=PUBLISHED, last_at=PUBLISHED)
+    return StoryHit(lead=article, stats=stats, related=(), match_score=0.9)
 
 
 class FakeChat:

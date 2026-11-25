@@ -21,7 +21,7 @@ def _at(day: int) -> datetime:
 BASE = Article(
     article_id=0, url="", title="t", title_zh="", summary="", topics=("ai",), kind="news",
     publisher="TechCrunch", publisher_kind="media", lang="en", published_at=_at(10), body_level="full",
-    hn_score=None, hn_comments=None, hn_sighting_id=None, story_id=0,
+    story_id=0,
 )
 
 
@@ -60,7 +60,6 @@ def _patch(monkeypatch, *, candidates=(), members=None, browse=()):
     monkeypatch.setattr(search, "lookup_candidates_by_query", lookup)
     monkeypatch.setattr(search, "browse_story_ids", browse_story_ids)
     monkeypatch.setattr(search, "fetch_story_members", fetch_story_members)
-    monkeypatch.setattr(search, "fetch_discussions", lambda cur, ids: {})
     monkeypatch.setattr(search, "get_conn", _Conn)
     monkeypatch.setattr(search, "put_conn", lambda conn: None)
     return calls

@@ -26,11 +26,10 @@ PUBLISHED = datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc)
 ARTICLE = Article(
     article_id=30, url="https://techcrunch.com/genie-4", title="Genie 4 adds audio", title_zh="",
     summary="谷歌发布 Genie 4。", topics=("ai",), kind="release", publisher="TechCrunch", publisher_kind="media",
-    lang="en", published_at=PUBLISHED, body_level="full", hn_score=None, hn_comments=None, hn_sighting_id=None,
-    story_id=5,
+    lang="en", published_at=PUBLISHED, body_level="full", story_id=5,
 )
-STATS = StoryStats(story_id=5, report_count=1, publisher_count=1, publisher_kinds=("media",), hn_score=None,
-                   hn_comments=None, hn_sighting_id=None, first_at=PUBLISHED, last_at=PUBLISHED)
+STATS = StoryStats(story_id=5, report_count=1, publisher_count=1, publisher_kinds=("media",),
+                   first_at=PUBLISHED, last_at=PUBLISHED)
 SOURCE = Source(n=1, url=ARTICLE.url, title="Genie 4 adds audio", title_zh="", source="TechCrunch",
                 published_at="2026-11-12")
 
@@ -88,7 +87,7 @@ def turn(monkeypatch):
     monkeypatch.setattr(trace_store, "persist", persisted.append)
 
     def search(args):
-        hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), discussion=None, match_score=0.9)]
+        hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=0.9)]
         return SearchResult(hits=hits if args.query == "Genie 4" else [], weak_match=False)
 
     monkeypatch.setattr(registry, "run_search_news", search)
@@ -96,7 +95,6 @@ def turn(monkeypatch):
     monkeypatch.setattr(read, "put_conn", lambda conn: None)
     monkeypatch.setattr(read, "fetch_articles_by_url_keys", lambda cur, keys: [])
     monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {30: BODY} if 30 in ids else {})
-    monkeypatch.setattr(read, "fetch_discussion_texts", lambda cur, ids: {})
 
     def run(gather_replies, final_replies=(), *, config=None, history=None, user_key=None, zone=None):
         gather, final = FakeChat(gather_replies), FakeChat(final_replies)
@@ -148,7 +146,7 @@ def test_turn_runs_in_the_user_zone(turn, monkeypatch):
     # 16:30 UTC on 11-11 is 11-12 in Beijing and 11-11 in New York; 17:00 UTC on 11-09 is 11-10 and 11-09.
     related = replace(ARTICLE, article_id=31, url="https://www.theverge.com/genie-4", title="Genie 4 hands-on",
                       publisher="The Verge")
-    hit = StoryHit(lead=ARTICLE, stats=STATS, related=(related,), discussion=None, match_score=0.9)
+    hit = StoryHit(lead=ARTICLE, stats=STATS, related=(related,), match_score=0.9)
     monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False))
     monkeypatch.setattr(nodes.memory, "list_follows", lambda user_key, limit: FOLLOWS)
     monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda user_key, ids: {})
@@ -221,7 +219,7 @@ def test_normal_answer(turn):
     assert trace.output["route"] == {"decision": "synthesize", "tools_called": True, "citable": 1}
     assert trace.output["citations"]["cited"] == {"E1": 1}
     assert trace.output["evidence"] == [{
-        "eid": "E1", "doc": "article", "level": "fulltext", "article_id": 30, "story_id": 5,
+        "eid": "E1", "level": "fulltext", "article_id": 30, "story_id": 5,
         "registered": {"step": 1, "call": 0}, "upgraded": [{"step": 2, "call": 0, "level": "fulltext"}],
         "body_in_block": True, "cited": 1,
     }]
@@ -323,7 +321,7 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     def search(args):
         if args.query == "具身智能":
             raise RuntimeError("search failed")
-        hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), discussion=None, match_score=0.9)]
+        hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=0.9)]
         return SearchResult(hits=hits if (args.query or "").lower() == "genie 4" else [], weak_match=False)
 
     monkeypatch.setattr(registry, "run_search_news", search)

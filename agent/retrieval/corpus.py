@@ -26,13 +26,15 @@ def _render(kind_rows: list[tuple], publisher_rows: list[tuple]) -> str:
     last = max(row[3] for row in kind_rows).astimezone(user_zone()).date()
     official = counts.get("official", 0)
     media = counts.get("media", 0)
+    roles = f"发布方角色：官方 {official} 篇；媒体 {media} 篇"
+    if total - official - media:
+        roles += f"；其他 {total - official - media} 篇"
     return "\n".join([
         f"新闻库范围：共 {total} 篇，{first.isoformat()} 至 {last.isoformat()}。",
-        f"发布方角色：官方 {official} 篇；媒体 {media} 篇；经 HackerNews 发现的其他站点 {total - official - media} 篇。",
+        roles + "。",
         "主要发布方：" + "、".join(name for name, _ in publisher_rows) + "。",
         "领域：" + "；".join(f"{key} {label}" for key, label in TOPICS.items()) + "。",
         "类型：" + "；".join(f"{key} {label}" for key, label in KINDS.items()) + "。",
-        "只有被转到 HackerNews 首页的文章带社区分数和评论数。",
     ])
 
 

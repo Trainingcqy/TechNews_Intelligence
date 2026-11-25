@@ -22,10 +22,6 @@ class MCPResourceSpec:
 
 
 def _evidence_row(evidence: Evidence) -> dict[str, str]:
-    if evidence.doc == "discussion":
-        discussion = evidence.discussion
-        return {"eid": evidence.eid, "url": discussion.url, "title": discussion.title,
-                "source": "HackerNews 讨论", "published_at": ""}
     article = evidence.article
     return {"eid": evidence.eid, "url": article.url, "title": article.title, "source": article.publisher,
             "published_at": f"{article.published_at.astimezone(user_zone()):%Y-%m-%d}"}

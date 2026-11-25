@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { formatDate } from "../format";
 import { LEVEL, ROUTE } from "../labels";
-import { evidenceTitle, location, warningsOf } from "../trace";
+import { articleTitle, location, warningsOf } from "../trace";
 import WarningList from "./WarningList.vue";
 
 const props = defineProps({
@@ -20,8 +20,8 @@ const citations = computed(() => output.value.citations || null);
 const evidence = computed(() =>
   (output.value.evidence || []).map((row) => ({
     ...row,
-    title: evidenceTitle(props.trace, row),
-    meta: row.doc === "article" ? articleMeta(row.article_id) : "",
+    title: articleTitle(props.trace, row.article_id),
+    meta: articleMeta(row.article_id),
     seen: row.story_id !== undefined ? output.value.seen_dates?.[String(row.story_id)] : null
   }))
 );

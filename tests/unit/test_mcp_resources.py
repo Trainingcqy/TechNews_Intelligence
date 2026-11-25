@@ -18,18 +18,16 @@ from agent.retrieval import corpus
 from agent.retrieval.search import SearchResult
 from agent.tools import read, registry
 from agent.trace import request_trace
-from agent.types import Article, Discussion, StoryHit, StoryStats
+from agent.types import Article, StoryHit, StoryStats
 from common.urls import url_key
 
 ARTICLE = Article(
     article_id=30, url="https://www.techcrunch.com/genie-4/", title="Genie 4 adds audio", title_zh="",
     summary="谷歌发布 Genie 4。", topics=("ai",), kind="release", publisher="TechCrunch", publisher_kind="media",
-    lang="en", published_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc), body_level="full",
-    hn_score=None, hn_comments=None, hn_sighting_id=None, story_id=5,
+    lang="en", published_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc), body_level="full", story_id=5,
 )
-DISCUSSION = Discussion(sighting_id=70, article_id=30, url="https://news.ycombinator.com/item?id=1",
-                        title="Genie 4 adds audio", score=955, comment_total=312)
-DISCUSSION_URL = "http://news.ycombinator.com/item?id=1"
+SECOND = replace(ARTICLE, article_id=31, url="https://www.theverge.com/genie-4", title="Genie 4 hands-on",
+                 publisher="The Verge")
 
 
 @pytest.fixture()
@@ -44,11 +42,8 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(read, "get_conn", Conn)
     monkeypatch.setattr(read, "put_conn", lambda conn: None)
     monkeypatch.setattr(read, "fetch_articles_by_url_keys",
-                        lambda cur, keys: [ARTICLE] if url_key(ARTICLE.url) in keys else [])
-    monkeypatch.setattr(read, "fetch_discussions_by_url_keys",
-                        lambda cur, keys: [DISCUSSION] if url_key(DISCUSSION.url) in keys else [])
-    monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {30: "文章正文"})
-    monkeypatch.setattr(read, "fetch_discussion_texts", lambda cur, ids: {70: "评论正文"})
+                        lambda cur, keys: [a for a in (ARTICLE, SECOND) if url_key(a.url) in keys])
+    monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {i: "文章正文" for i in ids})
 
 
 def _newsdb_server(monkeypatch) -> InProcessMCPServer:
@@ -77,6 +72,15 @@ def test_corpus_range_is_rendered_in_the_user_zone(monkeypatch):
         assert "2026-11-19 至 2026-11-24" in corpus.corpus_info()
 
 
+def test_corpus_roles_name_other_publishers_only_when_there_are_some(monkeypatch):
+    day = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    rows = [("media", 3, day, day), ("official", 2, day, day)]
+    monkeypatch.setattr(corpus, "_cache", (time.monotonic(), (rows, [])))
+    assert "发布方角色：官方 2 篇；媒体 3 篇。" in corpus.corpus_info()
+    monkeypatch.setattr(corpus, "_cache", (time.monotonic(), ([*rows, ("unknown", 1, day, day)], [])))
+    assert "发布方角色：官方 2 篇；媒体 3 篇；其他 1 篇。" in corpus.corpus_info()
+
+
 def test_newsdb_server_exposes_two_tools_and_one_resource(monkeypatch):
     server = _newsdb_server(monkeypatch)
     assert [row["qualified_name"] for row in server.list_tools()] == [
@@ -101,23 +105,12 @@ def test_call_tool_reads_library_url_without_user_provided_check(monkeypatch, fa
     }
 
 
-def test_call_tool_reads_discussion_page_url(monkeypatch, fake_db):
-    result = _newsdb_server(monkeypatch).call_tool("read_articles", {"urls": [DISCUSSION_URL]})
-    assert result == {
-        "status": "ok",
-        "text": "read_articles 结果：\n[E1] HackerNews 讨论｜全文 4 字符\n开头：评论正文",
-        "evidence": [{"eid": "E1", "url": DISCUSSION.url, "title": "Genie 4 adds audio",
-                      "source": "HackerNews 讨论", "published_at": ""}],
-    }
-
-
 def test_call_tool_search_news_lists_every_registered_evidence(monkeypatch):
     related = replace(ARTICLE, article_id=31, url="https://example.com/other", title="Other report",
                       publisher="Example", published_at=datetime(2026, 11, 10, 8, 0, tzinfo=timezone.utc))
-    stats = StoryStats(story_id=5, report_count=2, publisher_count=2, publisher_kinds=("media",), hn_score=955,
-                       hn_comments=312, hn_sighting_id=70, first_at=related.published_at,
-                       last_at=ARTICLE.published_at)
-    hit = StoryHit(lead=ARTICLE, stats=stats, related=(related,), discussion=DISCUSSION, match_score=None)
+    stats = StoryStats(story_id=5, report_count=2, publisher_count=2, publisher_kinds=("media",),
+                       first_at=related.published_at, last_at=ARTICLE.published_at)
+    hit = StoryHit(lead=ARTICLE, stats=stats, related=(related,), match_score=None)
     monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False))
 
     result = _newsdb_server(monkeypatch).call_tool("search_news", {"topic": "ai"})
@@ -125,7 +118,7 @@ def test_call_tool_search_news_lists_every_registered_evidence(monkeypatch):
     assert result["status"] == "ok"
     assert result["text"].startswith("search_news 结果，topic=ai，最近 14 天，按重要性：1 个故事\n[E1] Genie 4 adds audio")
     assert [(row["eid"], row["source"], row["published_at"]) for row in result["evidence"]] == [
-        ("E1", "TechCrunch", "2026-11-12"), ("E2", "Example", "2026-11-10"), ("E3", "HackerNews 讨论", "")]
+        ("E1", "TechCrunch", "2026-11-12"), ("E2", "Example", "2026-11-10")]
 
 
 def test_call_tool_errors_have_status_error(monkeypatch, fake_db):
@@ -144,7 +137,7 @@ def test_call_tool_errors_have_status_error(monkeypatch, fake_db):
 def test_each_call_starts_a_new_registry(monkeypatch, fake_db):
     server = _newsdb_server(monkeypatch)
     first = server.call_tool("read_articles", {"urls": [ARTICLE.url]})
-    second = server.call_tool("read_articles", {"urls": [DISCUSSION_URL]})
+    second = server.call_tool("read_articles", {"urls": [SECOND.url]})
     assert [row["eid"] for row in first["evidence"]] == ["E1"]
     assert [row["eid"] for row in second["evidence"]] == ["E1"]
     again = server.call_tool("read_articles", {"urls": [ARTICLE.url]})

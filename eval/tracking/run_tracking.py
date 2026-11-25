@@ -36,7 +36,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agent.config import DEFAULT_ZONE  # noqa: E402
-from agent.retrieval.stories import fetch_discussions_by_url_keys  # noqa: E402
 from eval.acceptance.run_acceptance import _append_jsonl, _cell, _read_jsonl  # noqa: E402
 from eval.helpers import (  # noqa: E402
     add_db_args, answer_line, configure_stdout, parse_answers, pct, read_choices, readonly_cursor,
@@ -564,9 +563,22 @@ def lookup_story_ids(cur, article_ids: list[int]) -> dict[int, int | None]:
 
 
 def lookup_discussion_stories(cur, keys: list[str]) -> dict[str, int | None]:
-    discussions = fetch_discussions_by_url_keys(cur, keys)
-    stories = lookup_story_ids(cur, [d.article_id for d in discussions])
-    return {url_key(d.url): stories.get(d.article_id) for d in discussions}
+    discussions: list[tuple[int, str]] = []
+    if keys:
+        # Discussion URLs were stored as https://news.ycombinator.com/item?id=N, which is "https://" + url_key.
+        cur.execute(
+            """
+            SELECT d.sighting_id, s.article_id, d.url, a.title, s.score, d.comment_total
+            FROM news.discussion d
+            JOIN news.sighting s ON s.sighting_id = d.sighting_id
+            JOIN news.article a ON a.article_id = s.article_id
+            WHERE d.url = ANY(%s) AND a.status = 'ready'
+            """,
+            (["https://" + key for key in keys],),
+        )
+        discussions = [(article_id, url) for _, article_id, url, *_ in cur.fetchall()]
+    stories = lookup_story_ids(cur, [article_id for article_id, _ in discussions])
+    return {url_key(url): stories.get(article_id) for article_id, url in discussions}
 
 
 class _FollowStore:

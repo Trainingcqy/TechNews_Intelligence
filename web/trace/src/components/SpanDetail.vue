@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { compactArgs, formatDate, formatMs, formatScore, formatTime } from "../format";
 import { REASON } from "../labels";
-import { articleTitle, candidateRows, durationMs, evidenceTitle, nodeTitle, parentOf, rerankScores } from "../trace";
+import { articleTitle, candidateRows, durationMs, nodeTitle, parentOf, rerankScores } from "../trace";
 import WarningList from "./WarningList.vue";
 
 const props = defineProps({
@@ -43,7 +43,7 @@ const historyEvidence = computed(() => {
   const rows = props.trace.run.output?.evidence || [];
   return (output.value.history_evidence || []).map((eid) => {
     const row = rows.find((item) => item.eid === eid);
-    return { eid, title: row ? evidenceTitle(props.trace, row) : "" };
+    return { eid, title: row ? articleTitle(props.trace, row.article_id) : "" };
   });
 });
 
@@ -57,16 +57,11 @@ function articleMeta(articleId) {
 }
 
 function itemLabel(item) {
-  if (item.sighting_id != null) return props.trace.evidenceBySighting.get(item.sighting_id)?.eid || item.target;
   if (item.article_id != null) return props.trace.evidenceByArticle.get(item.article_id)?.eid || item.target;
   return item.target;
 }
 
 function itemTitle(item) {
-  if (item.sighting_id != null) {
-    const discussion = props.trace.discussions[String(item.sighting_id)];
-    return discussion ? `HackerNews 讨论：${discussion.title}` : "";
-  }
   return item.article_id != null ? articleTitle(props.trace, item.article_id) : "";
 }
 

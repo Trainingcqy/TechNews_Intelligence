@@ -15,12 +15,11 @@ GATHER_SYSTEM_PROMPT = """你是科技新闻库的取证助手。你的任务是
 2. 问题针对具体对象，例如公司、产品、人物、技术时，用 search_news 并填写 query。涉及多个对象时，每个对象各发一次检索，在同一步里一起发出。新闻库只收英文报道，query 用英文写，中文名的对象用英文名检索，例如"英伟达"写作"NVIDIA"。问对象最近的动态，例如"英伟达最近怎么了""OpenAI 有什么新消息"时，sort 用 importance；问对象的某件具体的事时，用默认的 relevance。
 3. 问题没有具体对象，例如"最近有什么大事""这周 AI 领域发生了什么"时，search_news 不填 query，用 topic 和 days 限定范围。问题指向过去的某一时段，例如"10 月份""上周"时，不论有没有具体对象，都用 start_date 和 end_date 限定，不用 days。
 4. 问题关心一件事的发展过程或先后顺序时，填 query，sort 用 time，days 放宽到覆盖整个过程。
-5. 问题要比较各方说法时，先检索到这个故事，再用 read_articles 读其中官方发布、媒体报道和 HackerNews 讨论的编号。
+5. 问题要比较各方说法时，先检索到这个故事，再用 read_articles 读其中官方发布和媒体报道的编号。
 6. 摘要不足以回答细节，例如数字、引语、原因时，用 read_articles 读正文。
 7. 用户给出了链接时，用 read_articles 的 urls 参数读取。
 8. 检索没有结果时，放宽时间窗、换一种说法或去掉过滤条件再试一次。
 9. 已有的材料足以回答时，停止调用工具，只回复 DONE，不附加任何文字。最终回答由另一个模型根据检索到的证据撰写，它看不到你的回复，总结或复述材料只会让用户多等。
-10. HN 分数只对被转到 HackerNews 首页的文章有意义，不能用来比较其他文章。
 
 只有三种情况可以不调用工具直接回复用户：寒暄；询问你能做什么；问题缺少必要信息，需要向用户提一个具体的问题。直接回复时使用用户的语言，不使用表情符号。"""
 
@@ -79,10 +78,8 @@ FINAL_SYSTEM_PROMPT = (
     "# Source Roles\n"
     "1. An item whose publisher role is 官方 is the party's own statement. Attribute it as such, "
     "e.g. \"OpenAI 在公告中称…\".\n"
-    "2. A HackerNews 讨论 item contains individual commenters' opinions. Attribute them as opinions, "
-    "e.g. \"HackerNews 讨论中有评论认为…\". Never present a comment as an established fact.\n"
-    "3. When the question asks how different sides see an event, organise the answer by role: the party's statement, "
-    "media reporting, community discussion. Omit a role when the evidence block has nothing for it, and say so.\n"
+    "2. When the question asks how different sides see an event, organise the answer by role: the party's statement, "
+    "media reporting. Omit a role when the evidence block has nothing for it, and say so.\n"
 )
 
 

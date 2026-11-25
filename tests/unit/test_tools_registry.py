@@ -28,11 +28,10 @@ PUBLISHED = datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc)
 ARTICLE = Article(
     article_id=30, url="https://techcrunch.com/genie-4", title="Genie 4 adds audio", title_zh="",
     summary="谷歌发布 Genie 4。", topics=("ai",), kind="release", publisher="TechCrunch", publisher_kind="media",
-    lang="en", published_at=PUBLISHED, body_level="full", hn_score=None, hn_comments=None, hn_sighting_id=None,
-    story_id=5,
+    lang="en", published_at=PUBLISHED, body_level="full", story_id=5,
 )
-STATS = StoryStats(story_id=5, report_count=1, publisher_count=1, publisher_kinds=("media",), hn_score=None,
-                   hn_comments=None, hn_sighting_id=None, first_at=PUBLISHED, last_at=PUBLISHED)
+STATS = StoryStats(story_id=5, report_count=1, publisher_count=1, publisher_kinds=("media",),
+                   first_at=PUBLISHED, last_at=PUBLISHED)
 
 
 def _call(name: str, args: dict, call_id: str = "c1") -> dict:
@@ -69,7 +68,6 @@ def test_search_args_bounds(field, good, bad):
 
 @pytest.mark.parametrize("fields", [
     {"sort": "relevance"},
-    {"query": "Genie 4", "sort": "hn"},
     {"end_date": date(2026, 10, 31)},
     {"start_date": date(2026, 11, 1), "end_date": date(2026, 10, 31)},
     {"topic": "hardware"},
@@ -181,8 +179,7 @@ def test_run_call_turns_handler_exception_into_error_payload(monkeypatch):
 
 
 def test_run_call_records_stories_and_weak_match(monkeypatch):
-    hit = StoryHit(lead=ARTICLE, stats=STATS, related=(replace(ARTICLE, article_id=31),), discussion=None,
-                   match_score=0.2)
+    hit = StoryHit(lead=ARTICLE, stats=STATS, related=(replace(ARTICLE, article_id=31),), match_score=0.2)
     monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=True))
     monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
     with request_trace(question="q", channel="cli") as trace:
@@ -190,8 +187,7 @@ def test_run_call_records_stories_and_weak_match(monkeypatch):
                  state=TurnState(user_urls=set()))
 
     (span,) = trace.spans
-    assert span.output == {"stories": [{"story_id": 5, "lead": 30, "related": [31], "discussion": None,
-                                        "reports": 1, "publishers": 1, "match_score": 0.2}]}
+    assert span.output == {"stories": [{"story_id": 5, "lead": 30, "related": [31], "reports": 1, "publishers": 1, "match_score": 0.2}]}
     assert span.warnings == ["low_relevance"]
 
 

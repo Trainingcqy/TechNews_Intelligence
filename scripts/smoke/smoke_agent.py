@@ -22,7 +22,7 @@ from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 
 from agent import prompts  # noqa: E402
 from agent.citations import split_status  # noqa: E402
-from agent.config import BEIJING, AgentConfig  # noqa: E402
+from agent.config import DEFAULT_ZONE, AgentConfig  # noqa: E402
 from agent.evidence import EvidenceRegistry  # noqa: E402
 from agent.llm import ModelCallError, ModelHandle, build_models, call_text, call_with_tools, coerce_to_text  # noqa: E402
 from agent.tools.registry import PreparedCall, TurnState, prepare_call, tool_schemas  # noqa: E402
@@ -46,11 +46,8 @@ def _synthetic_registry() -> EvidenceRegistry:
         publisher="TechCrunch",
         publisher_kind="media",
         lang="en",
-        published_at=datetime(2026, 11, 12, 8, 0, tzinfo=timezone.utc).astimezone(BEIJING),
+        published_at=datetime(2026, 11, 12, 8, 0, tzinfo=timezone.utc).astimezone(DEFAULT_ZONE),
         body_level="full",
-        hn_score=None,
-        hn_comments=None,
-        hn_sighting_id=None,
         story_id=1,
     )
     registry = EvidenceRegistry()
@@ -61,7 +58,7 @@ def _synthetic_registry() -> EvidenceRegistry:
 def check_gather(handle: ModelHandle, config: AgentConfig) -> bool:
     print("==== 取证 ====")
     system = prompts.GATHER_SYSTEM_PROMPT.format(
-        today=f"{datetime.now(BEIJING):%Y-%m-%d}", corpus=CORPUS, follows=""
+        today=f"{datetime.now(DEFAULT_ZONE):%Y-%m-%d}", corpus=CORPUS, follows=""
     )
     messages = [SystemMessage(system), HumanMessage(QUESTION)]
     started = time.monotonic()

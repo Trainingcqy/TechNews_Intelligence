@@ -17,8 +17,6 @@ from common.urls import extract_urls, url_key
 
 logger = logging.getLogger(__name__)
 
-DISCUSSION_SOURCE = "HackerNews 讨论"
-
 
 @dataclass(frozen=True)
 class TurnContext:
@@ -41,12 +39,7 @@ def build_context(history: list[dict], registry: EvidenceRegistry, config: Agent
     turns = turns[max(0, len(turns) - config.history_turns):]
 
     turn_sources = [_sources(reply) for _, reply in turns]
-    keys = list(dict.fromkeys(
-        url_key(source["url"])
-        for sources in turn_sources
-        for source in sources
-        if source.get("source") != DISCUSSION_SOURCE
-    ))
+    keys = list(dict.fromkeys(url_key(source["url"]) for sources in turn_sources for source in sources))
     _register(keys, registry)
 
     messages: list[BaseMessage] = []

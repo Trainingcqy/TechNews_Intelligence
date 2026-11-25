@@ -1,4 +1,4 @@
-"""read_articles: bodies of articles and discussions, their registration and text for the gather model."""
+"""read_articles: article bodies, their registration and text for the gather model."""
 
 from __future__ import annotations
 
@@ -6,14 +6,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from agent.config import AgentConfig, user_zone
-from agent.retrieval.stories import (
-    fetch_articles_by_url_keys,
-    fetch_bodies,
-    fetch_discussion_texts,
-    fetch_discussions_by_url_keys,
-)
+from agent.retrieval.stories import fetch_articles_by_url_keys, fetch_bodies
 from agent.trace import warn
-from agent.types import Article, Discussion
+from agent.types import Article
 from common.db import get_conn, put_conn
 from common.urls import url_key
 
@@ -28,7 +23,6 @@ OVER_QUOTA = "超出本次请求的读取上限"
 class ReadItem:
     target: str  # 证据编号或地址
     article: Article | None
-    discussion: Discussion | None
     text: str | None
     total_chars: int
     error: str | None
@@ -41,14 +35,14 @@ class ReadResult:
 
 def run_read_articles(prepared: PreparedCall, *, registry, state) -> ReadResult:
     args = prepared.args
-    # (target, article, discussion, error) in request order: ids first, then urls.
-    resolved: list[tuple[str, Article | None, Discussion | None, str | None]] = []
+    # (target, article, error) in request order: ids first, then urls.
+    resolved: list[tuple[str, Article | None, str | None]] = []
     for eid in args.ids:
         evidence = registry.get(eid)
         if evidence is None:
-            resolved.append((eid, None, None, "未知编号"))
+            resolved.append((eid, None, "未知编号"))
         else:
-            resolved.append((eid, evidence.article, evidence.discussion, None))
+            resolved.append((eid, evidence.article, None))
     url_keys = {url: url_key(url) for url in args.urls}
     allowed = {url: key for url, key in url_keys.items() if state.allow_any_library_url or key in state.user_urls}
 
@@ -56,37 +50,31 @@ def run_read_articles(prepared: PreparedCall, *, registry, state) -> ReadResult:
     try:
         cur = conn.cursor()
         by_key = {url_key(a.url): a for a in fetch_articles_by_url_keys(cur, list(allowed.values()))}
-        # A HackerNews discussion page is not an article URL, so keys without an article are looked up as discussions.
-        missing = [key for key in allowed.values() if key not in by_key]
-        discussion_by_key = {url_key(d.url): d for d in fetch_discussions_by_url_keys(cur, missing)}
         for url, key in url_keys.items():
             if url not in allowed:
-                resolved.append((url, None, None, "该链接不是用户提供的"))
+                resolved.append((url, None, "该链接不是用户提供的"))
             elif key in by_key:
-                resolved.append((url, by_key[key], None, None))
-            elif key in discussion_by_key:
-                resolved.append((url, None, discussion_by_key[key], None))
+                resolved.append((url, by_key[key], None))
             else:
-                resolved.append((url, None, None, "该链接不在新闻库内"))
-        bodies = fetch_bodies(cur, [a.article_id for _, a, _, _ in resolved if a and a.body_level == "full"])
-        texts = fetch_discussion_texts(cur, [d.sighting_id for _, _, d, _ in resolved if d])
+                resolved.append((url, None, "该链接不在新闻库内"))
+        bodies = fetch_bodies(cur, [a.article_id for _, a, _ in resolved if a and a.body_level == "full"])
         cur.close()
     finally:
         put_conn(conn)
 
     items = []
-    for target, article, discussion, error in resolved:
+    for target, article, error in resolved:
         if error is None:
-            full = texts.get(discussion.sighting_id) if discussion else bodies.get(article.article_id)
+            full = bodies.get(article.article_id)
             if full is None:
                 error = "没有入库正文"
         if error is not None:
-            items.append(ReadItem(target, article, discussion, None, 0, error))
+            items.append(ReadItem(target, article, None, 0, error))
         else:
-            items.append(ReadItem(target, article, discussion, full[:args.max_chars], len(full), None))
+            items.append(ReadItem(target, article, full[:args.max_chars], len(full), None))
     if prepared.dropped:
         warn("read_targets_dropped")
-        items.extend(ReadItem(target, None, None, None, 0, OVER_QUOTA) for target in prepared.dropped)
+        items.extend(ReadItem(target, None, None, 0, OVER_QUOTA) for target in prepared.dropped)
     return ReadResult(items=items)
 
 
@@ -95,7 +83,6 @@ def read_trace_output(result: ReadResult) -> dict:
         {
             "target": item.target,
             "article_id": item.article.article_id if item.article else None,
-            "sighting_id": item.discussion.sighting_id if item.discussion else None,
             "chars": len(item.text) if item.text is not None else 0,
             "total_chars": item.total_chars,
             "error": item.error,
@@ -116,8 +103,6 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
         evidence = registry.get(item.target)
         if evidence is None and item.article is not None:
             evidence = registry.add_article(item.article, "summary")
-        elif evidence is None and item.discussion is not None:
-            evidence = registry.add_discussion(item.discussion)
         label = evidence.eid if evidence else item.target
         if item.error is not None:
             lines.append(f"[{label}] 读取失败：{item.error}。")
@@ -125,12 +110,9 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
         truncated = item.total_chars > len(item.text)
         registry.set_fulltext(evidence.eid, item.text, item.total_chars, truncated)
         read.append(evidence)
-        if item.discussion is not None:
-            head = f"[{label}] HackerNews 讨论"
-        else:
-            article = item.article
-            published = article.published_at.astimezone(user_zone())
-            head = f"[{label}] 《{article.title}》{article.publisher} · {published:%Y-%m-%d}"
+        article = item.article
+        published = article.published_at.astimezone(user_zone())
+        head = f"[{label}] 《{article.title}》{article.publisher} · {published:%Y-%m-%d}"
         size = f"全文 {item.total_chars} 字符"
         if truncated:
             size += f"，已读取前 {len(item.text)} 字符"

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from agent.config import user_zone
-from agent.types import Article, Discussion, Evidence, StoryStats
+from agent.types import Article, Evidence, StoryStats
 from common.urls import url_key
 
 _LEVEL_RANK = {"listed": 0, "summary": 1, "fulltext": 2}
@@ -22,14 +22,14 @@ PUBLISHER_KIND_LABELS = {
 class EvidenceRegistry:
     def __init__(self) -> None:
         self._items: dict[str, Evidence] = {}
-        self._eid_by_key: dict[tuple[str, str], str] = {}
+        self._eid_by_key: dict[str, str] = {}
         self.seen_dates: dict[int, date] = {}  # 故事编号到用户此前看到它的日期，collect 写入
 
     def add_article(self, article: Article, level: str, stats: StoryStats | None = None) -> Evidence:
-        key = ("article", url_key(article.url))
+        key = url_key(article.url)
         eid = self._eid_by_key.get(key)
         if eid is None:
-            return self._new(key, doc="article", article=article, discussion=None, level=level, stats=stats)
+            return self._new(key, article=article, level=level, stats=stats)
         evidence = self._items[eid]
         if _LEVEL_RANK[level] > _LEVEL_RANK[evidence.level]:
             evidence.level = level
@@ -37,18 +37,11 @@ class EvidenceRegistry:
             evidence.stats = stats
         return evidence
 
-    def add_discussion(self, discussion: Discussion) -> Evidence:
-        key = ("discussion", url_key(discussion.url))
-        eid = self._eid_by_key.get(key)
-        if eid is None:
-            return self._new(key, doc="discussion", article=None, discussion=discussion, level="listed", stats=None)
-        return self._items[eid]
-
     def get(self, eid: str) -> Evidence | None:
         return self._items.get(eid)
 
     def by_url(self, url: str) -> Evidence | None:
-        eid = self._eid_by_key.get(("article", url_key(url)))
+        eid = self._eid_by_key.get(url_key(url))
         return self._items[eid] if eid else None
 
     def set_fulltext(self, eid: str, text: str, total_chars: int, truncated: bool) -> None:
@@ -64,7 +57,7 @@ class EvidenceRegistry:
     def items(self) -> list[Evidence]:
         return list(self._items.values())
 
-    def _new(self, key: tuple[str, str], **fields) -> Evidence:
+    def _new(self, key: str, **fields) -> Evidence:
         eid = f"E{len(self._items) + 1}"
         evidence = Evidence(eid=eid, **fields)
         self._items[eid] = evidence
@@ -75,30 +68,24 @@ class EvidenceRegistry:
 def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[str, list[str]]:
     """The evidence block, and the ids whose body was dropped to fit max_chars."""
     citable = [evidence for evidence in registry.items() if evidence.level != "listed"]
-    article_eids = {e.article.article_id: e.eid for e in citable if e.doc == "article"}
     fulltext = [e.eid for e in citable if e.level == "fulltext"]
     with_body = list(fulltext)
     while True:
         shown = set(with_body)
-        text = "\n\n".join(_render(e, e.eid in shown, article_eids, registry.seen_dates) for e in citable)
+        text = "\n\n".join(_render(e, e.eid in shown, registry.seen_dates) for e in citable)
         if len(text) <= max_chars or not with_body:
             return text, [eid for eid in fulltext if eid not in shown]
         with_body.pop()
 
 
-def _render(evidence: Evidence, with_body: bool, article_eids: dict[int, str], seen_dates: dict[int, date]) -> str:
-    if evidence.doc == "discussion":
-        lines = _render_discussion(evidence, article_eids)
-        body_label = "评论节选"
-    else:
-        lines = _render_article(evidence, seen_dates)
-        body_label = "正文"
+def _render(evidence: Evidence, with_body: bool, seen_dates: dict[int, date]) -> str:
+    lines = _render_article(evidence, seen_dates)
     if with_body:
         text = evidence.fulltext or ""
         if evidence.truncated:
-            lines.append(f"{body_label}，前 {len(text)} 字符，全文 {evidence.fulltext_total_chars} 字符：")
+            lines.append(f"正文，前 {len(text)} 字符，全文 {evidence.fulltext_total_chars} 字符：")
         else:
-            lines.append(f"{body_label}，全文 {evidence.fulltext_total_chars} 字符：")
+            lines.append(f"正文，全文 {evidence.fulltext_total_chars} 字符：")
         lines.append(text)
     return "\n".join(lines)
 
@@ -129,11 +116,6 @@ def _render_stats(stats: StoryStats) -> str:
     parts = [f"{stats.report_count} 篇报道", f"{stats.publisher_count} 个发布方"]
     if "official" in stats.publisher_kinds:
         parts.append("含官方发布")
-    if stats.hn_score is not None:
-        hn = f"HN 最高 {stats.hn_score} 分"
-        if stats.hn_comments is not None:
-            hn += f"、{stats.hn_comments} 条评论"
-        parts.append(hn)
     parts.append(f"首次 {stats.first_at.astimezone(user_zone()):%Y-%m-%d}")
     parts.append(f"最近 {stats.last_at.astimezone(user_zone()):%Y-%m-%d}")
     return "同一故事：" + "，".join(parts)
@@ -141,15 +123,3 @@ def _render_stats(stats: StoryStats) -> str:
 
 def seen_note(seen: date | None) -> str:
     return f"，此前已在 {seen:%m-%d} 的回答中提及" if seen else ""
-
-
-def _render_discussion(evidence: Evidence, article_eids: dict[int, str]) -> list[str]:
-    discussion = evidence.discussion
-    counts = f"{discussion.comment_total} 条评论"
-    if discussion.score is not None:
-        counts = f"{discussion.score} 分，{counts}"
-    meta = ["性质：社区评论，每条是发言者的个人观点", counts]
-    article_eid = article_eids.get(discussion.article_id)
-    if article_eid:
-        meta.append(f"对应文章 [{article_eid}]")
-    return [f"[{evidence.eid}] HackerNews 讨论：{discussion.title}", "｜".join(meta)]

@@ -19,20 +19,7 @@ class Article:
     lang: str | None
     published_at: datetime  # news.article.event_at
     body_level: str  # full | excerpt | none
-    hn_score: int | None
-    hn_comments: int | None
-    hn_sighting_id: int | None
     story_id: int
-
-
-@dataclass(frozen=True)
-class Discussion:
-    sighting_id: int
-    article_id: int
-    url: str  # HackerNews 讨论页地址
-    title: str  # 对应文章的标题
-    score: int | None
-    comment_total: int
 
 
 @dataclass(frozen=True)
@@ -41,9 +28,6 @@ class StoryStats:
     report_count: int
     publisher_count: int
     publisher_kinds: tuple[str, ...]
-    hn_score: int | None
-    hn_comments: int | None
-    hn_sighting_id: int | None
     first_at: datetime
     last_at: datetime
 
@@ -53,16 +37,13 @@ class StoryHit:
     lead: Article
     stats: StoryStats
     related: tuple[Article, ...]
-    discussion: Discussion | None
     match_score: float | None
 
 
 @dataclass
 class Evidence:
     eid: str  # "E1"
-    doc: Literal["article", "discussion"]
-    article: Article | None
-    discussion: Discussion | None
+    article: Article
     level: Literal["listed", "summary", "fulltext"]
     stats: StoryStats | None = None
     fulltext: str | None = None
@@ -76,7 +57,7 @@ class Source:
     url: str
     title: str
     title_zh: str
-    source: str  # 发布方名称；讨论为 "HackerNews 讨论"
+    source: str  # 发布方名称
     published_at: str  # YYYY-MM-DD
 
 

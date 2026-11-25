@@ -90,12 +90,8 @@ def _evidence_table(runtime: TurnRuntime) -> list[dict]:
     synthesized = bool(runtime.route and runtime.route["decision"] == "synthesize")
     rows = []
     for evidence in runtime.registry.items():
-        row = {"eid": evidence.eid, "doc": evidence.doc, "level": evidence.level,
-               **runtime.provenance.get(evidence.eid, {})}
-        if evidence.doc == "article":
-            row.update(article_id=evidence.article.article_id, story_id=evidence.article.story_id)
-        else:
-            row.update(sighting_id=evidence.discussion.sighting_id, article_id=evidence.discussion.article_id)
+        row = {"eid": evidence.eid, "level": evidence.level, **runtime.provenance.get(evidence.eid, {}),
+               "article_id": evidence.article.article_id, "story_id": evidence.article.story_id}
         if synthesized and evidence.level == "fulltext":
             row["body_in_block"] = evidence.eid not in runtime.dropped_bodies
         if evidence.eid in cited:

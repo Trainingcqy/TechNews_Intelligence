@@ -28,7 +28,7 @@ class SearchNewsArgs(BaseModel):
     topic: Literal[tuple(TOPICS)] | None = None
     kind: Literal[tuple(KINDS)] | None = None
     publisher_kind: Literal["official", "media"] | None = None
-    sort: Literal["relevance", "importance", "time", "hn"] | None = None
+    sort: Literal["relevance", "importance", "time"] | None = None
     limit: int = Field(default=8, ge=1, le=20, description="返回的故事数。")
 
     @field_validator("query")
@@ -42,8 +42,6 @@ class SearchNewsArgs(BaseModel):
             self.sort = "relevance" if self.query else "importance"
         if self.sort == "relevance" and not self.query:
             raise ValueError("sort=relevance requires query")
-        if self.sort == "hn" and self.query:
-            raise ValueError("sort=hn requires query to be empty")
         if self.end_date is not None and self.start_date is None:
             raise ValueError("end_date requires start_date")
         if self.start_date and self.end_date and self.start_date > self.end_date:
@@ -128,9 +126,8 @@ TOOLS: tuple[ToolSpec, ...] = (
             "在新闻库中查找报道，结果按故事归并。有具体对象时填 query；没有具体对象、想看一段时间内发生了什么时不填 query，"
             "用 topic 和 days 限定范围。问的是过去的某一时段，例如\"10 月份\"\"上周\"时，用 start_date 和 end_date，"
             "此时 days 不生效。topic 是领域，kind 是文章类型，publisher_kind 只看官方发布或只看媒体报道。"
-            "sort：relevance 按相关性，time 按时间，两者用于有 query 的检索；importance 按报道的发布方数量和社区分数，"
-            "有 query 时，标题提到检索词、有多家发布方报道的故事排在前面，其余按相关性补齐；"
-            "hn 按 HackerNews 分数，用于没有 query 的浏览。"
+            "sort：relevance 按相关性，time 按时间，两者用于有 query 的检索；importance 按报道的发布方数量，"
+            "有 query 时，标题提到检索词、有多家发布方报道的故事排在前面，其余按相关性补齐。"
         ),
         args_model=SearchNewsArgs,
         run=_run_search,
@@ -140,8 +137,7 @@ TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="read_articles",
         description=(
-            "读取正文。ids 填检索结果里的证据编号，文章和 HackerNews 讨论都可以读；urls 只能填用户消息中出现过的链接。"
-            "摘要不足以回答细节，或需要了解社区评论时使用。"
+            "读取正文。ids 填检索结果里的证据编号；urls 只能填用户消息中出现过的链接。摘要不足以回答细节时使用。"
         ),
         args_model=ReadArticlesArgs,
         run=run_read_articles,

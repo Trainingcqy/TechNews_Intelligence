@@ -243,9 +243,6 @@ def _progress(call: PreparedCall) -> Progress:
 
 
 def _evidence_found(evidence: Evidence) -> EvidenceFound:
-    if evidence.doc == "discussion":
-        discussion = evidence.discussion
-        return EvidenceFound(evidence.eid, discussion.title, "HackerNews 讨论", discussion.url, "")
     article = evidence.article
     return EvidenceFound(evidence.eid, article.title, article.publisher, article.url,
                          f"{article.published_at.astimezone(user_zone()):%Y-%m-%d}")

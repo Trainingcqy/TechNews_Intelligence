@@ -21,7 +21,6 @@ LEXICAL_WEIGHT = 1.0
 SEMANTIC_WEIGHT = 1.0
 EXACT_WEIGHT = 0.7
 
-_POINTS_BOOST_WEIGHT = 0.03
 _FRESHNESS_BOOST_WEIGHT = 0.0
 _TRGM_THRESHOLD = 0.42
 
@@ -41,13 +40,6 @@ def _clamp_int(value: int, minimum: int, maximum: int) -> int:
     except Exception:
         n = minimum
     return max(minimum, min(maximum, n))
-
-
-def _env_flag(name: str, *, default: bool = False) -> bool:
-    raw = str(os.getenv(name, "")).strip().lower()
-    if not raw:
-        return default
-    return raw in {"1", "true", "yes", "on", "enabled"}
 
 
 def _env_float(name: str, *, fallback: float, min_value: float, max_value: float) -> float:
@@ -97,7 +89,6 @@ def fetch_hybrid_rows(
     query_vec_literal = _vector_literal(query_vec)
     has_vector = bool(query_vec_literal)
 
-    points_weight = _POINTS_BOOST_WEIGHT if _env_flag("RETRIEVAL_POINTS_BOOST", default=False) else 0.0
     freshness_weight = _env_float(
         "RETRIEVAL_FRESHNESS_BOOST",
         fallback=_FRESHNESS_BOOST_WEIGHT,
@@ -219,8 +210,6 @@ def fetch_hybrid_rows(
                 + %(freshness_weight)s::float
                     * EXP(-EXTRACT(EPOCH FROM (%(end_at)s - a.event_at)) / 86400.0
                           / GREATEST(EXTRACT(EPOCH FROM (%(end_at)s - %(start_at)s)) / 86400.0, 1.0))
-                + %(points_weight)s::float
-                    * LEAST(1.0, GREATEST(0.0, COALESCE(hn.score, 0)::float / 500.0))
             )::float AS score,
             COALESCE(f.text_score, 0.0)::float AS text_score,
             COALESCE(f.semantic_score, 0.0)::float AS semantic_score,
@@ -270,7 +259,6 @@ def fetch_hybrid_rows(
             "lexical_weight": LEXICAL_WEIGHT,
             "semantic_weight": SEMANTIC_WEIGHT,
             "exact_weight": EXACT_WEIGHT,
-            "points_weight": points_weight,
             "freshness_weight": freshness_weight,
             "trgm_threshold": trgm_threshold,
             "exact_pattern": pattern,

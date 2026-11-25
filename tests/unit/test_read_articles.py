@@ -9,20 +9,17 @@ from agent.evidence import EvidenceRegistry
 from agent.tools import read
 from agent.trace import request_trace
 from agent.tools.registry import PreparedCall, ReadArticlesArgs, TurnState, prepare_call
-from agent.types import Article, Discussion
+from agent.types import Article
 from common.urls import url_key
 
 ARTICLE = Article(
     article_id=30, url="https://www.techcrunch.com/genie-4/", title="Genie 4 adds audio", title_zh="",
     summary="谷歌发布 Genie 4。", topics=("ai",), kind="release", publisher="TechCrunch", publisher_kind="media",
-    lang="en", published_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc), body_level="full",
-    hn_score=None, hn_comments=None, hn_sighting_id=None, story_id=5,
+    lang="en", published_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc), body_level="full", story_id=5,
 )
-DISCUSSION = Discussion(sighting_id=70, article_id=30, url="https://news.ycombinator.com/item?id=1",
-                        title="Genie 4 adds audio", score=955, comment_total=312)
 
 
-def _fake_db(monkeypatch, *, articles=(), discussions=(), bodies=None, discussion_texts=None):
+def _fake_db(monkeypatch, *, articles=(), bodies=None):
     class Conn:
         def cursor(self):
             return self
@@ -33,20 +30,10 @@ def _fake_db(monkeypatch, *, articles=(), discussions=(), bodies=None, discussio
     def by_keys(cur, keys):
         return [a for a in articles if url_key(a.url) in keys]
 
-    discussion_lookups = []
-
-    def discussions_by_keys(cur, keys):
-        discussion_lookups.append(list(keys))
-        return [d for d in discussions if url_key(d.url) in keys]
-
     monkeypatch.setattr(read, "get_conn", Conn)
     monkeypatch.setattr(read, "put_conn", lambda conn: None)
     monkeypatch.setattr(read, "fetch_articles_by_url_keys", by_keys)
-    monkeypatch.setattr(read, "fetch_discussions_by_url_keys", discussions_by_keys)
     monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {i: t for i, t in (bodies or {}).items() if i in ids})
-    monkeypatch.setattr(read, "fetch_discussion_texts",
-                        lambda cur, ids: {i: t for i, t in (discussion_texts or {}).items() if i in ids})
-    return discussion_lookups
 
 
 def _read(registry, state=None, **fields):
@@ -111,7 +98,7 @@ def test_targets_over_the_read_quota_are_reported(monkeypatch):
     assert outcome.gather_text.splitlines()[-2:] == [
         "[E2] 读取失败：超出本次请求的读取上限。", "[https://a.com/x] 读取失败：超出本次请求的读取上限。"]
     assert read.read_trace_output(result)["items"][1] == {
-        "target": "E2", "article_id": None, "sighting_id": None, "chars": 0, "total_chars": 0,
+        "target": "E2", "article_id": None, "chars": 0, "total_chars": 0,
         "error": "超出本次请求的读取上限"}
 
 
@@ -129,68 +116,11 @@ def test_article_without_body_registers_summary_and_skips_fetch(monkeypatch):
     assert outcome.ok is False
 
 
-def test_read_discussion_by_id(monkeypatch):
-    _fake_db(monkeypatch, discussion_texts={70: "评论" * 10})
-    registry = EvidenceRegistry()
-    registry.add_article(ARTICLE, "summary")
-    evidence = registry.add_discussion(DISCUSSION)
-
-    result, outcome = _read(registry, ids=[evidence.eid])
-
-    assert registry.get("E2").level == "fulltext"
-    assert registry.get("E2").fulltext == "评论" * 10
-    assert outcome.gather_text == (
-        "read_articles 结果：\n[E2] HackerNews 讨论｜全文 20 字符\n开头：" + "评论" * 10
-    )
-    assert outcome.new_evidence == (registry.get("E2"),)
-
-
-def test_read_discussion_by_url(monkeypatch):
-    _fake_db(monkeypatch, discussions=[DISCUSSION], discussion_texts={70: "评论" * 10})
-    url = "http://news.ycombinator.com/item?id=1"
-
-    result, outcome = _read(EvidenceRegistry(), TurnState(user_urls=set()), urls=[url])
-    assert result.items[0].error == "该链接不是用户提供的"
-
-    registry = EvidenceRegistry()
-    result, outcome = _read(registry, TurnState(user_urls={url_key(url)}), urls=[url])
-
-    assert (result.items[0].article, result.items[0].discussion) == (None, DISCUSSION)
-    evidence = registry.get("E1")
-    assert (evidence.doc, evidence.level, evidence.fulltext) == ("discussion", "fulltext", "评论" * 10)
-    assert outcome.gather_text == (
-        "read_articles 结果：\n[E1] HackerNews 讨论｜全文 20 字符\n开头：" + "评论" * 10
-    )
-    assert outcome.new_evidence == (evidence,)
-    assert outcome.ok is True
-
-
-def test_discussion_lookup_only_for_urls_without_article(monkeypatch):
-    lookups = _fake_db(monkeypatch, articles=[ARTICLE], discussions=[DISCUSSION],
-                       bodies={30: "正文"}, discussion_texts={70: "评论"})
-    article_url = "https://techcrunch.com/genie-4"
-    discussion_url = "https://news.ycombinator.com/item?id=1"
-    state = TurnState(user_urls=set(), allow_any_library_url=True)
-
-    result, _ = _read(EvidenceRegistry(), state, urls=[article_url, discussion_url])
-
-    assert [(i.article, i.discussion) for i in result.items] == [(ARTICLE, None), (None, DISCUSSION)]
-    assert lookups == [[url_key(discussion_url)]]
-
-
-def test_discussion_url_not_in_library(monkeypatch):
-    _fake_db(monkeypatch)
-    url = "https://news.ycombinator.com/item?id=2"
-    result, outcome = _read(EvidenceRegistry(), TurnState(user_urls={url_key(url)}), urls=[url])
-    assert result.items[0].error == "该链接不在新闻库内"
-    assert outcome.ok is False
-
-
 def test_new_evidence_leaves_out_items_already_citable(monkeypatch):
-    _fake_db(monkeypatch, bodies={30: "正文"}, discussion_texts={70: "评论"})
+    _fake_db(monkeypatch, bodies={30: "正文", 31: "正文"})
     registry = EvidenceRegistry()
     registry.add_article(ARTICLE, "summary")
-    registry.add_discussion(DISCUSSION)
+    registry.add_article(replace(ARTICLE, article_id=31, url="https://www.theverge.com/genie-4"), "listed")
 
     _, outcome = _read(registry, ids=["E1", "E2"])
 

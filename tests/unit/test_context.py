@@ -15,10 +15,8 @@ from common.urls import url_key
 BASE = Article(
     article_id=0, url="", title="t", title_zh="", summary="", topics=(), kind=None,
     publisher="TechCrunch", publisher_kind="media", lang="en",
-    published_at=datetime(2026, 11, 12, tzinfo=timezone.utc), body_level="full",
-    hn_score=None, hn_comments=None, hn_sighting_id=None, story_id=1,
+    published_at=datetime(2026, 11, 12, tzinfo=timezone.utc), body_level="full", story_id=1,
 )
-HN_URL = "https://news.ycombinator.com/item?id=42"
 
 
 class _Conn:
@@ -74,12 +72,11 @@ def test_keeps_last_turns_but_collects_user_urls_from_all_history(monkeypatch):
     assert (ctx.history_turns, ctx.turns_used) == (3, 2)
 
 
-def test_new_format_registers_sources_once_skipping_discussions(monkeypatch):
-    lookups = _patch(monkeypatch, urls=["https://a.com/1", HN_URL])
+def test_new_format_registers_the_sources_found_in_the_library(monkeypatch):
+    lookups = _patch(monkeypatch, urls=["https://a.com/1"])
     sources = [
         {"n": 1, "url": "https://www.a.com/1?utm_source=x", "source": "TechCrunch"},
-        {"n": 2, "url": HN_URL, "source": "HackerNews 讨论"},
-        {"n": 3, "url": "https://gone.com/x", "source": "Wired"},
+        {"n": 2, "url": "https://gone.com/x", "source": "Wired"},
     ]
     history = [_user("q"), _model("甲[1]乙[2]丙[3]丁\n\n来源：\n[1] https://a.com/1", status="answered", sources=sources)]
     registry = EvidenceRegistry()

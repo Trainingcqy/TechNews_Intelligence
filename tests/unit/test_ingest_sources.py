@@ -31,6 +31,7 @@ def test_repository_sources_toml_is_valid() -> None:
     [
         ('{ exclude_url = "(unclosed" }', "invalid exclude_url"),
         ('{ feed_timezone = "Pacific/Nowhere" }', "invalid feed_timezone"),
+        ('{ feed_timezone = "America" }', "invalid feed_timezone"),
     ],
 )
 def test_invalid_channel_config_is_rejected(config: str, message: str) -> None:

@@ -91,7 +91,8 @@ def parse_sources(text: str) -> Sources:
         if "feed_timezone" in channel.config:
             try:
                 ZoneInfo(channel.config["feed_timezone"])
-            except (ZoneInfoNotFoundError, ValueError) as exc:
+            # A name such as "America" is a directory of the zone database and raises an OSError.
+            except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
                 raise ValueError(f"channel {channel.key} has an invalid feed_timezone: {exc}") from exc
         keys.add(channel.key)
         channels.append(channel)

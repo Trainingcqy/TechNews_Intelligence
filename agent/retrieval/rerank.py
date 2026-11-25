@@ -9,6 +9,7 @@ from typing import Any, Sequence
 import requests
 
 from agent.trace import trace_span
+from common import model_settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ RERANK_MODE_LLM = "llm_rerank"
 
 DEFAULT_RERANK_MODE_ENV = "NEWS_RERANK_MODE"
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
-JINA_RERANK_MODEL = "jina-reranker-v3"
+JINA_RERANK_MODEL = model_settings.get("rerank").model
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -147,10 +148,10 @@ def rerank_candidates(
     if resolved_mode == RERANK_MODE_NONE or len(ranked) <= 1:
         return ranked[:top_k]
 
-    model = os.getenv("JINA_RERANK_MODEL", "").strip() or JINA_RERANK_MODEL
-    with trace_span("rerank", input={"candidates": len(ranked)}, attributes={"model": model, "top_k": top_k}) as span:
+    with trace_span("rerank", input={"candidates": len(ranked)},
+                    attributes={"model": JINA_RERANK_MODEL, "top_k": top_k}) as span:
         try:
-            reranked = _call_jina_rerank(query=query, candidates=ranked, top_k=top_k, model=model)
+            reranked = _call_jina_rerank(query=query, candidates=ranked, top_k=top_k, model=JINA_RERANK_MODEL)
         except Exception as exc:  # noqa: BLE001
             logger.warning("rerank failed, keeping the fused order: %s", exc)
             span.fail(exc)

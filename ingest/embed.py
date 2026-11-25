@@ -6,13 +6,14 @@ import json
 import logging
 import os
 
+from common import model_settings
 from ingest import http, store
 from ingest.config import IngestConfig
 
 logger = logging.getLogger(__name__)
 
 EMBEDDINGS_URL = "https://api.jina.ai/v1/embeddings"
-MODEL = "jina-embeddings-v3"
+MODEL = model_settings.get("embedding").model
 DIMENSIONS = 1024
 _DETAIL_BODY_CHARS = 500
 

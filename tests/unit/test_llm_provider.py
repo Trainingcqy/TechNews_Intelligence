@@ -7,12 +7,12 @@ import pytest
 
 from common.llm_provider import (
     DEFAULT_DEEPSEEK_BASE_URL,
-    DEFAULT_DEEPSEEK_MODEL,
     ModelConfig,
     build_chat_model,
     normalize_provider,
     resolve_model_config,
 )
+from common.model_settings import provider_default_models
 
 
 class _FakeChatModel:
@@ -48,7 +48,7 @@ def test_deepseek_builder_uses_base_url_and_default_model(monkeypatch: pytest.Mo
     model = build_chat_model(provider="deepseek", model_name="", temperature=0.2)
 
     assert isinstance(model, _FakeChatModel)
-    assert model.kwargs["model"] == DEFAULT_DEEPSEEK_MODEL
+    assert model.kwargs["model"] == provider_default_models()["deepseek"]
     assert model.kwargs["api_key"] == "sk-test"
     assert model.kwargs["base_url"] == DEFAULT_DEEPSEEK_BASE_URL
     assert model.kwargs["temperature"] == 0.2
@@ -86,7 +86,22 @@ def test_vertex_reads_only_vertex_project(monkeypatch: pytest.MonkeyPatch) -> No
 def test_missing_model_takes_the_provider_default_not_an_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("DEEPSEEK_MODEL", "VERTEX_GENERATION_MODEL", "VERTEX_MODEL", "GEMINI_MODEL"):
         monkeypatch.setenv(name, "from-env")
+    defaults = provider_default_models()
 
-    assert resolve_model_config(provider="deepseek", model_name=None) == ModelConfig("deepseek", "deepseek-v4-pro")
-    assert resolve_model_config(provider="vertex", model_name="") == ModelConfig("vertex", "gemini-3.1-pro-preview")
-    assert resolve_model_config(provider="gemini_api", model_name=None) == ModelConfig("gemini_api", "gemini-2.5-pro")
+    assert resolve_model_config(provider="deepseek", model_name=None) == ModelConfig("deepseek", defaults["deepseek"])
+    assert resolve_model_config(provider="vertex", model_name="") == ModelConfig("vertex", defaults["vertex"])
+    assert resolve_model_config(provider="gemini_api", model_name=None) == ModelConfig("gemini_api",
+                                                                                       defaults["gemini_api"])
+
+
+@pytest.mark.parametrize(("provider", "module", "attr"), [
+    ("deepseek", "langchain_openai", "ChatOpenAI"),
+    ("vertex", "langchain_google_vertexai", "ChatVertexAI"),
+    ("gemini_api", "langchain_google_genai", "ChatGoogleGenerativeAI"),
+])
+def test_temperature_none_is_not_sent(monkeypatch: pytest.MonkeyPatch, provider, module, attr) -> None:
+    _install_fake_module(monkeypatch, module, attr)
+    for name in ("DEEPSEEK_API_KEY", "VERTEX_PROJECT", "GEMINI_API_KEY"):
+        monkeypatch.setenv(name, "x")
+
+    assert "temperature" not in build_chat_model(provider=provider, model_name="m", temperature=None).kwargs

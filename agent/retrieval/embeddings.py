@@ -8,11 +8,12 @@ import os
 import requests
 
 from agent.trace import trace_span
+from common import model_settings
 
 logger = logging.getLogger(__name__)
 
 JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
-JINA_MODEL = "jina-embeddings-v3"
+JINA_MODEL = model_settings.get("embedding").model
 
 
 def get_query_embedding(query: str) -> list[float] | None:

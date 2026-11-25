@@ -6,8 +6,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 
-from common.llm_provider import DEFAULT_DEEPSEEK_FLASH_MODEL
-
 
 @dataclass(frozen=True)
 class IngestConfig:
@@ -30,10 +28,6 @@ class IngestConfig:
     backoff_minutes: tuple[int, ...] = (10, 60, 360, 1440)
 
     analyze_body_chars: int = 30_000
-    analyze_provider: str = "deepseek"
-    analyze_model: str = DEFAULT_DEEPSEEK_FLASH_MODEL
-    # Requests response_format json_object. Parsing and validation are the same either way.
-    analyze_json_mode: bool = True
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> IngestConfig:
@@ -45,12 +39,6 @@ class IngestConfig:
                 continue
             if f.name == "backoff_minutes":
                 overrides[f.name] = tuple(int(part) for part in raw.split(","))
-            elif f.type == "int":
-                overrides[f.name] = int(raw)
-            elif f.type == "bool":
-                if raw.lower() not in ("true", "false"):
-                    raise ValueError(f"INGEST_{f.name.upper()} must be true or false, got {raw!r}")
-                overrides[f.name] = raw.lower() == "true"
             else:
-                overrides[f.name] = raw
+                overrides[f.name] = int(raw)
         return cls(**overrides)

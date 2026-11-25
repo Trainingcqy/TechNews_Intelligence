@@ -9,6 +9,7 @@ from agent.config import user_zone
 from agent.evidence import PUBLISHER_KIND_LABELS, seen_note
 from agent.retrieval.search import SearchResult, search_stories
 from agent.types import StoryHit, StoryStats
+from common import prompt_text
 
 if TYPE_CHECKING:
     from .registry import SearchNewsArgs, ToolOutcome
@@ -45,7 +46,7 @@ def commit_search_news(args: SearchNewsArgs, result: SearchResult, *, registry) 
 
     scope = _scope(args)
     if not result.hits:
-        text = f"search_news 没有找到结果，{scope}。可以放宽时间窗、换一种英文说法，或去掉过滤条件。"
+        text = f"search_news 没有找到结果，{scope}。" + prompt_text.text("tools.search_news.no_result_hint")
         return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text=text)
 
     lines = [f"search_news 结果，{scope}，{SORT_LABELS[args.sort]}：{len(result.hits)} 个故事"]

@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import httpx
 import pytest
 from langchain_openai import ChatOpenAI
 
+from common import prompt_text
 from ingest.analyze import (
-    NO_BODY_NOTE,
     AnalyzeFailure,
     InvalidJson,
     SchemaViolation,
     analyze,
     build_messages,
     parse_analysis,
+    run_analyze,
 )
 from ingest.config import IngestConfig
 from ingest.store import AnalyzeItem
@@ -79,11 +81,14 @@ def test_build_messages_truncates_body():
 @pytest.mark.parametrize(("body_level", "noted"), [("full", False), ("excerpt", True), ("none", True)])
 def test_build_messages_body_note(body_level, noted):
     _, user = build_messages("t", "p", "body", body_level, body_chars=100)
-    expected = f"complete sentences.\n{NO_BODY_NOTE}\n\n2. topics" if noted else "complete sentences.\n\n\n2. topics"
+    note = prompt_text.text("analyze.no_body_note")
+    expected = f"complete sentences.\n{note}\n\n2. topics" if noted else "complete sentences.\n\n\n2. topics"
     assert expected in user["content"]
 
 
-def test_analyze_sends_max_tokens_as_is():
+@pytest.mark.parametrize("json_mode", [True, False])
+def test_analyze_sends_max_tokens_as_is_and_json_mode_from_models_toml(models_file, json_mode):
+    models_file(f'[analyze]\nprovider = "deepseek"\nmodel = "m"\nmax_tokens = 123\njson_mode = {str(json_mode).lower()}\n')
     bodies = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -93,7 +98,8 @@ def test_analyze_sends_max_tokens_as_is():
         return httpx.Response(200, json={"id": "x", "object": "chat.completion", "created": 0, "model": "m", "choices": [choice]})
 
     analyze(_chat_model(handler), _ITEM, IngestConfig())
-    assert bodies[0]["max_tokens"] == 10000 and "max_completion_tokens" not in bodies[0]
+    assert bodies[0]["max_tokens"] == 123 and "max_completion_tokens" not in bodies[0]
+    assert ("response_format" in bodies[0]) is json_mode
 
 
 def test_analyze_sends_no_extra_body_to_other_chat_models():
@@ -102,6 +108,33 @@ def test_analyze_sends_no_extra_body_to_other_chat_models():
             return SimpleNamespace(text=_raw())
 
     assert analyze(Model(), _ITEM, IngestConfig()).model_dump() == _VALID
+
+
+def test_run_analyze_builds_the_model_of_models_toml(models_file, monkeypatch):
+    models_file('[analyze]\nprovider = "vertex"\nmodel = "m"\ntemperature = 0.7\nmax_tokens = 1\njson_mode = false\n')
+    calls = []
+    monkeypatch.setattr("ingest.analyze.build_chat_model", lambda **kwargs: calls.append(kwargs))
+
+    @contextmanager
+    def transaction():
+        yield SimpleNamespace(execute=lambda *args: None, fetchall=lambda: [])
+
+    run_analyze(IngestConfig(), transaction=transaction)
+    assert calls == [{"provider": "vertex", "model_name": "m", "temperature": 0.7}]
+
+
+def test_analyze_retries_once_with_the_validation_error():
+    sent = []
+    replies = iter(["not json", _raw()])
+
+    class Model:
+        def invoke(self, messages, response_format=None):
+            sent.append(messages[1]["content"])
+            return SimpleNamespace(text=next(replies))
+
+    assert analyze(Model(), _ITEM, IngestConfig()).model_dump() == _VALID
+    error = "the output is not valid JSON: Expecting value: line 1 column 1 (char 0)"
+    assert sent[1] == sent[0] + "\n\n" + prompt_text.render("analyze.retry_note", error=error)
 
 
 @pytest.mark.parametrize(

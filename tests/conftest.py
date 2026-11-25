@@ -7,7 +7,7 @@ import sys
 import types
 import uuid
 from contextlib import contextmanager
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from shutil import rmtree
 from unittest.mock import AsyncMock, MagicMock
@@ -85,6 +85,22 @@ def tmp_path(request: pytest.FixtureRequest) -> Iterator[Path]:
         yield case_dir
     finally:
         _remove_tree(case_dir, root=PROJECT_ROOT)
+
+
+@pytest.fixture()
+def models_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[str], None]]:
+    """Replace config/models.toml with the given sections plus two providers."""
+    from common import model_settings
+
+    def write(sections: str) -> None:
+        path = tmp_path / "models.toml"
+        providers = '[providers.deepseek]\ndefault_model = "d"\n[providers.vertex]\ndefault_model = "v"\n'
+        path.write_text(sections + providers, encoding="utf-8")
+        monkeypatch.setattr(model_settings, "MODELS_FILE", path)
+        model_settings._settings.cache_clear()
+
+    yield write
+    model_settings._settings.cache_clear()
 
 
 @pytest.fixture()

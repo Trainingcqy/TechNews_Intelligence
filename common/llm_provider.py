@@ -6,18 +6,9 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-DEFAULT_GEMINI_API_MODEL = "gemini-2.5-pro"
-DEFAULT_VERTEX_MODEL = "gemini-3.1-pro-preview"
-DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
-DEFAULT_DEEPSEEK_FLASH_MODEL = "deepseek-flash"
-DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+from common.model_settings import provider_default_models
 
-# The supported providers and the model used when a caller names none.
-DEFAULT_MODELS = {
-    "gemini_api": DEFAULT_GEMINI_API_MODEL,
-    "vertex": DEFAULT_VERTEX_MODEL,
-    "deepseek": DEFAULT_DEEPSEEK_MODEL,
-}
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 
 @dataclass(frozen=True)
@@ -32,14 +23,15 @@ def _clean(value: Any) -> str:
 
 def normalize_provider(provider: str | None) -> str:
     normalized = _clean(provider).lower()
-    if normalized not in DEFAULT_MODELS:
-        raise ValueError(f"Unsupported provider: {provider}. Expected one of: {'|'.join(DEFAULT_MODELS)}.")
+    providers = provider_default_models()
+    if normalized not in providers:
+        raise ValueError(f"Unsupported provider: {provider}. Expected one of: {'|'.join(providers)}.")
     return normalized
 
 
 def resolve_model_config(*, provider: str | None, model_name: str | None) -> ModelConfig:
     normalized = normalize_provider(provider)
-    return ModelConfig(provider=normalized, model=_clean(model_name) or DEFAULT_MODELS[normalized])
+    return ModelConfig(provider=normalized, model=_clean(model_name) or provider_default_models()[normalized])
 
 
 def _deepseek_timeout() -> float:
@@ -50,9 +42,10 @@ def _deepseek_timeout() -> float:
         return 120.0
 
 
-def build_chat_model(*, provider: str | None, model_name: str | None, temperature: float) -> Any:
-    """Create a LangChain chat model for the requested provider."""
+def build_chat_model(*, provider: str | None, model_name: str | None, temperature: float | None) -> Any:
+    """Create a LangChain chat model for the requested provider. A temperature of None is not sent."""
     config = resolve_model_config(provider=provider, model_name=model_name)
+    options = {} if temperature is None else {"temperature": float(temperature)}
 
     if config.provider == "gemini_api":
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -60,11 +53,7 @@ def build_chat_model(*, provider: str | None, model_name: str | None, temperatur
         api_key = _clean(os.getenv("GEMINI_API_KEY", ""))
         if not api_key:
             raise ValueError("GEMINI_API_KEY is required for provider=gemini_api.")
-        return ChatGoogleGenerativeAI(
-            model=config.model,
-            google_api_key=api_key,
-            temperature=float(temperature),
-        )
+        return ChatGoogleGenerativeAI(model=config.model, google_api_key=api_key, **options)
 
     if config.provider == "vertex":
         from langchain_google_vertexai import ChatVertexAI
@@ -76,7 +65,7 @@ def build_chat_model(*, provider: str | None, model_name: str | None, temperatur
             model=config.model,
             project=project,
             location=_clean(os.getenv("VERTEX_LOCATION", "")) or "global",
-            temperature=float(temperature),
+            **options,
         )
 
     api_key = _clean(os.getenv("DEEPSEEK_API_KEY", ""))
@@ -85,10 +74,4 @@ def build_chat_model(*, provider: str | None, model_name: str | None, temperatur
     base_url = (_clean(os.getenv("DEEPSEEK_BASE_URL", "")) or DEFAULT_DEEPSEEK_BASE_URL).rstrip("/")
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(
-        model=config.model,
-        api_key=api_key,
-        base_url=base_url,
-        temperature=float(temperature),
-        timeout=_deepseek_timeout(),
-    )
+    return ChatOpenAI(model=config.model, api_key=api_key, base_url=base_url, timeout=_deepseek_timeout(), **options)

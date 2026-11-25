@@ -8,19 +8,11 @@ from agent import trace_store
 from agent.llm import ModelCallError, ModelHandle, build_models, call_text, call_with_tools, coerce_to_text, extract_json_object
 from agent.trace import request_trace
 
-_ENV = (
-    "AGENT_GATHER_PROVIDER",
-    "AGENT_GATHER_MODEL",
-    "AGENT_FINAL_PROVIDER",
-    "AGENT_FINAL_MODEL",
-    "AGENT_TEMPERATURE",
-)
+_GATHER = '[gather]\nprovider = "deepseek"\nmodel = "g-model"\n'
 
 
 @pytest.fixture
 def fake_build(monkeypatch):
-    for name in _ENV:
-        monkeypatch.delenv(name, raising=False)
     calls: list[dict] = []
 
     def fake(**kwargs):
@@ -33,30 +25,14 @@ def fake_build(monkeypatch):
     build_models.cache_clear()
 
 
-def test_build_models_defaults(fake_build) -> None:
+def test_build_models_reads_each_use(fake_build, models_file) -> None:
+    models_file('[gather]\nprovider = "vertex"\nmodel = "g-model"\ntemperature = 0.4\n'
+                '[final]\nprovider = "DeepSeek"\nmodel = "f-model"\n')
     gather, final = build_models()
-    assert (gather.role, gather.provider, gather.model) == ("gather", "deepseek", "deepseek-flash")
-    assert (final.role, final.provider, final.model) == ("final", "vertex", "gemini-3.1-pro-preview")
-    assert [c["temperature"] for c in fake_build] == [0.1, 0.1]
-    assert (gather.temperature, final.temperature) == (0.1, 0.1)
-
-
-def test_build_models_env_overrides(fake_build, monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_GATHER_PROVIDER", "vertex")
-    monkeypatch.setenv("AGENT_GATHER_MODEL", "g-model")
-    monkeypatch.setenv("AGENT_FINAL_PROVIDER", "deepseek")
-    monkeypatch.setenv("AGENT_FINAL_MODEL", "f-model")
-    monkeypatch.setenv("AGENT_TEMPERATURE", "0.4")
-    gather, final = build_models()
-    assert (gather.provider, gather.model) == ("vertex", "g-model")
-    assert (final.provider, final.model) == ("deepseek", "f-model")
-    assert [c["temperature"] for c in fake_build] == [0.4, 0.4]
-
-
-def test_provider_override_without_model_uses_provider_default(fake_build, monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_GATHER_PROVIDER", "vertex")
-    gather, _ = build_models()
-    assert (gather.provider, gather.model) == ("vertex", "gemini-3.1-pro-preview")
+    assert (gather.role, gather.provider, gather.model, gather.temperature) == ("gather", "vertex", "g-model", 0.4)
+    assert (final.role, final.provider, final.model, final.temperature) == ("final", "deepseek", "f-model", None)
+    assert fake_build == [{"provider": "vertex", "model_name": "g-model", "temperature": 0.4},
+                          {"provider": "deepseek", "model_name": "f-model", "temperature": None}]
 
 
 def test_build_models_is_cached(fake_build) -> None:
@@ -64,12 +40,12 @@ def test_build_models_is_cached(fake_build) -> None:
     assert len(fake_build) == 2
 
 
-def test_build_failure_raises_and_is_not_cached(fake_build, monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_FINAL_PROVIDER", "nope")
+def test_build_failure_raises_and_is_not_cached(fake_build, models_file) -> None:
+    models_file(_GATHER + '[final]\nprovider = "nope"\nmodel = "f-model"\n')
     with pytest.raises(ModelCallError) as info:
         build_models()
     assert info.value.code == "model_build_valueerror"
-    monkeypatch.delenv("AGENT_FINAL_PROVIDER")
+    models_file(_GATHER + '[final]\nprovider = "vertex"\nmodel = "f-model"\n')
     assert build_models()[1].provider == "vertex"
 
 

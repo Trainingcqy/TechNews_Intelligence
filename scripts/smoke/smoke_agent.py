@@ -57,9 +57,7 @@ def _synthetic_registry() -> EvidenceRegistry:
 
 def check_gather(handle: ModelHandle, config: AgentConfig) -> bool:
     print("==== 取证 ====")
-    system = prompts.GATHER_SYSTEM_PROMPT.format(
-        clock=prompts.gather_clock(datetime.now(DEFAULT_ZONE)), corpus=CORPUS, follows=""
-    )
+    system = prompts.render_gather_system(datetime.now(DEFAULT_ZONE), CORPUS, "")
     messages = [SystemMessage(system), HumanMessage(QUESTION)]
     started = time.monotonic()
     try:

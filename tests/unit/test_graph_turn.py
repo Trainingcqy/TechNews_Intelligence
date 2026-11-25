@@ -18,6 +18,7 @@ from agent.memory import Follow
 from agent.retrieval.search import SearchResult
 from agent.tools import read, registry
 from agent.types import Article, Source, StoryHit, StoryStats
+from common import prompt_text
 
 QUESTION = "Genie 4 有什么新功能？"
 CORPUS = "新闻库范围：测试。"
@@ -125,8 +126,8 @@ def test_direct_reply(turn):
     expected = Answer(status="direct", text="你好！有什么想了解的科技新闻？", request_id="r1")
     assert r.answer == expected
     assert r.events == [UNDERSTANDING, Final(expected)]
-    system = prompts.GATHER_SYSTEM_PROMPT.format(clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS,
-                                                 follows="")
+    system = prompt_text.render("gather.system", clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS,
+                                follows="")
     assert r.gather.calls == [[SystemMessage(system), HumanMessage(QUESTION)]]
     assert r.final.calls == []
 
@@ -350,8 +351,8 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     assert trace.output["seen_dates"] == {"5": "2026-11-10"}
     system = gather.calls[0][0]
     now = _turn_now(trace)
-    assert system == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
-        clock=prompts.gather_clock(now), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, now.date())))
+    assert system == SystemMessage(prompt_text.render(
+        "gather.system", clock=prompts.gather_clock(now), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, now.date())))
     assert "- Genie 4，上次查看 2026-11-10，距今" in system.content
     first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
     assert "｜同一故事 1 篇报道、1 个发布方，此前已在 11-10 的回答中提及\n" in first_result.content
@@ -372,8 +373,8 @@ def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
     r = turn([_search("Genie 4"), DONE], [ANSWERED], user_key="tg:1")
 
     assert r.answer.status == "answered"
-    assert r.gather.calls[0][0] == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
-        clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS, follows=""))
+    assert r.gather.calls[0][0] == SystemMessage(prompt_text.render(
+        "gather.system", clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS, follows=""))
     assert _spans(r.trace, "context")[0].warnings == ["follows_unavailable"]
 
 

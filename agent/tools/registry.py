@@ -14,22 +14,27 @@ from agent.evidence import EvidenceRegistry
 from agent.retrieval.search import SearchResult
 from agent.trace import Span, trace_span, warn
 from agent.types import Evidence
+from common import prompt_text
 from common.taxonomy import KINDS, TOPICS
 
 from .read import ReadResult, commit_read_articles, read_trace_output, run_read_articles
 from .search import commit_search_news, run_search_news, search_trace_output
 
 
+def _field(tool: str, name: str) -> str:
+    return prompt_text.text(f"tools.{tool}.fields.{name}")
+
+
 class SearchNewsArgs(BaseModel):
-    query: str | None = Field(default=None, description="检索词，用英文。问题没有具体对象时留空。")
-    days: int = Field(default=14, ge=1, le=365, description="时间窗：最近多少天。")
-    start_date: date | None = Field(default=None, description="过去某一时段的起始日期，YYYY-MM-DD。填写后 days 不生效。")
-    end_date: date | None = Field(default=None, description="该时段的结束日期，含当天。只能与 start_date 一起填写，不填时到今天。")
+    query: str | None = Field(default=None, description=_field("search_news", "query"))
+    days: int = Field(default=14, ge=1, le=365, description=_field("search_news", "days"))
+    start_date: date | None = Field(default=None, description=_field("search_news", "start_date"))
+    end_date: date | None = Field(default=None, description=_field("search_news", "end_date"))
     topic: Literal[tuple(TOPICS)] | None = None
     kind: Literal[tuple(KINDS)] | None = None
     publisher_kind: Literal["official", "media"] | None = None
     sort: Literal["relevance", "importance", "time"] | None = None
-    limit: int = Field(default=8, ge=1, le=20, description="返回的故事数。")
+    limit: int = Field(default=8, ge=1, le=20, description=_field("search_news", "limit"))
 
     @field_validator("query")
     @classmethod
@@ -50,8 +55,8 @@ class SearchNewsArgs(BaseModel):
 
 
 class ReadArticlesArgs(BaseModel):
-    ids: list[str] = Field(default_factory=list, max_length=5, description="证据编号，如 E3。")
-    urls: list[str] = Field(default_factory=list, max_length=5, description="用户消息里出现的链接。")
+    ids: list[str] = Field(default_factory=list, max_length=5, description=_field("read_articles", "ids"))
+    urls: list[str] = Field(default_factory=list, max_length=5, description=_field("read_articles", "urls"))
     max_chars: int = Field(default=4000, ge=800, le=12000)
 
     @model_validator(mode="after")
@@ -122,13 +127,7 @@ def _run_search(prepared: PreparedCall, *, registry: EvidenceRegistry, state: Tu
 TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="search_news",
-        description=(
-            "在新闻库中查找报道，结果按故事归并。有具体对象时填 query；没有具体对象、想看一段时间内发生了什么时不填 query，"
-            "用 topic 和 days 限定范围。问的是过去的某一时段，例如\"10 月份\"\"上周\"时，用 start_date 和 end_date，"
-            "此时 days 不生效。topic 是领域，kind 是文章类型，publisher_kind 只看官方发布或只看媒体报道。"
-            "sort：relevance 按相关性，time 按时间，两者用于有 query 的检索；importance 按报道的发布方数量，"
-            "有 query 时，标题提到检索词、有多家发布方报道的故事排在前面，其余按相关性补齐。"
-        ),
+        description=prompt_text.text("tools.search_news.description"),
         args_model=SearchNewsArgs,
         run=_run_search,
         commit=commit_search_news,
@@ -136,9 +135,7 @@ TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         name="read_articles",
-        description=(
-            "读取正文。ids 填检索结果里的证据编号；urls 只能填用户消息中出现过的链接。摘要不足以回答细节时使用。"
-        ),
+        description=prompt_text.text("tools.read_articles.description"),
         args_model=ReadArticlesArgs,
         run=run_read_articles,
         commit=commit_read_articles,

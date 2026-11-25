@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from functools import cache
@@ -10,13 +9,8 @@ from typing import Any, Callable
 from langchain_core.messages import AIMessage
 
 from agent.trace import set_model_io, trace_span, usage_from_message
-from common.llm_provider import (
-    DEFAULT_DEEPSEEK_FLASH_MODEL,
-    DEFAULT_VERTEX_MODEL,
-    build_chat_model,
-    normalize_provider,
-    resolve_model_config,
-)
+from common import model_settings
+from common.llm_provider import build_chat_model, resolve_model_config
 
 
 class ModelCallError(Exception):
@@ -34,39 +28,20 @@ class ModelHandle:
     temperature: float | None = None
 
 
-def _clean(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _temperature() -> float:
-    raw = _clean(os.getenv("AGENT_TEMPERATURE", "0.1"))
-    try:
-        return float(raw)
-    except Exception:
-        return 0.1
-
-
 @cache
 def build_models() -> tuple[ModelHandle, ModelHandle]:
-    return (
-        _build_role_model(role="gather", default_provider="deepseek", default_model=DEFAULT_DEEPSEEK_FLASH_MODEL),
-        _build_role_model(role="final", default_provider="vertex", default_model=DEFAULT_VERTEX_MODEL),
-    )
+    return _build_role_model("gather"), _build_role_model("final")
 
 
-def _build_role_model(*, role: str, default_provider: str, default_model: str) -> ModelHandle:
-    prefix = f"AGENT_{role.upper()}"
+def _build_role_model(role: str) -> ModelHandle:
     try:
-        provider = normalize_provider(_clean(os.getenv(f"{prefix}_PROVIDER", "")) or default_provider)
-        # A role's default model belongs to its default provider; any other provider gets its own default model.
-        model_name = _clean(os.getenv(f"{prefix}_MODEL", "")) or (default_model if provider == default_provider else None)
-        config = resolve_model_config(provider=provider, model_name=model_name)
-        temperature = _temperature()
-        client = build_chat_model(provider=config.provider, model_name=config.model, temperature=temperature)
+        spec = model_settings.get(role)
+        config = resolve_model_config(provider=spec.provider, model_name=spec.model)
+        client = build_chat_model(provider=config.provider, model_name=config.model, temperature=spec.temperature)
     except Exception as exc:
         raise ModelCallError(f"model_build_{type(exc).__name__.lower()}", f"{role}: {exc}") from exc
     return ModelHandle(role=role, provider=config.provider, model=config.model, client=client,
-                       temperature=temperature)
+                       temperature=spec.temperature)
 
 
 def call_with_tools(handle: ModelHandle, messages: list, tools: list) -> AIMessage:

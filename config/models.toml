@@ -1,0 +1,43 @@
+# 每个用途用哪个模型、请求时带哪些参数。修改后提交并部署生效。
+# 密钥、Vertex 的项目与区域、DeepSeek 的接口地址与超时在 .env 中设置。
+# provider 取 [providers] 下的名字：deepseek 调 OpenAI 兼容接口，vertex 调 Vertex AI 上的 Gemini，
+# gemini_api 调 Google AI Studio 上的 Gemini。
+# 不写 temperature 时请求不带温度，取供应商的默认值。
+
+# 取证：决定调用哪个工具、填什么参数，须支持工具调用。
+[gather]
+provider = "deepseek"
+model = "deepseek-flash"
+temperature = 0.1
+
+# 综合：依据证据块撰写回答。评测的判官默认也用它。
+[final]
+provider = "vertex"
+model = "gemini-3.1-pro-preview"
+temperature = 0.1
+
+# 采集分析：写摘要、领域与类型。失败分类与 max_tokens 只适配 deepseek；
+# response_format 对 vertex 和 gemini_api 的效果未验证，换成这两个供应商时把 json_mode 设为 false。
+[analyze]
+provider = "deepseek"
+model = "deepseek-flash"
+temperature = 0
+max_tokens = 10000
+json_mode = true
+
+# 向量：采集写入和检索查询共用这一个模型。
+[embedding]
+model = "jina-embeddings-v3"
+
+[rerank]
+model = "jina-reranker-v3"
+
+# 只给供应商、不给模型名时使用的模型，例如 RGB 评测的 --provider。
+[providers.deepseek]
+default_model = "deepseek-v4-pro"
+
+[providers.vertex]
+default_model = "gemini-3.1-pro-preview"
+
+[providers.gemini_api]
+default_model = "gemini-2.5-pro"

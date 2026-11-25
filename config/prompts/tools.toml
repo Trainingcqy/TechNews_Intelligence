@@ -1,0 +1,20 @@
+# 花括号里的小写名字是占位符，由代码填入；其余文字原样发给模型。
+# 取证模型看到的工具描述与字段描述，以及检索无结果时附在结果后的提示。
+
+[search_news]
+description = '在新闻库中查找报道，结果按故事归并。有具体对象时填 query；没有具体对象、想看一段时间内发生了什么时不填 query，用 topic 和 days 限定范围。问的是过去的某一时段，例如"10 月份""上周"时，用 start_date 和 end_date，此时 days 不生效。topic 是领域，kind 是文章类型，publisher_kind 只看官方发布或只看媒体报道。sort：relevance 按相关性，time 按时间，两者用于有 query 的检索；importance 按报道的发布方数量，有 query 时，标题提到检索词、有多家发布方报道的故事排在前面，其余按相关性补齐。'
+no_result_hint = '可以放宽时间窗、换一种英文说法，或去掉过滤条件。'
+
+[search_news.fields]
+query = '检索词，用英文。问题没有具体对象时留空。'
+days = '时间窗：最近多少天。'
+start_date = '过去某一时段的起始日期，YYYY-MM-DD。填写后 days 不生效。'
+end_date = '该时段的结束日期，含当天。只能与 start_date 一起填写，不填时到今天。'
+limit = '返回的故事数。'
+
+[read_articles]
+description = '读取正文。ids 填检索结果里的证据编号；urls 只能填用户消息中出现过的链接。摘要不足以回答细节时使用。'
+
+[read_articles.fields]
+ids = '证据编号，如 E3。'
+urls = '用户消息里出现的链接。'

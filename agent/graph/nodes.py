@@ -56,8 +56,7 @@ def prepare(state, config) -> dict:
                 warn("follows_unavailable")
                 runtime.follows = []
             follows = memory.render_follows(runtime.follows, runtime.now.date())
-        system = prompts.GATHER_SYSTEM_PROMPT.format(
-            clock=prompts.gather_clock(runtime.now), corpus=corpus_info(), follows=follows)
+        system = prompts.render_gather_system(runtime.now, corpus_info(), follows)
         history_eids = [evidence.eid for evidence in runtime.registry.items()]
         for eid in history_eids:
             runtime.provenance[eid] = {"registered": "history", "upgraded": []}

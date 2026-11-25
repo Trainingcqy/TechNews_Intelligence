@@ -19,6 +19,8 @@ from telegram.ext import (
 )
 
 from agent import memory, run_turn
+from agent.config import load_config
+from common import model_settings
 from common.db import init_db_pool, close_db_pool, get_conn, put_conn
 from common.script_env import load_env
 
@@ -533,6 +535,12 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _model_text(use: str) -> str:
+    spec = model_settings.get(use)
+    temperature = "默认" if spec.temperature is None else spec.temperature
+    return f"{spec.provider} / {spec.model}，temperature {temperature}"
+
+
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_admin(update, "/settings", private_only=True):
         return
@@ -547,14 +555,13 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     arg = _extract_command_arg(update.message.text or "")
     if not arg:
-        max_steps = os.getenv("AGENT_MAX_STEPS", "3")
-        temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
         chat_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         await update.message.reply_text(
             "当前设置：\n"
             f"- 运行时: Custom LangGraph Agent\n"
-            f"- 取证步数上限: {max_steps}\n"
-            f"- Temperature: {temperature}\n"
+            f"- 取证步数上限: {load_config().max_steps}\n"
+            f"- 取证模型: {_model_text('gather')}\n"
+            f"- 综合模型: {_model_text('final')}\n"
             f"- 当前 chat 历史轮数上限: {chat_limit}\n"
             f"- 默认历史轮数上限: {MAX_HISTORY_TURNS}\n"
             "- 消息格式: HTML（仅标题/分段综述加粗）\n\n"
@@ -660,8 +667,6 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_admin(update, "/status", private_only=True):
         return
 
-    max_steps = os.getenv("AGENT_MAX_STEPS", "3")
-    temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
     active_sessions = sum(1 for h in conversation_histories.values() if h)
     total_sessions = len(conversation_histories)
     per_chat_override = len(chat_history_limits)
@@ -687,8 +692,9 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = [
         "系统状态：",
         "- runtime: Custom LangGraph Agent",
-        f"- max_steps: {max_steps}",
-        f"- temperature: {temperature}",
+        f"- max_steps: {load_config().max_steps}",
+        f"- gather_model: {_model_text('gather')}",
+        f"- final_model: {_model_text('final')}",
         f"- db: {'ok' if db_ok else 'error'}",
         f"- sessions(active/total): {active_sessions}/{total_sessions}",
         f"- chat_history_overrides: {per_chat_override}",

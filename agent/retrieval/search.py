@@ -135,8 +135,7 @@ def search_stories(
     leads: dict[int, dict[str, Any]] = {}
     if query:
         candidates = lookup_candidates_by_query(
-            query, days=days, start_date=start_date, end_date=end_date,
-            limit=min(limit * 3, MAX_ARTICLE_LIMIT),
+            query, days=days, start_date=start_date, end_date=end_date, limit=MAX_ARTICLE_LIMIT,
             topic=topic, kinds=kinds, publisher_kind=publisher_kind,
         )
         for candidate in candidates:

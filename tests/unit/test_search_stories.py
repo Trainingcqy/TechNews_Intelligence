@@ -82,7 +82,7 @@ def test_query_groups_by_story_in_first_seen_order_and_stops_at_limit(monkeypatc
     assert result.hits[0].lead.article_id == 1
     assert [a.article_id for a in result.hits[0].related] == [3]
     assert calls["members"] == [5, 3, 7]
-    assert calls["lookup"]["limit"] == 9
+    assert calls["lookup"]["limit"] == 45
     assert "browse" not in calls
 
 

@@ -11,22 +11,22 @@ def test_load_config_defaults(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_MAX_STEPS", raising=False)
     monkeypatch.delenv("AGENT_HISTORY_TURNS", raising=False)
     assert load_config() == AgentConfig()
-    assert AgentConfig().max_steps == 3
+    assert AgentConfig().max_steps == 5
     assert AgentConfig().history_turns == 4
 
 
 def test_load_config_env_overrides_only_the_two_fields(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_MAX_STEPS", "5")
+    monkeypatch.setenv("AGENT_MAX_STEPS", "2")
     monkeypatch.setenv("AGENT_HISTORY_TURNS", "2")
     cfg = load_config()
-    assert cfg.max_steps == 5
+    assert cfg.max_steps == 2
     assert cfg.history_turns == 2
     assert cfg.max_calls_per_step == AgentConfig().max_calls_per_step
 
 
 def test_load_config_blank_env_keeps_default(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_MAX_STEPS", "  ")
-    assert load_config().max_steps == 3
+    assert load_config().max_steps == AgentConfig().max_steps
 
 
 @pytest.mark.parametrize("value", ["0", "7", "abc"])

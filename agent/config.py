@@ -40,11 +40,11 @@ def using_zone(zone: tzinfo) -> Iterator[None]:
 
 @dataclass(frozen=True)
 class AgentConfig:
-    max_steps: int = 3  # AGENT_MAX_STEPS，取值 1–6
-    max_calls_per_step: int = 4
-    max_read_articles: int = 8  # 单次请求累计读取篇数
+    max_steps: int = 5  # AGENT_MAX_STEPS, 1 to 6
+    max_calls_per_step: int = 5
+    max_read_articles: int = 10  # per request
     history_turns: int = 4  # AGENT_HISTORY_TURNS
-    history_answer_chars: int = 1500
+    history_answer_chars: int = 6000
     synthesis_evidence_chars: int = 60000
     gather_read_preview_chars: int = 800
 

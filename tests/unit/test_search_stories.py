@@ -88,10 +88,42 @@ def test_query_groups_by_story_in_first_seen_order_and_stops_at_limit(monkeypatc
 
 def test_query_with_time_sort_orders_stories_by_lead_time(monkeypatch):
     a1, a2, a3 = _article(1, 1, day=3), _article(2, 2, day=9), _article(3, 3, day=5)
-    _patch(monkeypatch, candidates=[_candidate(a) for a in (a1, a2, a3)], members={1: [a1], 2: [a2], 3: [a3]})
+    calls = _patch(monkeypatch, candidates=[_candidate(a) for a in (a1, a2, a3)],
+                   members={1: [a1], 2: [a2], 3: [a3]})
 
     assert [hit.lead.article_id for hit in _search("x", sort="time").hits] == [2, 3, 1]
     assert [hit.lead.article_id for hit in _search("x", sort="relevance").hits] == [1, 2, 3]
+    assert "browse" not in calls
+
+
+def test_importance_query_puts_multi_source_stories_about_it_first_then_fills_by_relevance(monkeypatch):
+    a1, a2, a3, a4 = _article(1, 1), _article(2, 2), _article(3, 3), _article(4, 4)
+    official3 = _article(30, 3, publisher_kind="official")
+    media5, official5 = _article(50, 5), _article(51, 5, publisher_kind="official")
+    calls = _patch(monkeypatch, candidates=[_candidate(a, 0.1) for a in (a3, a1, a2, a4)],
+                   members={1: [a1], 2: [a2], 3: [a3, official3], 4: [a4], 5: [media5, official5]}, browse=[5, 3])
+
+    result = _search("Nvidia", sort="importance", limit=4)
+
+    assert [hit.stats.story_id for hit in result.hits] == [5, 3, 1, 2]
+    assert [hit.lead.article_id for hit in result.hits] == [51, 3, 1, 2]
+    assert [hit.match_score for hit in result.hits] == [None, 0.1, 0.1, 0.1]
+    assert result.weak_match is False
+    browse = calls["browse"]
+    assert (browse["about"], browse["min_publishers"], browse["kinds"], browse["sort"], browse["limit"]) == (
+        "Nvidia", 2, EVENT_KINDS, "importance", 4)
+
+
+def test_importance_query_without_multi_source_stories_is_the_relevance_result(monkeypatch):
+    a1, a2, a3 = _article(1, 1), _article(2, 2), _article(3, 3)
+    _patch(monkeypatch, candidates=[_candidate(a1, 0.2), _candidate(a2), _candidate(a3)],
+           members={1: [a1], 2: [a2], 3: [a3]})
+
+    importance = _search("x", sort="importance")
+
+    assert importance == _search("x", sort="relevance")
+    assert [hit.stats.story_id for hit in importance.hits] == [1, 2, 3]
+    assert importance.weak_match is True
 
 
 @pytest.mark.parametrize(("scores", "weak"), [((0.29, 0.9), True), ((0.30, 0.1), False)])
@@ -115,6 +147,7 @@ def test_no_query_browses_event_kinds_by_default_and_picks_lead(monkeypatch):
     assert "lookup" not in calls
     assert calls["browse"]["kinds"] == EVENT_KINDS
     assert calls["browse"]["sort"] == "importance"
+    assert (calls["browse"]["about"], calls["browse"]["min_publishers"]) == (None, 1)
     assert result.hits[0].lead.article_id == 2
     assert result.hits[0].match_score is None
     assert result.weak_match is False

@@ -42,8 +42,8 @@ class SearchNewsArgs(BaseModel):
             self.sort = "relevance" if self.query else "importance"
         if self.sort == "relevance" and not self.query:
             raise ValueError("sort=relevance requires query")
-        if self.sort in ("importance", "hn") and self.query:
-            raise ValueError(f"sort={self.sort} requires query to be empty")
+        if self.sort == "hn" and self.query:
+            raise ValueError("sort=hn requires query to be empty")
         if self.end_date is not None and self.start_date is None:
             raise ValueError("end_date requires start_date")
         if self.start_date and self.end_date and self.start_date > self.end_date:
@@ -129,7 +129,8 @@ TOOLS: tuple[ToolSpec, ...] = (
             "用 topic 和 days 限定范围。问的是过去的某一时段，例如\"10 月份\"\"上周\"时，用 start_date 和 end_date，"
             "此时 days 不生效。topic 是领域，kind 是文章类型，publisher_kind 只看官方发布或只看媒体报道。"
             "sort：relevance 按相关性，time 按时间，两者用于有 query 的检索；importance 按报道的发布方数量和社区分数，"
-            "hn 按 HackerNews 分数，两者用于没有 query 的浏览。"
+            "有 query 时，标题提到检索词、有多家发布方报道的故事排在前面，其余按相关性补齐；"
+            "hn 按 HackerNews 分数，用于没有 query 的浏览。"
         ),
         args_model=SearchNewsArgs,
         run=_run_search,

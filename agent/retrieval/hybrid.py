@@ -8,10 +8,10 @@ This module implements the shared SQL pipeline used by query-oriented retrieval:
 from __future__ import annotations
 
 import os
-import re
 from datetime import datetime
 from typing import Any
 
+from .literal import exact_pattern, literal_match
 from .recall_profile import resolve_recall_profile
 from .stories import ARTICLE_COLUMNS, ARTICLE_JOINS, article_from_row
 
@@ -33,29 +33,6 @@ _FILTERS = """
 
 _TRGM_HIT = """(similarity(LOWER(COALESCE(a.title, '')), LOWER(q.raw_query)) >= %(trgm_threshold)s
                      OR similarity(LOWER(COALESCE(a.title_zh, '')), LOWER(q.raw_query)) >= %(trgm_threshold)s)"""
-
-_REGEX_SPECIAL = re.compile(r"[\\.^$|?*+()\[\]{}]")
-
-
-def _exact_pattern(query: str) -> str | None:
-    """The regex for an ASCII query, which must not touch an ASCII letter or digit on either side; None for any
-    other query, which is matched as a substring."""
-    # Postgres regexes treat CJK characters as word characters, so \m and \M would miss an English name
-    # written directly against Chinese text.
-    if not query.isascii():
-        return None
-    pattern = _REGEX_SPECIAL.sub(lambda m: "\\" + m.group(0), query)
-    if query[0].isalnum():
-        pattern = "(?<![a-z0-9])" + pattern
-    if query[-1].isalnum():
-        pattern += "(?![a-z0-9])"
-    return pattern
-
-
-def _literal_match(column: str, pattern: str | None) -> str:
-    if pattern is None:
-        return f"{column} ILIKE ('%%' || q.raw_query || '%%')"
-    return f"{column} ~* %(exact_pattern)s"
 
 
 def _clamp_int(value: int, minimum: int, maximum: int) -> int:
@@ -133,10 +110,10 @@ def fetch_hybrid_rows(
         min_value=0.1,
         max_value=0.9,
     )
-    exact_pattern = _exact_pattern(query_clean)
-    title_hit = "(" + " OR ".join(_literal_match(column, exact_pattern)
+    pattern = exact_pattern(query_clean)
+    title_hit = "(" + " OR ".join(literal_match(column, pattern, "q.raw_query")
                                   for column in ("a.title", "COALESCE(a.title_zh, '')")) + ")"
-    summary_hit = _literal_match("COALESCE(a.summary, '')", exact_pattern)
+    summary_hit = literal_match("COALESCE(a.summary, '')", pattern, "q.raw_query")
 
     semantic_cte = f"""
         semantic AS (
@@ -296,7 +273,7 @@ def fetch_hybrid_rows(
             "points_weight": points_weight,
             "freshness_weight": freshness_weight,
             "trgm_threshold": trgm_threshold,
-            "exact_pattern": exact_pattern,
+            "exact_pattern": pattern,
             "sim_floor": floor,
         },
     )

@@ -6,6 +6,8 @@ from datetime import datetime
 
 from agent.types import Article, Discussion, StoryStats
 
+from .literal import exact_pattern, literal_match
+
 ARTICLE_COLUMNS = """
             a.article_id,
             a.url,
@@ -181,9 +183,16 @@ def _get_hn_channel_id(cur) -> int | None:
 
 def browse_story_ids(cur, *, start_at: datetime, end_at: datetime, topic: str | None,
                      kinds: tuple[str, ...] | None, publisher_kind: str | None,
-                     sort: str, limit: int) -> list[int]:
+                     sort: str, limit: int, about: str | None = None, min_publishers: int = 1) -> list[int]:
+    """With about, only stories with an article that names it in the title or comes from the official publisher of
+    that name."""
+    pattern = exact_pattern(about) if about else None
+    about_hit = ""
+    if about:
+        about_hit = (f"AND ({literal_match('a.title', pattern, '%(about)s')}"
+                     f" OR (p.kind = 'official' AND {literal_match('p.name', pattern, '%(about)s')}))")
     cur.execute(
-        """
+        f"""
         WITH win AS (
             SELECT DISTINCT m.story_id
             FROM news.article a
@@ -194,6 +203,7 @@ def browse_story_ids(cur, *, start_at: datetime, end_at: datetime, topic: str | 
               AND (%(topic)s::text IS NULL OR a.topics @> ARRAY[%(topic)s::text])
               AND (%(kinds)s::text[] IS NULL OR a.kind = ANY(%(kinds)s::text[]))
               AND (%(publisher_kind)s::text IS NULL OR p.kind = %(publisher_kind)s)
+              {about_hit}
         ),
         stats AS (
             SELECT m.story_id,
@@ -208,7 +218,8 @@ def browse_story_ids(cur, *, start_at: datetime, end_at: datetime, topic: str | 
         )
         SELECT story_id
         FROM stats
-        WHERE %(sort)s <> 'hn' OR hn_score IS NOT NULL
+        WHERE publisher_count >= %(min_publishers)s
+          AND (%(sort)s <> 'hn' OR hn_score IS NOT NULL)
         ORDER BY
             CASE WHEN %(sort)s = 'importance' THEN publisher_count END DESC NULLS LAST,
             CASE WHEN %(sort)s IN ('importance', 'hn') THEN hn_score END DESC NULLS LAST,
@@ -225,6 +236,9 @@ def browse_story_ids(cur, *, start_at: datetime, end_at: datetime, topic: str | 
             "hn_channel_id": _get_hn_channel_id(cur),
             "sort": sort,
             "limit": limit,
+            "about": about,
+            "exact_pattern": pattern,
+            "min_publishers": min_publishers,
         },
     )
     return [row[0] for row in cur.fetchall()]

@@ -27,6 +27,7 @@ from .stories import (
 
 MAX_ARTICLE_LIMIT = 45
 WEAK_MATCH_THRESHOLD = 0.30
+PROMOTED_MIN_PUBLISHERS = 2
 
 
 def time_window(days: int, start_date: date | None, end_date: date | None,
@@ -131,7 +132,7 @@ def search_stories(
     topic: str | None, kinds: tuple[str, ...] | None,
     publisher_kind: str | None, sort: str, limit: int,
 ) -> SearchResult:
-    weak_match = False
+    candidates: list[dict[str, Any]] = []
     leads: dict[int, dict[str, Any]] = {}
     if query:
         candidates = lookup_candidates_by_query(
@@ -140,22 +141,22 @@ def search_stories(
         )
         for candidate in candidates:
             leads.setdefault(candidate["article"].story_id, candidate)
-            if len(leads) >= limit:
-                break
-        weak_match = bool(candidates) and candidates[0]["match_score"] < WEAK_MATCH_THRESHOLD
 
+    browsed: list[int] = []
     conn = get_conn()
     try:
         cur = conn.cursor()
-        if query:
-            story_ids = list(leads)
-        else:
+        if not query or sort == "importance":
+            # With a query, only stories about it that several publishers reported are ranked by importance; the
+            # relevance order fills the remaining places.
             start_at, end_at = time_window(days, start_date, end_date, now=datetime.now(timezone.utc))
-            story_ids = browse_story_ids(
+            browsed = browse_story_ids(
                 cur, start_at=start_at, end_at=end_at, topic=topic,
                 kinds=kinds if kinds is not None else EVENT_KINDS,
                 publisher_kind=publisher_kind, sort=sort, limit=limit,
+                about=query, min_publishers=PROMOTED_MIN_PUBLISHERS if query else 1,
             )
+        story_ids = (browsed + [story_id for story_id in leads if story_id not in browsed])[:limit]
         members = fetch_story_members(cur, story_ids)
         stories = [
             (story_id, members[story_id], stats_from_members(story_id, members[story_id]))
@@ -182,4 +183,6 @@ def search_stories(
         ))
     if query and sort == "time":
         hits.sort(key=lambda hit: hit.lead.published_at, reverse=True)
+    # Browsed stories match the query literally, however weak the first candidate is.
+    weak_match = bool(candidates) and not browsed and candidates[0]["match_score"] < WEAK_MATCH_THRESHOLD
     return SearchResult(hits=hits, weak_match=weak_match)

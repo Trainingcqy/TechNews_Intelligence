@@ -52,6 +52,7 @@ def test_search_args_defaults_and_derived_sort():
     assert SearchNewsArgs(query="  ").sort == "importance"
     assert SearchNewsArgs(query="Genie 4").sort == "relevance"
     assert SearchNewsArgs(query="Genie 4", sort="time").sort == "time"
+    assert SearchNewsArgs(query="Genie 4", sort="importance").sort == "importance"
 
 
 @pytest.mark.parametrize("field, good, bad", [
@@ -68,7 +69,6 @@ def test_search_args_bounds(field, good, bad):
 
 @pytest.mark.parametrize("fields", [
     {"sort": "relevance"},
-    {"query": "Genie 4", "sort": "importance"},
     {"query": "Genie 4", "sort": "hn"},
     {"end_date": date(2026, 10, 31)},
     {"start_date": date(2026, 11, 1), "end_date": date(2026, 10, 31)},

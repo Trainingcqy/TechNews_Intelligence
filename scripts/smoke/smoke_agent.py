@@ -58,12 +58,12 @@ def _synthetic_registry() -> EvidenceRegistry:
 def check_gather(handle: ModelHandle, config: AgentConfig) -> bool:
     print("==== 取证 ====")
     system = prompts.GATHER_SYSTEM_PROMPT.format(
-        today=f"{datetime.now(DEFAULT_ZONE):%Y-%m-%d}", corpus=CORPUS, follows=""
+        clock=prompts.gather_clock(datetime.now(DEFAULT_ZONE)), corpus=CORPUS, follows=""
     )
     messages = [SystemMessage(system), HumanMessage(QUESTION)]
     started = time.monotonic()
     try:
-        reply = call_with_tools(handle, messages, tool_schemas(), node="gather")
+        reply = call_with_tools(handle, messages, tool_schemas())
     except ModelCallError as exc:
         print(f"失败：取证模型调用出错 {exc.code}：{exc}")
         return False
@@ -95,11 +95,13 @@ def check_gather(handle: ModelHandle, config: AgentConfig) -> bool:
 
 def check_final(handle: ModelHandle, config: AgentConfig) -> bool:
     print("==== 综合 ====")
-    user = prompts.render_final_user(QUESTION, _synthetic_registry(), config.synthesis_evidence_chars)
+    user, _ = prompts.render_final_user(
+        QUESTION, _synthetic_registry(), config.synthesis_evidence_chars, datetime.now(DEFAULT_ZONE)
+    )
     messages = [SystemMessage(prompts.FINAL_SYSTEM_PROMPT), HumanMessage(user)]
     started = time.monotonic()
     try:
-        raw = call_text(handle, messages, node="final_synthesizer")
+        raw = call_text(handle, messages)
     except ModelCallError as exc:
         print(f"失败：综合模型调用出错 {exc.code}：{exc}")
         return False

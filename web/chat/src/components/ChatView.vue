@@ -194,7 +194,7 @@ function applyChatPayload(data) {
 }
 
 function chatRequestBody(text) {
-  const payload = { message: text };
+  const payload = { message: text, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
   if (session.threadId) payload.thread_id = session.threadId;
   return JSON.stringify(payload);
 }

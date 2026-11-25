@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from dataclasses import replace
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -96,11 +98,11 @@ def turn(monkeypatch):
     monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {30: BODY} if 30 in ids else {})
     monkeypatch.setattr(read, "fetch_discussion_texts", lambda cur, ids: {})
 
-    def run(gather_replies, final_replies=(), *, config=None, history=None, user_key=None):
+    def run(gather_replies, final_replies=(), *, config=None, history=None, user_key=None, zone=None):
         gather, final = FakeChat(gather_replies), FakeChat(final_replies)
         events: list = []
         answer = run_turn(
-            QUESTION, history, channel="web", request_id="r1", user_key=user_key, on_event=events.append,
+            QUESTION, history, channel="web", request_id="r1", user_key=user_key, zone=zone, on_event=events.append,
             config=config or AgentConfig(),
             models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)),
         )
@@ -114,15 +116,59 @@ def _spans(trace, kind):
     return [span for span in trace.spans if span.kind == kind]
 
 
+def _turn_now(trace) -> datetime:
+    context = _spans(trace, "context")[0].output
+    return datetime.fromisoformat(context["now"]).astimezone(ZoneInfo(context["timezone"]))
+
+
 def test_direct_reply(turn):
     r = turn([AIMessage(content="你好！有什么想了解的科技新闻？😀")])
 
     expected = Answer(status="direct", text="你好！有什么想了解的科技新闻？", request_id="r1")
     assert r.answer == expected
     assert r.events == [UNDERSTANDING, Final(expected)]
-    system = prompts.GATHER_SYSTEM_PROMPT.format(today=nodes._today(), corpus=CORPUS, follows="")
+    system = prompts.GATHER_SYSTEM_PROMPT.format(clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS,
+                                                 follows="")
     assert r.gather.calls == [[SystemMessage(system), HumanMessage(QUESTION)]]
     assert r.final.calls == []
+
+
+def test_clock_lines_name_the_zone_and_its_offset():
+    now = datetime(2026, 11, 25, 9, 15, tzinfo=ZoneInfo("Asia/Shanghai"))
+    assert prompts.gather_clock(now) == (
+        "现在是 2026-11-25 星期三 09:15（Asia/Shanghai，UTC+08:00），下文和工具结果里的日期都按这个时区。")
+    assert prompts.final_clock(now) == ("Current time: 2026-11-25 Wednesday 09:15 (Asia/Shanghai, UTC+08:00). "
+                                        "Dates in the evidence brief are in this time zone.")
+    # The CLI passes the machine's zone as a fixed offset, which has no name.
+    fixed = now.astimezone(timezone(timedelta(hours=8)))
+    assert prompts.gather_clock(fixed).startswith("现在是 2026-11-25 星期三 09:15（UTC+08:00），")
+
+
+def test_turn_runs_in_the_user_zone(turn, monkeypatch):
+    # 16:30 UTC on 11-11 is 11-12 in Beijing and 11-11 in New York; 17:00 UTC on 11-09 is 11-10 and 11-09.
+    related = replace(ARTICLE, article_id=31, url="https://www.theverge.com/genie-4", title="Genie 4 hands-on",
+                      publisher="The Verge")
+    hit = StoryHit(lead=ARTICLE, stats=STATS, related=(related,), discussion=None, match_score=0.9)
+    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False))
+    monkeypatch.setattr(nodes.memory, "list_follows", lambda user_key, limit: FOLLOWS)
+    monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda user_key, ids: {})
+
+    r = turn([_search("Genie 4"), _calls(("c2", "read_articles", {"ids": ["E1"]})), DONE], [ANSWERED],
+             user_key="tg:1", zone=ZoneInfo("America/New_York"))
+
+    assert _spans(r.trace, "context")[0].output["timezone"] == "America/New_York"
+    now = _turn_now(r.trace)
+    system = r.gather.calls[0][0].content
+    assert prompts.gather_clock(now) in system and "- Genie 4，上次查看 2026-11-09，" in system
+    search_text, read_text = (m.content for m in r.gather.calls[2] if isinstance(m, ToolMessage))
+    assert "TechCrunch · 媒体 · 2026-11-11" in search_text
+    assert "[E2] The Verge · 媒体 · 11-11《Genie 4 hands-on》" in search_text
+    assert "[E1] 《Genie 4 adds audio》TechCrunch · 2026-11-11｜" in read_text
+    last = r.final.calls[0][-1].content
+    assert last.startswith(prompts.final_clock(now) + "\n\nUser question:\n")
+    assert "时间：2026-11-11" in last and "首次 2026-11-11，最近 2026-11-11" in last
+    assert EvidenceFound("E1", "Genie 4 adds audio", "TechCrunch", ARTICLE.url, "2026-11-11") in r.events
+    assert r.answer.sources[0].published_at == "2026-11-11"
 
 
 def test_tool_call_without_evidence_is_not_found(turn):
@@ -305,8 +351,9 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     assert (failed.input["query"], failed.output["text"]) == ("具身智能", "工具执行失败：RuntimeError")
     assert trace.output["seen_dates"] == {"5": "2026-11-10"}
     system = gather.calls[0][0]
+    now = _turn_now(trace)
     assert system == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
-        today=nodes._today(), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, nodes._today_date())))
+        clock=prompts.gather_clock(now), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, now.date())))
     assert "- Genie 4，上次查看 2026-11-10，距今" in system.content
     first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
     assert "｜同一故事 1 篇报道、1 个发布方，此前已在 11-10 的回答中提及\n" in first_result.content
@@ -328,7 +375,7 @@ def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
 
     assert r.answer.status == "answered"
     assert r.gather.calls[0][0] == SystemMessage(prompts.GATHER_SYSTEM_PROMPT.format(
-        today=nodes._today(), corpus=CORPUS, follows=""))
+        clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS, follows=""))
     assert _spans(r.trace, "context")[0].warnings == ["follows_unavailable"]
 
 

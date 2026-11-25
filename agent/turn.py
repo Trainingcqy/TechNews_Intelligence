@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+from datetime import datetime, tzinfo
 from typing import Callable
 
 from agent.citations import ERROR_TEXT, contains_cjk
-from agent.config import AgentConfig, load_config
+from agent.config import DEFAULT_ZONE, AgentConfig, load_config, using_zone
 from agent.evidence import EvidenceRegistry
 from agent.graph import build_turn_graph
 from agent.graph.state import TurnRuntime
@@ -24,19 +25,23 @@ def run_turn(
     thread_id: str | None = None,
     request_id: str | None = None,
     user_key: str | None = None,
+    zone: tzinfo | None = None,
     on_event: Callable[[Event], None] | None = None,
     config: AgentConfig | None = None,
     models: tuple[ModelHandle, ModelHandle] | None = None,
 ) -> Answer:
-    """channel is web, telegram, cli or eval and only labels the trace."""
+    """channel is web, telegram, cli or eval and only labels the trace. zone is the user's clock zone, DEFAULT_ZONE when
+    not given."""
     config = config or load_config()
+    zone = zone or DEFAULT_ZONE
     emit = _safe_emit(on_event)
     runtime = TurnRuntime(
         registry=EvidenceRegistry(), tool_state=TurnState(user_urls=set()), config=config,
         models=models, emit=emit, user_key=user_key,
-        follows=[], tool_names=[], followed_queries=[],
+        follows=[], tool_names=[], followed_queries=[], now=datetime.now(zone),
     )
-    with request_trace(question=question, channel=channel, thread_id=thread_id, request_id=request_id) as trace:
+    with using_zone(zone), request_trace(question=question, channel=channel, thread_id=thread_id,
+                                         request_id=request_id) as trace:
         error_message = None
         try:
             runtime.models = models or build_models()

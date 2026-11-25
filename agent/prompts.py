@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from agent.evidence import EvidenceRegistry, render_for_synthesis
 
 GATHER_SYSTEM_PROMPT = """你是科技新闻库的取证助手。你的任务是调用工具收集回答问题所需的报道，不负责撰写最终回答。
 
-今天是 {today}。
+{clock}
 {corpus}
 {follows}
 
@@ -84,7 +86,31 @@ FINAL_SYSTEM_PROMPT = (
 )
 
 
-def render_final_user(question: str, registry: EvidenceRegistry, max_chars: int) -> tuple[str, list[str]]:
+_WEEKDAYS_ZH = "一二三四五六日"
+_WEEKDAYS_EN = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _zone_text(now: datetime, separator: str) -> str:
+    """The zone's name and UTC offset; only the offset for a zone without a name, such as the CLI machine's."""
+    offset = now.strftime("%z")
+    utc = f"UTC{offset[:3]}:{offset[3:]}"
+    name = getattr(now.tzinfo, "key", None)
+    return f"{name}{separator}{utc}" if name else utc
+
+
+def gather_clock(now: datetime) -> str:
+    return (f"现在是 {now:%Y-%m-%d} 星期{_WEEKDAYS_ZH[now.weekday()]} {now:%H:%M}（{_zone_text(now, '，')}），"
+            "下文和工具结果里的日期都按这个时区。")
+
+
+def final_clock(now: datetime) -> str:
+    return (f"Current time: {now:%Y-%m-%d} {_WEEKDAYS_EN[now.weekday()]} {now:%H:%M} ({_zone_text(now, ', ')}). "
+            "Dates in the evidence brief are in this time zone.")
+
+
+def render_final_user(question: str, registry: EvidenceRegistry, max_chars: int,
+                      now: datetime) -> tuple[str, list[str]]:
     """The synthesis user message, and the evidence ids whose body was dropped from it."""
     brief, dropped = render_for_synthesis(registry, max_chars)
-    return f"User question:\n{question}\n\nEvidence brief:\n{brief}\n\nWrite the final answer now.", dropped
+    return (f"{final_clock(now)}\n\nUser question:\n{question}\n\nEvidence brief:\n{brief}\n\n"
+            "Write the final answer now.", dropped)

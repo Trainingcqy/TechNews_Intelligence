@@ -10,7 +10,10 @@ from dataclasses import asdict
 import pytest
 from fastapi import HTTPException
 
+from zoneinfo import ZoneInfo
+
 from agent import Answer, Delta, EvidenceFound, Final, Progress
+from agent.config import DEFAULT_ZONE
 from agent.types import Source
 from app import streaming
 from app.schemas import ChatRequest
@@ -149,7 +152,7 @@ def test_persisted_turn_uses_history_message_format(env) -> None:  # noqa: ANN00
     assert env.loads == [("thread-9", 7, 40)]
     assert env.run_turn_calls == [
         ("问题", HISTORY, {"channel": "web", "thread_id": "thread-9", "request_id": "req-1",
-                         "user_key": "email:user@example.com"})
+                         "user_key": "email:user@example.com", "zone": DEFAULT_ZONE})
     ]
     metadata = {"request_id": "req-1"}
     assert env.appended == [
@@ -175,3 +178,12 @@ def test_persisted_turn_uses_history_message_format(env) -> None:  # noqa: ANN00
             metadata,
         ),
     ]
+
+
+def test_turn_runs_in_the_zone_the_request_names(env) -> None:  # noqa: ANN001
+    env.answer = Answer(status="answered", text="正文 [1]", sources=(SOURCE,))
+
+    request = ChatRequest(message="问题", timezone="America/New_York")
+    asyncio.run(chat_service.handle_chat_request(request, TOKEN, "req-1"))
+
+    assert env.run_turn_calls[0][2]["zone"] is ZoneInfo("America/New_York")

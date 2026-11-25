@@ -1,6 +1,7 @@
 """Local CLI entrypoint for TechNews agent."""
 
 from dataclasses import asdict
+from datetime import datetime
 
 from common.script_env import load_env
 
@@ -24,7 +25,8 @@ def main():
                 if user_input.lower() in ["exit", "quit"]:
                     break
 
-                answer = run_turn(user_input, history, channel="cli")
+                # The machine's local zone, as a fixed offset: Windows gives no zone database name.
+                answer = run_turn(user_input, history, channel="cli", zone=datetime.now().astimezone().tzinfo)
                 print(f"Agent: {answer.text}")
                 for source in answer.sources:
                     print(f"  [{source.n}] {source.title_zh or source.title} {source.url}")

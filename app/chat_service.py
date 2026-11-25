@@ -10,6 +10,7 @@ from typing import AsyncIterator, Callable
 from fastapi import HTTPException
 
 from agent import Answer, EvidenceFound, Final, Progress, memory, run_turn
+from agent.config import zone_named
 from app import streaming
 from app.schemas import ChatRequest, ChatResponse, SourceItem
 from app import quota_service
@@ -160,6 +161,7 @@ def run_agent_turn(
         thread_id=turn.thread_id,
         request_id=turn.request_id,
         user_key=turn.user_key,
+        zone=zone_named(turn.body.timezone),
         on_event=on_event,
     )
     # An error turn is not kept: its text would reach later turns as a model message. Telegram and the CLI

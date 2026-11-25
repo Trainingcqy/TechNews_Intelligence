@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
+from agent.config import user_zone
 from agent.trace import warn
 from common.db import get_conn, put_conn
 from common.taxonomy import KINDS, TOPICS
@@ -14,14 +15,15 @@ logger = logging.getLogger(__name__)
 CACHE_SECONDS = 600
 UNAVAILABLE = "新闻库范围暂时无法获取"
 
-_cache: tuple[float, str] | None = None
+# The query rows, not the text: the dates are rendered in each user's zone.
+_cache: tuple[float, tuple[list[tuple], list[tuple]]] | None = None
 
 
 def _render(kind_rows: list[tuple], publisher_rows: list[tuple]) -> str:
     counts = {kind: count for kind, count, _, _ in kind_rows}
     total = sum(counts.values())
-    first = min(row[2] for row in kind_rows)
-    last = max(row[3] for row in kind_rows)
+    first = min(row[2] for row in kind_rows).astimezone(user_zone()).date()
+    last = max(row[3] for row in kind_rows).astimezone(user_zone()).date()
     official = counts.get("official", 0)
     media = counts.get("media", 0)
     return "\n".join([
@@ -37,14 +39,14 @@ def _render(kind_rows: list[tuple], publisher_rows: list[tuple]) -> str:
 def corpus_info() -> str:
     global _cache
     if _cache is not None and time.monotonic() - _cache[0] < CACHE_SECONDS:
-        return _cache[1]
+        return _render(*_cache[1])
     conn = None
     try:
         conn = get_conn()
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT p.kind, COUNT(*), MIN(a.event_at)::date, MAX(a.event_at)::date
+            SELECT p.kind, COUNT(*), MIN(a.event_at), MAX(a.event_at)
             FROM news.article a
             JOIN news.publisher p ON p.publisher_id = a.publisher_id
             WHERE a.status = 'ready'
@@ -74,5 +76,5 @@ def corpus_info() -> str:
     finally:
         if conn is not None:
             put_conn(conn)
-    _cache = (time.monotonic(), text)
+    _cache = (time.monotonic(), (kind_rows, publisher_rows))
     return text

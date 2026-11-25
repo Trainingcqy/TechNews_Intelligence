@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from agent.config import BEIJING
+from agent.config import user_zone
 from agent.types import Article, Discussion, Evidence, StoryStats
 from common.urls import url_key
 
@@ -110,7 +110,7 @@ def _render_article(evidence: Evidence, seen_dates: dict[int, date]) -> list[str
         lines.append(f"中文标题：{article.title_zh}")
     meta = [
         f"发布方：{article.publisher}，{PUBLISHER_KIND_LABELS[article.publisher_kind]}",
-        f"时间：{article.published_at.astimezone(BEIJING):%Y-%m-%d}",
+        f"时间：{article.published_at.astimezone(user_zone()):%Y-%m-%d}",
     ]
     if article.topics:
         meta.append("领域：" + "、".join(article.topics))
@@ -134,8 +134,8 @@ def _render_stats(stats: StoryStats) -> str:
         if stats.hn_comments is not None:
             hn += f"、{stats.hn_comments} 条评论"
         parts.append(hn)
-    parts.append(f"首次 {stats.first_at.astimezone(BEIJING):%Y-%m-%d}")
-    parts.append(f"最近 {stats.last_at.astimezone(BEIJING):%Y-%m-%d}")
+    parts.append(f"首次 {stats.first_at.astimezone(user_zone()):%Y-%m-%d}")
+    parts.append(f"最近 {stats.last_at.astimezone(user_zone()):%Y-%m-%d}")
     return "同一故事：" + "，".join(parts)
 
 

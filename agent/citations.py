@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 
-from agent.config import BEIJING
+from agent.config import user_zone
 from agent.evidence import EvidenceRegistry
 from agent.types import Answer, Evidence, Source
 from common.urls import _URL_RE
@@ -197,7 +197,7 @@ def _source(n: int, evidence: Evidence) -> Source:
         title=article.title,
         title_zh=article.title_zh,
         source=article.publisher,
-        published_at=f"{article.published_at.astimezone(BEIJING):%Y-%m-%d}",
+        published_at=f"{article.published_at.astimezone(user_zone()):%Y-%m-%d}",
     )
 
 

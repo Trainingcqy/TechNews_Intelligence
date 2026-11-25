@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from agent.config import BEIJING, AgentConfig
+from agent.config import AgentConfig, user_zone
 from agent.retrieval.stories import (
     fetch_articles_by_url_keys,
     fetch_bodies,
@@ -129,7 +129,8 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
             head = f"[{label}] HackerNews 讨论"
         else:
             article = item.article
-            head = f"[{label}] 《{article.title}》{article.publisher} · {article.published_at.astimezone(BEIJING):%Y-%m-%d}"
+            published = article.published_at.astimezone(user_zone())
+            head = f"[{label}] 《{article.title}》{article.publisher} · {published:%Y-%m-%d}"
         size = f"全文 {item.total_chars} 字符"
         if truncated:
             size += f"，已读取前 {len(item.text)} 字符"

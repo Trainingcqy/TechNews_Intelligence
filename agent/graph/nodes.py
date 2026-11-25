@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END
@@ -11,7 +10,7 @@ from langgraph.types import Send
 
 from agent import memory, prompts
 from agent.citations import NOT_FOUND_TEXT, clean_direct_reply, contains_cjk, finalize_answer
-from agent.config import BEIJING
+from agent.config import user_zone
 from agent.context import build_context
 from agent.evidence import EvidenceRegistry
 from agent.llm import call_text, call_with_tools, coerce_to_text
@@ -41,14 +40,6 @@ def _runtime(config) -> TurnRuntime:
     return config["configurable"]["runtime"]
 
 
-def _today() -> str:
-    return f"{_today_date():%Y-%m-%d}"
-
-
-def _today_date() -> date:
-    return datetime.now(BEIJING).date()
-
-
 def prepare(state, config) -> dict:
     runtime = _runtime(config)
     question = state["question"]
@@ -64,12 +55,15 @@ def prepare(state, config) -> dict:
                 logger.exception("follow lookup failed")
                 warn("follows_unavailable")
                 runtime.follows = []
-            follows = memory.render_follows(runtime.follows, _today_date())
-        system = prompts.GATHER_SYSTEM_PROMPT.format(today=_today(), corpus=corpus_info(), follows=follows)
+            follows = memory.render_follows(runtime.follows, runtime.now.date())
+        system = prompts.GATHER_SYSTEM_PROMPT.format(
+            clock=prompts.gather_clock(runtime.now), corpus=corpus_info(), follows=follows)
         history_eids = [evidence.eid for evidence in runtime.registry.items()]
         for eid in history_eids:
             runtime.provenance[eid] = {"registered": "history", "upgraded": []}
         span.output = {
+            "now": runtime.now.isoformat(),
+            "timezone": getattr(runtime.now.tzinfo, "key", None),
             "history_turns": context.history_turns,
             "turns_used": context.turns_used,
             "history_evidence": history_eids,
@@ -189,7 +183,7 @@ def synthesize(state, config) -> dict:
     runtime = _runtime(config)
     runtime.emit(Progress("synthesizing", "正在生成回答"))
     user, runtime.dropped_bodies = prompts.render_final_user(
-        state["question"], runtime.registry, runtime.config.synthesis_evidence_chars)
+        state["question"], runtime.registry, runtime.config.synthesis_evidence_chars, runtime.now)
     if runtime.dropped_bodies:
         warn("evidence_truncated")
     messages = [SystemMessage(prompts.FINAL_SYSTEM_PROMPT), *state["context_messages"], HumanMessage(user)]
@@ -254,4 +248,4 @@ def _evidence_found(evidence: Evidence) -> EvidenceFound:
         return EvidenceFound(evidence.eid, discussion.title, "HackerNews 讨论", discussion.url, "")
     article = evidence.article
     return EvidenceFound(evidence.eid, article.title, article.publisher, article.url,
-                         f"{article.published_at.astimezone(BEIJING):%Y-%m-%d}")
+                         f"{article.published_at.astimezone(user_zone()):%Y-%m-%d}")

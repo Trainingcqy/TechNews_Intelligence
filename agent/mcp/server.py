@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ..config import BEIJING, load_config
+from ..config import load_config, user_zone
 from ..evidence import EvidenceRegistry
 from ..retrieval.corpus import corpus_info
 from ..tools.registry import TOOLS, ToolOutcome, ToolSpec, TurnState, commit_call, prepare_call, run_call
@@ -28,7 +28,7 @@ def _evidence_row(evidence: Evidence) -> dict[str, str]:
                 "source": "HackerNews 讨论", "published_at": ""}
     article = evidence.article
     return {"eid": evidence.eid, "url": article.url, "title": article.title, "source": article.publisher,
-            "published_at": f"{article.published_at.astimezone(BEIJING):%Y-%m-%d}"}
+            "published_at": f"{article.published_at.astimezone(user_zone()):%Y-%m-%d}"}
 
 
 class InProcessMCPServer:

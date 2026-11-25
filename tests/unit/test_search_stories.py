@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from agent.config import using_zone
 from agent.retrieval import search
 from agent.types import Article
 from common.taxonomy import EVENT_KINDS
@@ -136,6 +138,12 @@ NOW = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)
 )
 def test_time_window(start_date, end_date, expected):
     assert search.time_window(7, start_date, end_date, now=NOW) == expected
+
+
+def test_time_window_dates_are_in_the_user_zone():
+    with using_zone(ZoneInfo("America/New_York")):
+        assert search.time_window(7, date(2026, 11, 24), date(2026, 11, 24), now=NOW) == (
+            datetime(2026, 11, 24, 5, 0, tzinfo=timezone.utc), datetime(2026, 11, 25, 5, 0, tzinfo=timezone.utc))
 
 
 def test_related_over_the_limit_keeps_other_roles_first():

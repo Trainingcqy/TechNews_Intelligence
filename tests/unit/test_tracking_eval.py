@@ -13,7 +13,7 @@ from agent.types import Answer, Source
 from eval.helpers import read_choices
 from eval.tracking import run_tracking as rt
 
-CHECKED = datetime(2026, 11, 10, tzinfo=rt.BEIJING)
+CHECKED = datetime(2026, 11, 10, tzinfo=rt.DEFAULT_ZONE)
 
 
 def src(n, url, name="TechCrunch", kind="media", story=None, article=None, article_kind="news", event_at="2026-11-12T00:00:00+00:00"):

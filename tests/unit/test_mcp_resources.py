@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from agent import trace_store
+from agent.config import using_zone
 from agent.mcp import server as server_mod
 from agent.mcp.server import InProcessMCPServer, build_newsdb_server
 from agent.mcp.stdio_server import _handle_request
@@ -63,6 +66,15 @@ def test_corpus_lookup_failure_returns_the_unavailable_text_and_warns(monkeypatc
     with request_trace(question="q", channel="web") as trace:
         assert corpus.corpus_info() == corpus.UNAVAILABLE
     assert trace.warnings == ["corpus_unavailable"]
+
+
+def test_corpus_range_is_rendered_in_the_user_zone(monkeypatch):
+    # 11-20 00:00 and 11-24 20:00 UTC: 11-20 and 11-25 in Beijing, 11-19 and 11-24 in New York.
+    rows = [("media", 3, datetime(2026, 11, 20, tzinfo=timezone.utc), datetime(2026, 11, 24, 20, tzinfo=timezone.utc))]
+    monkeypatch.setattr(corpus, "_cache", (time.monotonic(), (rows, [])))
+    assert "2026-11-20 至 2026-11-25" in corpus.corpus_info()
+    with using_zone(ZoneInfo("America/New_York")):
+        assert "2026-11-19 至 2026-11-24" in corpus.corpus_info()
 
 
 def test_newsdb_server_exposes_two_tools_and_one_resource(monkeypatch):

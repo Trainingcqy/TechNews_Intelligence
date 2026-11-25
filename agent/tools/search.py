@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from agent.config import BEIJING
+from agent.config import user_zone
 from agent.evidence import PUBLISHER_KIND_LABELS, seen_note
 from agent.retrieval.search import SearchResult, search_stories
 from agent.types import StoryHit, StoryStats
@@ -87,7 +87,8 @@ def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], discussio
     lines = [f"[{lead_eid}] {lead.title}"]
     if lead.title_zh:
         lines.append(INDENT + lead.title_zh)
-    meta = [lead.publisher, PUBLISHER_KIND_LABELS[lead.publisher_kind], f"{lead.published_at.astimezone(BEIJING):%Y-%m-%d}"]
+    meta = [lead.publisher, PUBLISHER_KIND_LABELS[lead.publisher_kind],
+            f"{lead.published_at.astimezone(user_zone()):%Y-%m-%d}"]
     if lead.topics:
         meta.append("、".join(lead.topics))
     if lead.kind:
@@ -97,7 +98,7 @@ def _render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], discussio
     if hit.related:
         others = [
             f"[{eid}] {a.publisher} · {PUBLISHER_KIND_LABELS[a.publisher_kind]} · "
-            f"{a.published_at.astimezone(BEIJING):%m-%d}《{a.title}》"
+            f"{a.published_at.astimezone(user_zone()):%m-%d}《{a.title}》"
             for eid, a in zip(related_eids, hit.related)
         ]
         lines.append(f"{INDENT}同故事其他报道：" + "；".join(others))

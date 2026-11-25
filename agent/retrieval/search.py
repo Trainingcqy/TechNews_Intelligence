@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-from agent.config import BEIJING
+from agent.config import user_zone
 from agent.trace import trace_span
 from agent.types import Article, StoryHit
 from common.db import get_conn, put_conn
@@ -33,10 +33,10 @@ def time_window(days: int, start_date: date | None, end_date: date | None,
                 *, now: datetime) -> tuple[datetime, datetime]:
     if start_date is None:
         return now - timedelta(days=days), now
-    start_at = datetime.combine(start_date, time.min, tzinfo=BEIJING)
+    start_at = datetime.combine(start_date, time.min, tzinfo=user_zone())
     if end_date is None:
         return start_at, now
-    return start_at, datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=BEIJING)
+    return start_at, datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=user_zone())
 
 
 def _rows_to_rerank_candidates(rows: list[tuple]) -> list[dict[str, Any]]:

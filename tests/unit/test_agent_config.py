@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from zoneinfo import ZoneInfo
+
 import pytest
 
-from agent.config import AgentConfig, load_config
+from agent.config import DEFAULT_ZONE, AgentConfig, load_config, zone_named
 
 
 def test_load_config_defaults(monkeypatch) -> None:
@@ -38,3 +40,19 @@ def test_load_config_rejects_invalid_max_steps(monkeypatch, value) -> None:
 def test_load_config_accepts_max_steps_bounds(monkeypatch, value) -> None:
     monkeypatch.setenv("AGENT_MAX_STEPS", value)
     assert load_config().max_steps == int(value)
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("America/New_York", ZoneInfo("America/New_York")),
+        (None, DEFAULT_ZONE),
+        ("", DEFAULT_ZONE),
+        ("Mars/Base", DEFAULT_ZONE),
+        # a directory of the zone database
+        ("America", DEFAULT_ZONE),
+        ("../etc/passwd", DEFAULT_ZONE),
+    ],
+)
+def test_zone_named_falls_back_to_the_default(name, expected) -> None:
+    assert zone_named(name) is expected

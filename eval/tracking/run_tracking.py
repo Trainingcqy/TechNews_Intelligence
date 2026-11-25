@@ -35,7 +35,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from agent.config import BEIJING  # noqa: E402
+from agent.config import DEFAULT_ZONE  # noqa: E402
 from agent.retrieval.stories import fetch_discussions_by_url_keys  # noqa: E402
 from eval.acceptance.run_acceptance import _append_jsonl, _cell, _read_jsonl  # noqa: E402
 from eval.helpers import (  # noqa: E402
@@ -286,7 +286,7 @@ def check_since_last(case: dict, deps: Deps) -> dict:
     The user key belongs to this check alone, so every row under it is removed before and after, which also
     clears what a killed earlier run left behind. An error in the middle is recorded as status `error`.
     """
-    checked_at = datetime.combine(date.fromisoformat(case["checked_at"]), dtime.min, tzinfo=BEIJING)
+    checked_at = datetime.combine(date.fromisoformat(case["checked_at"]), dtime.min, tzinfo=DEFAULT_ZONE)
     request_id = _request_id("followup", case["case_id"])
     result: dict[str, Any]
     deps.follows.delete(EVAL_USER_KEY)

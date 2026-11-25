@@ -12,6 +12,7 @@ class AccessRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     thread_id: str | None = None
+    timezone: str | None = Field(default=None, max_length=64)  # the browser's IANA zone, e.g. Asia/Shanghai
 
 
 class FollowRequest(BaseModel):

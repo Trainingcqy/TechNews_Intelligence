@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from agent.config import BEIJING
+from agent.config import user_zone
 from agent.trace import warn
 from agent.types import Answer
 from common.db import db_cursor, db_transaction
@@ -90,7 +90,7 @@ def seen_story_dates(user_key: str, story_ids: list[int]) -> dict[int, date]:
                 """,
                 (user_key, list(story_ids)),
             )
-            return {story_id: seen_at.astimezone(BEIJING).date() for story_id, seen_at in cur.fetchall()}
+            return {story_id: seen_at.astimezone(user_zone()).date() for story_id, seen_at in cur.fetchall()}
     except Exception:
         logger.exception("seen story lookup failed")
         warn("seen_dates_unavailable")
@@ -128,7 +128,7 @@ def render_follows(follows: list[Follow], today: date) -> str:
         if follow.last_checked_at is None:
             lines.append(f"- {follow.query}，尚未查看过")
         else:
-            checked = follow.last_checked_at.astimezone(BEIJING).date()
+            checked = follow.last_checked_at.astimezone(user_zone()).date()
             lines.append(f"- {follow.query}，上次查看 {checked:%Y-%m-%d}，距今 {(today - checked).days} 天")
     lines.append("只有用户问到关注项本身时，例如\"我关注的有什么新进展\"，才对每个关注项各发一次 search_news：query 填关注项原文，"
                  "days 填距上次查看的天数，最少 1，尚未查看过的填 14，最多 30。其他问题不受关注项影响，照常按规则检索；"

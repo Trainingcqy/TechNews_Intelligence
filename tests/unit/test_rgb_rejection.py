@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from common.model_settings import provider_default_models
 from eval.rgb.run_rgb_rejection import (
     _answer_leaks_into_docs,
     _format_negative_docs,
@@ -125,7 +126,7 @@ def test_resolve_judge_config_other_provider_without_model_takes_its_default():
         synth_model="deepseek-v4-pro",
         judge_provider="vertex",
         judge_model=None,
-    ) == ("vertex", "gemini-3.1-pro-preview")
+    ) == ("vertex", provider_default_models()["vertex"])
 
 
 def test_resolve_final_prompt_defaults_to_production():

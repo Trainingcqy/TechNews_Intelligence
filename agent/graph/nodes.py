@@ -12,7 +12,7 @@ from agent import memory, prompts
 from agent.citations import NOT_FOUND_TEXT, clean_direct_reply, contains_cjk, finalize_answer
 from agent.config import user_zone
 from agent.context import build_context
-from agent.evidence import EvidenceRegistry
+from agent.evidence import EvidenceRegistry, counted
 from agent.llm import call_text, call_with_tools, coerce_to_text
 from agent.retrieval.corpus import corpus_info
 from agent.tools.registry import (
@@ -27,6 +27,7 @@ from agent.tools.registry import (
 )
 from agent.trace import start_span, trace_span, warn, within
 from agent.types import Answer, Evidence, EvidenceFound, Progress
+from common import prompt_text
 from common.urls import extract_urls, url_key
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,7 @@ def collect(state, config) -> dict:
             story_ids = [hit.stats.story_id for p in current if p.ok and p.name == "search_news" for hit in p.data.hits]
             runtime.registry.seen_dates.update(memory.seen_story_dates(runtime.user_key, story_ids))
         for item in sorted([*current, *state["rejected"]], key=lambda item: item.index):
+            span = None
             if isinstance(item, ToolPayload):
                 runtime.tool_names.append(item.name)
                 _record_followed(runtime, item)
@@ -148,12 +150,20 @@ def collect(state, config) -> dict:
                 outcome = commit_call(item, registry=runtime.registry, state=runtime.tool_state,
                                       config=runtime.config)
                 _note_registration(runtime, before, step + 1, item.index)
-                if item.span is not None:
-                    item.span.output["text"] = outcome.gather_text
+                span = item.span
+                if span is not None:
+                    span.output["text"] = outcome.gather_text
                 item = outcome
             messages.append(ToolMessage(item.gather_text, tool_call_id=item.call_id))
             for evidence in item.new_evidence:
                 runtime.emit(_evidence_found(evidence))
+    left = runtime.config.max_steps - (step + 1)
+    if left > 0:
+        # The budget follows the step's last result, which the tool span records as the model saw it.
+        text = f"{messages[-1].content}\n\n{_budget_note(runtime, step + 1, left)}"
+        messages[-1] = ToolMessage(text, tool_call_id=messages[-1].tool_call_id)
+        if span is not None:
+            span.output["text"] = text
     if runtime.step_span is not None:
         runtime.step_span.finish()
         runtime.step_span = None
@@ -196,6 +206,15 @@ def finalize(state, config) -> dict:
     if check.removed_any:
         warn("citations_removed")
     return {"answer": answer}
+
+
+def _budget_note(runtime: TurnRuntime, step: int, left: int) -> str:
+    limits = runtime.config
+    reads_left = max(limits.max_read_articles - runtime.tool_state.read_count, 0)
+    note = prompt_text.render("gather.budget", step=str(step), max_steps=str(limits.max_steps),
+                              steps_left=counted(left, "step", "steps"), max_calls=str(limits.max_calls_per_step),
+                              reads_left=counted(reads_left, "read", "reads"))
+    return f"{note} {prompt_text.text('gather.last_step')}" if left == 1 else note
 
 
 def _call_record(index: int, call: dict, rejected: ToolOutcome | None) -> dict:

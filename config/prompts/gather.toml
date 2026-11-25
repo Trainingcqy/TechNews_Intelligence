@@ -42,6 +42,10 @@ Search results give summaries only. Use read_articles to read the full text in t
 
 clock = 'Current time: {now} ({zone}). Dates below and in tool results are in this time zone.'
 
+budget = 'Step {step} of {max_steps} done; {steps_left} left, up to {max_calls} calls each; {reads_left} left.'
+
+last_step = 'The next step is the last: its results go straight to the writer.'
+
 follows = '''
 The user's follows, listed below, serve ONLY to tell whether the question is about them. They are not a source of facts.
 <follows>

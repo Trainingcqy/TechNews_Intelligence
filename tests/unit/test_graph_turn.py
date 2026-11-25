@@ -271,7 +271,7 @@ def test_calls_over_step_limit_are_rejected(turn):
     assert r.answer == expected
     tool_messages = [m for m in r.gather.calls[1] if isinstance(m, ToolMessage)]
     assert [m.tool_call_id for m in tool_messages] == ["c1", "c2", "c3"]
-    assert tool_messages[2].content == "This step exceeded its call limit; this call was not run."
+    assert tool_messages[2].content.startswith("This step exceeded its call limit; this call was not run.\n\n")
     assert r.events == [UNDERSTANDING, RETRIEVING, Progress("retrieving", "正在检索相关新闻", "Gemini 最近 14 天"),
                         FOUND, SYNTHESIZING, Final(expected)]
     step = _spans(r.trace, "step")[0]
@@ -287,9 +287,24 @@ def test_argument_error_then_model_corrects(turn):
     expected = _answered(tool_calls=("search_news",))
     assert r.answer == expected
     last = r.gather.calls[1][-1]
-    assert (type(last), last.tool_call_id, last.content) == (
-        ToolMessage, "c1", "Invalid arguments: days: Input should be greater than or equal to 1")
+    assert (type(last), last.tool_call_id) == (ToolMessage, "c1")
+    assert last.content.startswith("Invalid arguments: days: Input should be greater than or equal to 1\n\n")
     assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
+
+
+def test_each_step_result_ends_with_the_remaining_budget(turn):
+    r = turn([_search("Genie 4"), _calls(("c2", "read_articles", {"ids": ["E1"]})), DONE], [ANSWERED],
+             config=AgentConfig(max_steps=3))
+
+    def note(step, steps_left, reads_left):
+        return prompt_text.render("gather.budget", step=step, max_steps="3", steps_left=steps_left, max_calls="5",
+                                  reads_left=reads_left)
+
+    after_first, after_second = (r.gather.calls[i][-1].content for i in (1, 2))
+    assert after_first.endswith("\n\n" + note("1", "2 steps", "10 reads"))
+    assert after_second.endswith("\n\n" + note("2", "1 step", "9 reads") + " " + prompt_text.text("gather.last_step"))
+    read_span = _spans(r.trace, "tool")[1]
+    assert read_span.output["text"] == after_second
 
 
 def test_model_call_failure(turn):

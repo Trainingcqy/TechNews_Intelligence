@@ -17,6 +17,8 @@ from common import prompt_text
 PLACEHOLDERS = {
     "gather.system": {"clock", "corpus", "follows"},
     "gather.clock": {"now", "zone"},
+    "gather.budget": {"step", "max_steps", "steps_left", "max_calls", "reads_left"},
+    "gather.last_step": set(),
     "gather.follows": {"items"},
     "final.system": set(),
     "final.user": {"clock", "question", "brief"},

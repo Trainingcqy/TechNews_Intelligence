@@ -155,5 +155,5 @@ def test_render_follows():
     follows = [Follow(1, "Anthropic 上市", CHECKED), Follow(2, "具身智能", None)]
 
     assert memory.render_follows(follows, date(2026, 11, 17)) == prompt_text.render(
-        "gather.follows", items="- Anthropic 上市，上次查看 2026-11-10，距今 7 天\n- 具身智能，尚未查看过")
+        "gather.follows", items="- Anthropic 上市: last checked 2026-11-10, 7 days ago\n- 具身智能: never checked")
     assert memory.render_follows([], date(2026, 11, 17)) == ""

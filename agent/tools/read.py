@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from .registry import PreparedCall, ReadArticlesArgs, ToolOutcome
 
 PREVIEW_CHARS = AgentConfig().gather_read_preview_chars
-OVER_QUOTA = "超出本次请求的读取上限"
+OVER_QUOTA = "over the read limit of this request"
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ def run_read_articles(prepared: PreparedCall, *, registry, state) -> ReadResult:
     for eid in args.ids:
         evidence = registry.get(eid)
         if evidence is None:
-            resolved.append((eid, None, "未知编号"))
+            resolved.append((eid, None, "unknown id"))
         else:
             resolved.append((eid, evidence.article, None))
     url_keys = {url: url_key(url) for url in args.urls}
@@ -52,11 +52,11 @@ def run_read_articles(prepared: PreparedCall, *, registry, state) -> ReadResult:
         by_key = {url_key(a.url): a for a in fetch_articles_by_url_keys(cur, list(allowed.values()))}
         for url, key in url_keys.items():
             if url not in allowed:
-                resolved.append((url, None, "该链接不是用户提供的"))
+                resolved.append((url, None, "the link was not provided by the user"))
             elif key in by_key:
                 resolved.append((url, by_key[key], None))
             else:
-                resolved.append((url, None, "该链接不在新闻库内"))
+                resolved.append((url, None, "the link is not in the news database"))
         bodies = fetch_bodies(cur, [a.article_id for _, a, _ in resolved if a and a.body_level == "full"])
         cur.close()
     finally:
@@ -67,7 +67,7 @@ def run_read_articles(prepared: PreparedCall, *, registry, state) -> ReadResult:
         if error is None:
             full = bodies.get(article.article_id)
             if full is None:
-                error = "没有入库正文"
+                error = "no full text stored"
         if error is not None:
             items.append(ReadItem(target, article, None, 0, error))
         else:
@@ -95,7 +95,7 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
     # registry.py imports this module, so the import is deferred to call time.
     from .registry import ToolOutcome
 
-    lines = ["read_articles 结果："]
+    lines = ["read_articles results:"]
     # A search lead was already reported when it became citable; only items that become citable here are new.
     citable_before = registry.citable_ids()
     read = []
@@ -105,19 +105,19 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
             evidence = registry.add_article(item.article, "summary")
         label = evidence.eid if evidence else item.target
         if item.error is not None:
-            lines.append(f"[{label}] 读取失败：{item.error}。")
+            lines.append(f"[{label}] read failed: {item.error}.")
             continue
         truncated = item.total_chars > len(item.text)
         registry.set_fulltext(evidence.eid, item.text, item.total_chars, truncated)
         read.append(evidence)
         article = item.article
         published = article.published_at.astimezone(user_zone())
-        head = f"[{label}] 《{article.title}》{article.publisher} · {published:%Y-%m-%d}"
-        size = f"全文 {item.total_chars} 字符"
+        head = f'[{label}] "{article.title}" {article.publisher} · {published:%Y-%m-%d}'
+        size = f"{item.total_chars} characters in full"
         if truncated:
-            size += f"，已读取前 {len(item.text)} 字符"
-        lines.append(f"{head}｜{size}")
-        lines.append(f"开头：{item.text[:PREVIEW_CHARS]}")
+            size += f", first {len(item.text)} read"
+        lines.append(f"{head} | {size}")
+        lines.append(f"Opening: {item.text[:PREVIEW_CHARS]}")
     text = "\n".join(lines)
     ok = bool(read)
     return ToolOutcome(index=0, call_id="", name="read_articles", ok=ok, gather_text=text,

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 from .state import TurnRuntime
 
-CALL_LIMIT_TEXT = "已超过单步调用上限，本次调用未执行。"
+CALL_LIMIT_TEXT = "This step exceeded its call limit; this call was not run."
 
 
 def _runtime(config) -> TurnRuntime:

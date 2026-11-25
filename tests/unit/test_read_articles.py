@@ -45,9 +45,9 @@ def _read(registry, state=None, **fields):
 def test_unknown_id_fails_and_all_failed_is_not_ok(monkeypatch):
     _fake_db(monkeypatch)
     result, outcome = _read(EvidenceRegistry(), ids=["E9"])
-    assert result.items[0].error == "未知编号"
+    assert result.items[0].error == "unknown id"
     assert outcome.ok is False
-    assert outcome.gather_text == "read_articles 结果：\n[E9] 读取失败：未知编号。"
+    assert outcome.gather_text == "read_articles results:\n[E9] read failed: unknown id."
 
 
 def test_url_must_come_from_user_unless_mcp(monkeypatch):
@@ -55,8 +55,8 @@ def test_url_must_come_from_user_unless_mcp(monkeypatch):
     url = "https://techcrunch.com/genie-4"
 
     result, outcome = _read(EvidenceRegistry(), urls=[url])
-    assert result.items[0].error == "该链接不是用户提供的"
-    assert outcome.gather_text.endswith(f"[{url}] 读取失败：该链接不是用户提供的。")
+    assert result.items[0].error == "the link was not provided by the user"
+    assert outcome.gather_text.endswith(f"[{url}] read failed: the link was not provided by the user.")
 
     for state in (TurnState(user_urls={url_key(url)}), TurnState(user_urls=set(), allow_any_library_url=True)):
         result, outcome = _read(EvidenceRegistry(), state, urls=[url])
@@ -67,7 +67,7 @@ def test_url_not_in_library(monkeypatch):
     _fake_db(monkeypatch)
     url = "https://example.com/other"
     result, outcome = _read(EvidenceRegistry(), TurnState(user_urls={url_key(url)}), urls=[url])
-    assert result.items[0].error == "该链接不在新闻库内"
+    assert result.items[0].error == "the link is not in the news database"
     assert outcome.ok is False
 
 
@@ -75,7 +75,7 @@ def test_read_limit_exhausted():
     state = TurnState(user_urls=set(), read_count=8)
     outcome = prepare_call(0, {"name": "read_articles", "args": {"ids": ["E1"]}, "id": "c"},
                            state=state, config=AgentConfig(max_read_articles=8))
-    assert (outcome.ok, outcome.reason, outcome.gather_text) == (False, "read_quota", "已达到本次请求的读取上限。")
+    assert (outcome.ok, outcome.reason, outcome.gather_text) == (False, "read_quota", "The read limit of this request has been reached.")
     assert state.read_count == 8
 
 
@@ -94,12 +94,14 @@ def test_targets_over_the_read_quota_are_reported(monkeypatch):
 
     assert trace.warnings == ["read_targets_dropped"]
     assert [(item.target, item.error) for item in result.items] == [
-        ("E1", None), ("E2", "超出本次请求的读取上限"), ("https://a.com/x", "超出本次请求的读取上限")]
+        ("E1", None), ("E2", "over the read limit of this request"),
+        ("https://a.com/x", "over the read limit of this request")]
     assert outcome.gather_text.splitlines()[-2:] == [
-        "[E2] 读取失败：超出本次请求的读取上限。", "[https://a.com/x] 读取失败：超出本次请求的读取上限。"]
+        "[E2] read failed: over the read limit of this request.",
+        "[https://a.com/x] read failed: over the read limit of this request."]
     assert read.read_trace_output(result)["items"][1] == {
         "target": "E2", "article_id": None, "chars": 0, "total_chars": 0,
-        "error": "超出本次请求的读取上限"}
+        "error": "over the read limit of this request"}
 
 
 def test_article_without_body_registers_summary_and_skips_fetch(monkeypatch):
@@ -110,9 +112,9 @@ def test_article_without_body_registers_summary_and_skips_fetch(monkeypatch):
 
     result, outcome = _read(registry, TurnState(user_urls={url_key(url)}), urls=[url])
 
-    assert (result.items[0].text, result.items[0].error) == (None, "没有入库正文")
+    assert (result.items[0].text, result.items[0].error) == (None, "no full text stored")
     assert registry.get("E1").level == "summary"
-    assert outcome.gather_text == "read_articles 结果：\n[E1] 读取失败：没有入库正文。"
+    assert outcome.gather_text == "read_articles results:\n[E1] read failed: no full text stored."
     assert outcome.ok is False
 
 
@@ -140,9 +142,9 @@ def test_truncation_and_preview(monkeypatch):
     assert (evidence.level, evidence.fulltext, evidence.fulltext_total_chars, evidence.truncated) == (
         "fulltext", body[:1000], 1500, True)
     assert outcome.gather_text.splitlines() == [
-        "read_articles 结果：",
-        "[E1] 《Genie 4 adds audio》TechCrunch · 2026-11-12｜全文 1500 字符，已读取前 1000 字符",
-        "开头：" + body[:800],
-        "[E5] 读取失败：未知编号。",
+        "read_articles results:",
+        '[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 1500 characters in full, first 1000 read',
+        "Opening: " + body[:800],
+        "[E5] read failed: unknown id.",
     ]
     assert outcome.ok is True

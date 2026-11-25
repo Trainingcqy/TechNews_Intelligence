@@ -121,7 +121,7 @@ def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
         server.register_tool(spec)
     server.register_resource(
         uri="news://corpus",
-        name="新闻库范围",
+        name="News database overview",
         description="Corpus overview: article count, date range, publisher roles, main publishers, topic and kind vocabularies (read-only snapshot).",
         mime_type="text/plain",
         reader=corpus_info,

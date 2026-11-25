@@ -8,15 +8,19 @@ from common.urls import url_key
 
 _LEVEL_RANK = {"listed": 0, "summary": 1, "fulltext": 2}
 PUBLISHER_KIND_LABELS = {
-    "official": "官方",
-    "media": "媒体",
-    "community": "社区",
-    "code_host": "代码与模型托管",
-    "paper_host": "论文托管",
-    "social": "社交与视频平台",
-    "personal": "个人博客",
-    "unknown": "未分类",
+    "official": "official",
+    "media": "media",
+    "community": "community",
+    "code_host": "code and model hosting",
+    "paper_host": "paper hosting",
+    "social": "social and video platform",
+    "personal": "personal blog",
+    "unknown": "unclassified",
 }
+
+
+def counted(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
 
 
 class EvidenceRegistry:
@@ -83,43 +87,43 @@ def _render(evidence: Evidence, with_body: bool, seen_dates: dict[int, date]) ->
     if with_body:
         text = evidence.fulltext or ""
         if evidence.truncated:
-            lines.append(f"正文，前 {len(text)} 字符，全文 {evidence.fulltext_total_chars} 字符：")
+            lines.append(f"Full text, first {len(text)} of {evidence.fulltext_total_chars} characters:")
         else:
-            lines.append(f"正文，全文 {evidence.fulltext_total_chars} 字符：")
+            lines.append(f"Full text, {evidence.fulltext_total_chars} characters:")
         lines.append(text)
     return "\n".join(lines)
 
 
 def _render_article(evidence: Evidence, seen_dates: dict[int, date]) -> list[str]:
     article = evidence.article
-    lines = [f"[{evidence.eid}] 标题：{article.title}"]
+    lines = [f"[{evidence.eid}] Title: {article.title}"]
     if article.title_zh:
-        lines.append(f"中文标题：{article.title_zh}")
+        lines.append(f"Chinese title: {article.title_zh}")
     meta = [
-        f"发布方：{article.publisher}，{PUBLISHER_KIND_LABELS[article.publisher_kind]}",
-        f"时间：{article.published_at.astimezone(user_zone()):%Y-%m-%d}",
+        f"Publisher: {article.publisher}, {PUBLISHER_KIND_LABELS[article.publisher_kind]}",
+        f"Date: {article.published_at.astimezone(user_zone()):%Y-%m-%d}",
     ]
     if article.topics:
-        meta.append("领域：" + "、".join(article.topics))
+        meta.append("Topics: " + ", ".join(article.topics))
     if article.kind:
-        meta.append(f"类型：{article.kind}")
-    lines.append("｜".join(meta))
+        meta.append(f"Type: {article.kind}")
+    lines.append(" | ".join(meta))
     if evidence.stats is not None:
         lines.append(_render_stats(evidence.stats) + seen_note(seen_dates.get(evidence.stats.story_id)))
-    lines.append(f"摘要：{article.summary}")
+    lines.append(f"Summary: {article.summary}")
     if article.body_level != "full":
-        lines.append("本文没有入库正文，摘要只依据标题和摘录生成")
+        lines.append("No full text stored: the summary is based only on the title and an excerpt.")
     return lines
 
 
 def _render_stats(stats: StoryStats) -> str:
-    parts = [f"{stats.report_count} 篇报道", f"{stats.publisher_count} 个发布方"]
+    parts = [counted(stats.report_count, "report", "reports"), counted(stats.publisher_count, "publisher", "publishers")]
     if "official" in stats.publisher_kinds:
-        parts.append("含官方发布")
-    parts.append(f"首次 {stats.first_at.astimezone(user_zone()):%Y-%m-%d}")
-    parts.append(f"最近 {stats.last_at.astimezone(user_zone()):%Y-%m-%d}")
-    return "同一故事：" + "，".join(parts)
+        parts.append("including an official publisher")
+    parts.append(f"first {stats.first_at.astimezone(user_zone()):%Y-%m-%d}")
+    parts.append(f"latest {stats.last_at.astimezone(user_zone()):%Y-%m-%d}")
+    return "Coverage: " + ", ".join(parts)
 
 
 def seen_note(seen: date | None) -> str:
-    return f"，此前已在 {seen:%m-%d} 的回答中提及" if seen else ""
+    return f"; already mentioned in the answer on {seen:%m-%d}" if seen else ""

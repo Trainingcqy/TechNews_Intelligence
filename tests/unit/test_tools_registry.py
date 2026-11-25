@@ -109,8 +109,8 @@ def test_read_args_defaults_and_bounds():
 def test_prepare_unknown_tool():
     outcome = _prepare("query_news", {"query": "x"})
     assert outcome == ToolOutcome(index=2, call_id="c1", name="query_news", ok=False,
-                                  gather_text="未知工具：query_news。可用工具：search_news、read_articles。",
-                                  error="未知工具：query_news。可用工具：search_news、read_articles。",
+                                  gather_text="Unknown tool: query_news. Available tools: search_news, read_articles.",
+                                  error="Unknown tool: query_news. Available tools: search_news, read_articles.",
                                   reason="unknown_tool")
 
 
@@ -120,18 +120,19 @@ def test_prepare_duplicate_call_ignores_key_order():
     second = _prepare("search_news", {"days": 7, "query": "Genie 4"}, state)
     other = _prepare("search_news", {"query": "Genie 4", "days": 8}, state)
     assert isinstance(first, PreparedCall) and isinstance(other, PreparedCall)
-    assert (second.ok, second.reason, second.gather_text) == (False, "duplicate", "与之前的调用完全相同，结果见上文。")
+    assert (second.ok, second.reason, second.gather_text) == (
+        False, "duplicate", "Identical to an earlier call; see its result above.")
 
 
 def test_prepare_validation_error_text_lists_fields():
     outcome = _prepare("search_news", {"query": "x", "days": 0, "limit": 21})
     assert (outcome.ok, outcome.reason) == (False, "invalid_args")
     assert outcome.gather_text == (
-        "参数错误：days：Input should be greater than or equal to 1；"
-        "limit：Input should be less than or equal to 20"
+        "Invalid arguments: days: Input should be greater than or equal to 1; "
+        "limit: Input should be less than or equal to 20"
     )
     combined = _prepare("search_news", {"end_date": "2026-10-31"})
-    assert combined.gather_text == "参数错误：Value error, end_date requires start_date"
+    assert combined.gather_text == "Invalid arguments: Value error, end_date requires start_date"
 
 
 def test_prepare_returns_validated_args():
@@ -166,7 +167,7 @@ def test_run_call_turns_handler_exception_into_error_payload(monkeypatch):
         payload = run_call(prepared, registry=EvidenceRegistry(), state=TurnState(user_urls=set()))
 
     assert (payload.index, payload.call_id, payload.ok, payload.data, payload.error) == (
-        2, "c1", False, None, "工具执行失败：RuntimeError")
+        2, "c1", False, None, "Tool failed: RuntimeError")
     (span,) = trace.spans
     assert payload.span is span
     assert (span.kind, span.name, span.status, span.error_code, span.error_message) == (
@@ -175,7 +176,7 @@ def test_run_call_turns_handler_exception_into_error_payload(monkeypatch):
 
     outcome = commit_call(payload, registry=EvidenceRegistry(), state=TurnState(user_urls=set()),
                           config=AgentConfig())
-    assert (outcome.index, outcome.ok, outcome.gather_text) == (2, False, "工具执行失败：RuntimeError")
+    assert (outcome.index, outcome.ok, outcome.gather_text) == (2, False, "Tool failed: RuntimeError")
 
 
 def test_run_call_records_stories_and_weak_match(monkeypatch):

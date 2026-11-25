@@ -157,14 +157,14 @@ def test_turn_runs_in_the_user_zone(turn, monkeypatch):
     assert _spans(r.trace, "context")[0].output["timezone"] == "America/New_York"
     now = _turn_now(r.trace)
     system = r.gather.calls[0][0].content
-    assert prompts.gather_clock(now) in system and "- Genie 4，上次查看 2026-11-09，" in system
+    assert prompts.gather_clock(now) in system and "- Genie 4: last checked 2026-11-09, " in system
     search_text, read_text = (m.content for m in r.gather.calls[2] if isinstance(m, ToolMessage))
-    assert "TechCrunch · 媒体 · 2026-11-11" in search_text
-    assert "[E2] The Verge · 媒体 · 11-11《Genie 4 hands-on》" in search_text
-    assert "[E1] 《Genie 4 adds audio》TechCrunch · 2026-11-11｜" in read_text
+    assert "TechCrunch · media · 2026-11-11" in search_text
+    assert '[E2] The Verge · media · 11-11 "Genie 4 hands-on"' in search_text
+    assert '[E1] "Genie 4 adds audio" TechCrunch · 2026-11-11 | ' in read_text
     last = r.final.calls[0][-1].content
     assert last.startswith(prompts.final_clock(now) + "\n\nUser question:\n")
-    assert "时间：2026-11-11" in last and "首次 2026-11-11，最近 2026-11-11" in last
+    assert "Date: 2026-11-11" in last and "first 2026-11-11, latest 2026-11-11" in last
     assert EvidenceFound("E1", "Genie 4 adds audio", "TechCrunch", ARTICLE.url, "2026-11-11") in r.events
     assert r.answer.sources[0].published_at == "2026-11-11"
 
@@ -199,7 +199,7 @@ def test_normal_answer(turn):
     system, *context, last = synthesis
     assert system == SystemMessage(prompts.FINAL_SYSTEM_PROMPT)
     assert context == [HumanMessage("上一个问题"), AIMessage("上一个回答")]
-    assert "\n\nEvidence brief:\n[E1] 标题：Genie 4 adds audio\n" in last.content
+    assert "\n\nEvidence brief:\n[E1] Title: Genie 4 adds audio\n" in last.content
     assert BODY in last.content
     assert last.content.endswith("Write the final answer now.")
 
@@ -271,7 +271,7 @@ def test_calls_over_step_limit_are_rejected(turn):
     assert r.answer == expected
     tool_messages = [m for m in r.gather.calls[1] if isinstance(m, ToolMessage)]
     assert [m.tool_call_id for m in tool_messages] == ["c1", "c2", "c3"]
-    assert tool_messages[2].content == "已超过单步调用上限，本次调用未执行。"
+    assert tool_messages[2].content == "This step exceeded its call limit; this call was not run."
     assert r.events == [UNDERSTANDING, RETRIEVING, Progress("retrieving", "正在检索相关新闻", "Gemini 最近 14 天"),
                         FOUND, SYNTHESIZING, Final(expected)]
     step = _spans(r.trace, "step")[0]
@@ -288,7 +288,7 @@ def test_argument_error_then_model_corrects(turn):
     assert r.answer == expected
     last = r.gather.calls[1][-1]
     assert (type(last), last.tool_call_id, last.content) == (
-        ToolMessage, "c1", "参数错误：days：Input should be greater than or equal to 1")
+        ToolMessage, "c1", "Invalid arguments: days: Input should be greater than or equal to 1")
     assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
 
 
@@ -349,18 +349,19 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
         {"query": "Genie 4", "last_checked_at": "2026-11-09T17:00:00+00:00"},
         {"query": "具身智能", "last_checked_at": None}]
     failed = next(span for span in _spans(trace, "tool") if span.status == "error")
-    assert (failed.input["query"], failed.output["text"]) == ("embodied AI", "工具执行失败：RuntimeError")
+    assert (failed.input["query"], failed.output["text"]) == ("embodied AI", "Tool failed: RuntimeError")
     assert trace.output["seen_dates"] == {"5": "2026-11-10"}
     system = gather.calls[0][0]
     now = _turn_now(trace)
     assert system == SystemMessage(prompt_text.render(
         "gather.system", clock=prompts.gather_clock(now), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, now.date())))
-    assert "- Genie 4，上次查看 2026-11-10，距今" in system.content
+    assert "- Genie 4: last checked 2026-11-10, " in system.content
     first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
-    assert "｜同一故事 1 篇报道、1 个发布方，此前已在 11-10 的回答中提及\n" in first_result.content
-    assert '"此前已在 MM-DD 的回答中提及"' in final.calls[0][0].content
+    assert " | Coverage: 1 report, 1 publisher; already mentioned in the answer on 11-10\n" in first_result.content
+    assert '"already mentioned in the answer on MM-DD"' in final.calls[0][0].content
     brief = final.calls[0][-1].content
-    assert "同一故事：1 篇报道，1 个发布方，首次 2026-11-12，最近 2026-11-12，此前已在 11-10 的回答中提及\n" in brief
+    assert ("Coverage: 1 report, 1 publisher, first 2026-11-12, latest 2026-11-12; "
+            "already mentioned in the answer on 11-10\n") in brief
 
 
 def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
@@ -385,4 +386,4 @@ def test_turn_without_user_key_skips_memory(turn, monkeypatch):
     r = turn([_search("Genie 4"), DONE], [ANSWERED])
 
     assert r.answer == _answered(tool_calls=("search_news",))
-    assert "此前已在" not in r.final.calls[0][-1].content
+    assert "already mentioned" not in r.final.calls[0][-1].content

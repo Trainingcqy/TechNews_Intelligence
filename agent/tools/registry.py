@@ -170,19 +170,20 @@ def _validation_text(exc: ValidationError) -> str:
     reasons = []
     for error in exc.errors():
         loc = ".".join(str(part) for part in error["loc"])
-        reasons.append(f"{loc}：{error['msg']}" if loc else error["msg"])
-    return "参数错误：" + "；".join(reasons)
+        reasons.append(f"{loc}: {error['msg']}" if loc else error["msg"])
+    return "Invalid arguments: " + "; ".join(reasons)
 
 
 def prepare_call(index: int, call: dict, *, state: TurnState, config: AgentConfig) -> PreparedCall | ToolOutcome:
     name, raw_args, call_id = call["name"], call["args"], call["id"]
     spec = _SPECS.get(name)
     if spec is None:
-        return reject(index, call_id, name, f"未知工具：{name}。可用工具：search_news、read_articles。", "unknown_tool")
+        return reject(index, call_id, name, f"Unknown tool: {name}. Available tools: search_news, read_articles.",
+                      "unknown_tool")
 
     key = name + json.dumps(raw_args, sort_keys=True)
     if key in state.seen_calls:
-        return reject(index, call_id, name, "与之前的调用完全相同，结果见上文。", "duplicate")
+        return reject(index, call_id, name, "Identical to an earlier call; see its result above.", "duplicate")
     state.seen_calls.add(key)
 
     try:
@@ -194,7 +195,7 @@ def prepare_call(index: int, call: dict, *, state: TurnState, config: AgentConfi
     if isinstance(args, ReadArticlesArgs):
         remaining = max(config.max_read_articles - state.read_count, 0)
         if remaining == 0:
-            return reject(index, call_id, name, "已达到本次请求的读取上限。", "read_quota")
+            return reject(index, call_id, name, "The read limit of this request has been reached.", "read_quota")
         ids = args.ids[:remaining]
         urls = args.urls[:remaining - len(ids)]
         dropped = (*args.ids[len(ids):], *args.urls[len(urls):])
@@ -213,7 +214,7 @@ def run_call(prepared: PreparedCall, *, registry: EvidenceRegistry, state: TurnS
         except Exception as exc:
             span.fail(exc)
             return ToolPayload(index=prepared.index, call_id=prepared.call_id, name=name, args=prepared.args,
-                               ok=False, data=None, error=f"工具执行失败：{type(exc).__name__}", span=span)
+                               ok=False, data=None, error=f"Tool failed: {type(exc).__name__}", span=span)
         span.output = _SPECS[name].trace_output(data)
         return ToolPayload(index=prepared.index, call_id=prepared.call_id, name=name, args=prepared.args,
                            ok=True, data=data, span=span)

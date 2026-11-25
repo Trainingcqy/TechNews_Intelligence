@@ -95,10 +95,10 @@ def test_the_synthesis_prompt_and_the_evidence_block_use_the_same_wording():
     block, _ = render_for_synthesis(registry, 60000)
     # What the prompt quotes, and what the block shows for it.
     for quoted, shown in [
-        ('"同一故事"', "同一故事："),
-        ('"没有入库正文"', "没有入库正文"),
-        ('"此前已在 MM-DD 的回答中提及"', "此前已在 11-10 的回答中提及"),
-        ('publisher role is "官方"', "，官方"),
+        ('"Coverage:"', "Coverage: "),
+        ('"No full text stored"', "No full text stored"),
+        ('"already mentioned in the answer on MM-DD"', "already mentioned in the answer on 11-10"),
+        ('publisher role is "official"', ", official |"),
     ]:
         assert quoted in FINAL_SYSTEM_PROMPT
         assert shown in block

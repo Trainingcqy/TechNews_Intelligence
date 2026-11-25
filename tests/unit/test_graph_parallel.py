@@ -73,7 +73,7 @@ def test_parallel_calls_keep_call_order_and_trace(monkeypatch):
     assert finished == ["Gamma", "Beta", "Alpha"]
     tool_messages = [m for m in gather.calls[1] if isinstance(m, ToolMessage)]
     assert [m.tool_call_id for m in tool_messages] == ["c1", "c2", "c3", "c4"]
-    assert tool_messages[1].content == "参数错误：days：Input should be greater than or equal to 1"
+    assert tool_messages[1].content == "Invalid arguments: days: Input should be greater than or equal to 1"
     assert [tool_messages[i].content.splitlines()[1] for i in (0, 2, 3)] == [
         "[E1] Alpha launches", "[E2] Beta launches", "[E3] Gamma launches",
     ]

@@ -81,19 +81,19 @@ def _two_fulltext_registry() -> EvidenceRegistry:
 
 
 ARTICLE_BLOCK = (
-    "[E2] 标题：Google’s Genie 4 world model adds audio, more realistic worlds\n"
-    "中文标题：谷歌 Genie 4 世界模型新增音频与更真实的场景\n"
-    "发布方：TechCrunch，媒体｜时间：2026-11-12｜领域：ai｜类型：release\n"
-    "同一故事：5 篇报道，3 个发布方，含官方发布，首次 2026-11-11，最近 2026-11-13\n"
-    "摘要：谷歌发布 Genie 4。"
+    "[E2] Title: Google’s Genie 4 world model adds audio, more realistic worlds\n"
+    "Chinese title: 谷歌 Genie 4 世界模型新增音频与更真实的场景\n"
+    "Publisher: TechCrunch, media | Date: 2026-11-12 | Topics: ai | Type: release\n"
+    "Coverage: 5 reports, 3 publishers, including an official publisher, first 2026-11-11, latest 2026-11-13\n"
+    "Summary: 谷歌发布 Genie 4。"
 )
-ARTICLE_BODY = "\n正文，前 40 字符，全文 12034 字符：\n" + "正" * 40
+ARTICLE_BODY = "\nFull text, first 40 of 12034 characters:\n" + "正" * 40
 OTHER_BLOCK = (
-    "[E3] 标题：Genie 4 arrives\n"
-    "发布方：The Verge，媒体｜时间：2026-11-12｜领域：ai｜类型：news\n"
-    "摘要：谷歌发布 Genie 4。"
+    "[E3] Title: Genie 4 arrives\n"
+    "Publisher: The Verge, media | Date: 2026-11-12 | Topics: ai | Type: news\n"
+    "Summary: 谷歌发布 Genie 4。"
 )
-OTHER_BODY = "\n正文，前 40 字符，全文 21840 字符：\n" + "文" * 40
+OTHER_BODY = "\nFull text, first 40 of 21840 characters:\n" + "文" * 40
 
 
 def test_render_formats_articles_with_and_without_story_stats() -> None:
@@ -114,16 +114,16 @@ def test_render_omits_optional_lines_and_marks_missing_body() -> None:
     text, dropped = render_for_synthesis(registry, 10_000)
     assert dropped == []
     assert text == (
-        "[E2] 标题：Google’s Genie 4 world model adds audio, more realistic worlds\n"
-        "发布方：TechCrunch，媒体｜时间：2026-11-12｜领域：ai、software\n"
-        "同一故事：5 篇报道，3 个发布方，首次 2026-11-11，最近 2026-11-13\n"
-        "摘要：谷歌发布 Genie 4。\n"
-        "本文没有入库正文，摘要只依据标题和摘录生成\n"
+        "[E2] Title: Google’s Genie 4 world model adds audio, more realistic worlds\n"
+        "Publisher: TechCrunch, media | Date: 2026-11-12 | Topics: ai, software\n"
+        "Coverage: 5 reports, 3 publishers, first 2026-11-11, latest 2026-11-13\n"
+        "Summary: 谷歌发布 Genie 4。\n"
+        "No full text stored: the summary is based only on the title and an excerpt.\n"
         "\n"
-        "[E3] 标题：Genie 4 arrives\n"
-        "发布方：The Verge，媒体｜时间：2026-11-12｜领域：ai｜类型：news\n"
-        "摘要：谷歌发布 Genie 4。\n"
-        "正文，全文 4 字符：\n"
+        "[E3] Title: Genie 4 arrives\n"
+        "Publisher: The Verge, media | Date: 2026-11-12 | Topics: ai | Type: news\n"
+        "Summary: 谷歌发布 Genie 4。\n"
+        "Full text, 4 characters:\n"
         "正文全文"
     )
 

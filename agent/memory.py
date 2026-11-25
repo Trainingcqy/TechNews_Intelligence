@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from agent.config import user_zone
+from agent.evidence import counted
 from agent.trace import warn
 from agent.types import Answer
 from common import prompt_text
@@ -127,8 +128,9 @@ def render_follows(follows: list[Follow], today: date) -> str:
     items = []
     for follow in follows:
         if follow.last_checked_at is None:
-            items.append(f"- {follow.query}，尚未查看过")
+            items.append(f"- {follow.query}: never checked")
         else:
             checked = follow.last_checked_at.astimezone(user_zone()).date()
-            items.append(f"- {follow.query}，上次查看 {checked:%Y-%m-%d}，距今 {(today - checked).days} 天")
+            ago = counted((today - checked).days, "day", "days")
+            items.append(f"- {follow.query}: last checked {checked:%Y-%m-%d}, {ago} ago")
     return prompt_text.render("gather.follows", items="\n".join(items))

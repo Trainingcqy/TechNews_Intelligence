@@ -6,14 +6,15 @@ import logging
 import time
 
 from agent.config import user_zone
+from agent.evidence import counted
 from agent.trace import warn
 from common.db import get_conn, put_conn
-from common.taxonomy import KINDS, TOPICS
+from common.taxonomy import KINDS, TOPIC_SCOPES
 
 logger = logging.getLogger(__name__)
 
 CACHE_SECONDS = 600
-UNAVAILABLE = "新闻库范围暂时无法获取"
+UNAVAILABLE = "The news database overview is temporarily unavailable."
 
 # The query rows, not the text: the dates are rendered in each user's zone.
 _cache: tuple[float, tuple[list[tuple], list[tuple]]] | None = None
@@ -26,15 +27,16 @@ def _render(kind_rows: list[tuple], publisher_rows: list[tuple]) -> str:
     last = max(row[3] for row in kind_rows).astimezone(user_zone()).date()
     official = counts.get("official", 0)
     media = counts.get("media", 0)
-    roles = f"发布方角色：官方 {official} 篇；媒体 {media} 篇"
+    roles = f"Articles by publisher role: official {official}, media {media}"
     if total - official - media:
-        roles += f"；其他 {total - official - media} 篇"
+        roles += f", other {total - official - media}"
     return "\n".join([
-        f"新闻库范围：共 {total} 篇，{first.isoformat()} 至 {last.isoformat()}。",
-        roles + "。",
-        "主要发布方：" + "、".join(name for name, _ in publisher_rows) + "。",
-        "领域：" + "；".join(f"{key} {label}" for key, label in TOPICS.items()) + "。",
-        "类型：" + "；".join(f"{key} {label}" for key, label in KINDS.items()) + "。",
+        f"Range: {counted(total, 'article', 'articles')} from {first.isoformat()} to {last.isoformat()}.",
+        roles + ".",
+        "Main publishers: " + ", ".join(name for name, _ in publisher_rows) + ".",
+        "Topics:",
+        *(f"- {key}: {scope}" for key, scope in TOPIC_SCOPES.items()),
+        "Article types: " + ", ".join(KINDS) + ".",
     ])
 
 

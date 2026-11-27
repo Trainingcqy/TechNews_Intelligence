@@ -28,11 +28,23 @@ class SourceItem(BaseModel):
     published_at: str = ""
 
 
+class ProcessEntry(BaseModel):
+    action: str
+    subject: str
+    meta: str = ""
+
+
+class ProcessRecord(BaseModel):
+    summary: str
+    items: list[ProcessEntry]
+
+
 class ChatResponse(BaseModel):
     reply: str
     thread_id: str
     kind: str = "answered"             # Answer.status 的六个取值
     sources: list[SourceItem] = Field(default_factory=list)
+    process: ProcessRecord | None = None
     remaining: int
     quota: int
     unlimited: bool = False

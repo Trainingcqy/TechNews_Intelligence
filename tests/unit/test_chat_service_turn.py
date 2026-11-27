@@ -12,9 +12,9 @@ from fastapi import HTTPException
 
 from zoneinfo import ZoneInfo
 
-from agent import Answer, Delta, EvidenceFound, Final, Progress
+from agent import Answer, Progress
 from agent.config import DEFAULT_ZONE
-from agent.types import Source
+from agent.types import Process, ProcessItem, Source
 from app import streaming
 from app.schemas import ChatRequest
 from app import chat_service
@@ -22,6 +22,8 @@ from app import chat_service
 SOURCE = Source(
     n=1, url="https://example.com/a", title="Title", title_zh="标题", source="Example", published_at="2026-11-12"
 )
+PROCESS = Process("检索 1 次", (ProcessItem("检索", "Genie 4", "最近 14 天，1 条新闻"),))
+PROCESS_JSON = {"summary": "检索 1 次", "items": [{"action": "检索", "subject": "Genie 4", "meta": "最近 14 天，1 条新闻"}]}
 TOKEN = {"id": 7, "email": "user@example.com"}
 HISTORY = [{"role": "user", "parts": [{"text": "上一问"}]}]
 STATUSES = ["answered", "insufficient", "direct", "not_found", "blocked", "error"]
@@ -40,7 +42,7 @@ def env(monkeypatch: pytest.MonkeyPatch):
 
     def _run_turn(question, history=None, *, on_event=None, **kwargs):
         state.run_turn_calls.append((question, history, kwargs))
-        for event in [*state.events, Final(state.answer)]:
+        for event in state.events:
             if on_event is not None:
                 on_event(event)
         return state.answer
@@ -77,17 +79,10 @@ def env(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_event_to_sse_mapping() -> None:
-    assert _parse(streaming.event_to_sse(Progress(stage="retrieving", title="检索", detail="三条"))) == (
+    assert _parse(streaming.event_to_sse(Progress("正在检索", "Genie 4，最近 14 天"))) == (
         "progress",
-        {"phase": "retrieving", "title": "检索", "detail": "三条", "status": "running"},
+        {"title": "正在检索", "detail": "Genie 4，最近 14 天"},
     )
-    evidence = EvidenceFound(eid="E1", title="T", source="S", url="https://e.com", published_at="2026-11-12")
-    assert _parse(streaming.event_to_sse(evidence)) == (
-        "evidence",
-        {"eid": "E1", "title": "T", "source": "S", "url": "https://e.com", "created_at": "2026-11-12"},
-    )
-    assert _parse(streaming.event_to_sse(Delta(text="字"))) == ("delta", {"text": "字"})
-    assert streaming.event_to_sse(Final(Answer(status="answered", text="t"))) is None
 
 
 @pytest.mark.parametrize("status", STATUSES)
@@ -116,11 +111,8 @@ def test_chat_counts_quota_only_for_answered(env, status: str) -> None:  # noqa:
 
 @pytest.mark.parametrize("status", ["answered", "insufficient", "error"])
 def test_stream_emits_events_then_final(env, status: str) -> None:  # noqa: ANN001
-    env.events = [
-        Progress(stage="understanding", title="理解问题"),
-        EvidenceFound(eid="E1", title="T", source="S", url="https://e.com", published_at="2026-11-12"),
-    ]
-    env.answer = Answer(status=status, text="正文 [1]", sources=(SOURCE,))
+    env.events = [Progress("正在理解问题"), Progress("正在检索", "Genie 4，最近 14 天")]
+    env.answer = Answer(status=status, text="正文 [1]", sources=(SOURCE,), process=PROCESS)
     turn = chat_service.prepare_chat_turn(ChatRequest(message="问题"), TOKEN, "req-1", stream=True)
 
     async def _collect() -> list[str]:
@@ -129,12 +121,13 @@ def test_stream_emits_events_then_final(env, status: str) -> None:  # noqa: ANN0
     parsed = [_parse(chunk) for chunk in asyncio.run(_collect())]
 
     answered = status == "answered"
-    assert [name for name, _ in parsed] == ["progress", "evidence", "final"]
+    assert [name for name, _ in parsed] == ["progress", "progress", "final"]
     assert parsed[-1][1] == {
         "reply": "正文 [1]",
         "thread_id": "thread-new",
         "kind": status,
         "sources": [asdict(SOURCE)],
+        "process": PROCESS_JSON,
         "remaining": 4 if answered else 5,
         "quota": 10,
         "unlimited": False,
@@ -145,7 +138,7 @@ def test_stream_emits_events_then_final(env, status: str) -> None:  # noqa: ANN0
 
 
 def test_persisted_turn_uses_history_message_format(env) -> None:  # noqa: ANN001
-    env.answer = Answer(status="answered", text="正文 [1]", sources=(SOURCE,))
+    env.answer = Answer(status="answered", text="正文 [1]", sources=(SOURCE,), process=PROCESS)
 
     asyncio.run(chat_service.handle_chat_request(ChatRequest(message="问题", thread_id="thread-9"), TOKEN, "req-1"))
 
@@ -174,10 +167,13 @@ def test_persisted_turn_uses_history_message_format(env) -> None:  # noqa: ANN00
                         "published_at": "2026-11-12",
                     }
                 ],
+                "process": PROCESS_JSON,
             },
             metadata,
         ),
     ]
+    # A direct reply ran no tool, so it has no process.
+    assert "process" not in chat_service.model_history_item(Answer(status="direct", text="你好"))
 
 
 def test_turn_runs_in_the_zone_the_request_names(env) -> None:  # noqa: ANN001

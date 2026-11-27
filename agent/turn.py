@@ -6,6 +6,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, tzinfo
 from typing import Callable
 
+from agent import progress
 from agent.citations import ERROR_TEXT, contains_cjk
 from agent.config import DEFAULT_ZONE, AgentConfig, load_config, using_zone
 from agent.evidence import EvidenceRegistry
@@ -14,7 +15,7 @@ from agent.graph.state import TurnRuntime
 from agent.llm import ModelCallError, ModelHandle, build_models
 from agent.tools.registry import TurnState
 from agent.trace import request_trace
-from agent.types import Answer, Event, Final
+from agent.types import Answer, Progress
 
 
 def run_turn(
@@ -26,7 +27,7 @@ def run_turn(
     request_id: str | None = None,
     user_key: str | None = None,
     zone: tzinfo | None = None,
-    on_event: Callable[[Event], None] | None = None,
+    on_event: Callable[[Progress], None] | None = None,
     config: AgentConfig | None = None,
     models: tuple[ModelHandle, ModelHandle] | None = None,
 ) -> Answer:
@@ -61,10 +62,10 @@ def run_turn(
             trace.fail(exc)
         answer = replace(answer, request_id=trace.request_id,
                          tool_calls=tuple(runtime.tool_names),
-                         followed_queries=tuple(runtime.followed_queries))
+                         followed_queries=tuple(runtime.followed_queries),
+                         process=progress.process(runtime.process))
         trace.output = _request_output(runtime, answer)
         trace.finish(status=answer.status, error_code=answer.error_code, error_message=error_message)
-    emit(Final(answer))
     return answer
 
 
@@ -102,8 +103,8 @@ def _evidence_table(runtime: TurnRuntime) -> list[dict]:
     return rows
 
 
-def _safe_emit(on_event: Callable[[Event], None] | None) -> Callable[[Event], None]:
-    def emit(event: Event) -> None:
+def _safe_emit(on_event: Callable[[Progress], None] | None) -> Callable[[Progress], None]:
+    def emit(event: Progress) -> None:
         if on_event is None:
             return
         try:

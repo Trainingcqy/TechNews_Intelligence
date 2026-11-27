@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from agent import EvidenceFound, Final, Progress, run_turn, trace_store
+from agent import Progress, run_turn, trace_store
 from agent.config import AgentConfig
 from agent.graph import nodes
 from agent.llm import ModelHandle
@@ -78,15 +78,14 @@ def test_parallel_calls_keep_call_order_and_trace(monkeypatch):
         "[E1] Alpha launches", "[E2] Beta launches", "[E3] Gamma launches",
     ]
     assert events == [
-        Progress("understanding", "正在理解问题"),
-        *(Progress("retrieving", "正在检索相关新闻", f"{name} 最近 14 天") for name in WAITS_FOR),
-        *(EvidenceFound(f"E{i}", f"{name} launches", "TechCrunch", f"https://example.com/{name}", "2026-11-12")
-          for i, name in enumerate(WAITS_FOR, 1)),
-        Progress("synthesizing", "正在生成回答"),
-        Final(answer),
+        Progress("正在理解问题"),
+        Progress("正在检索", "Alpha、Beta、Gamma，最近 14 天"),
+        Progress("正在分析结果", "找到 3 条新闻"),
+        Progress("正在撰写回答", "依据 3 篇报道"),
     ]
     assert answer.status == "answered"
     assert answer.tool_calls == ("search_news", "search_news", "search_news")
+    assert [item.subject for item in answer.process.items] == ["Alpha", "Beta", "Gamma"]
 
     (trace,) = persisted
     first_step, _ = [span for span in trace.spans if span.kind == "step"]

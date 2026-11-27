@@ -51,16 +51,13 @@ def commit_search_news(args: SearchNewsArgs, result: SearchResult, *, registry) 
 
     stories = counted(len(result.hits), "story", "stories")
     lines = [f"search_news results, {scope}, {SORT_LABELS[args.sort]}: {stories}"]
-    leads = []
     for hit in result.hits:
         lead = registry.add_article(hit.lead, "summary", hit.stats)
         related = [registry.add_article(article, "listed") for article in hit.related]
-        leads.append(lead)
         lines.extend(render_hit(hit, lead.eid, [e.eid for e in related], registry.seen_dates.get(hit.stats.story_id)))
     if result.weak_match:
         lines.append("Note: the top result is a weak match and may be off topic.")
-    return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text="\n".join(lines),
-                       new_evidence=tuple(leads))
+    return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text="\n".join(lines))
 
 
 def _scope(args: SearchNewsArgs) -> str:

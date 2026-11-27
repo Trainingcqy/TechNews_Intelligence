@@ -118,18 +118,6 @@ def test_article_without_body_registers_summary_and_skips_fetch(monkeypatch):
     assert outcome.ok is False
 
 
-def test_new_evidence_leaves_out_items_already_citable(monkeypatch):
-    _fake_db(monkeypatch, bodies={30: "正文", 31: "正文"})
-    registry = EvidenceRegistry()
-    registry.add_article(ARTICLE, "summary")
-    registry.add_article(replace(ARTICLE, article_id=31, url="https://www.theverge.com/genie-4"), "listed")
-
-    _, outcome = _read(registry, ids=["E1", "E2"])
-
-    assert registry.get("E1").level == "fulltext"
-    assert [evidence.eid for evidence in outcome.new_evidence] == ["E2"]
-
-
 def test_truncation_and_result_text(monkeypatch):
     body = "a" * 700 + "b" * 300 + "c" * 500
     _fake_db(monkeypatch, bodies={30: body})

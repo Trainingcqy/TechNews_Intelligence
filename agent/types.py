@@ -62,6 +62,21 @@ class Source:
     published_at: str  # YYYY-MM-DD
 
 
+@dataclass(frozen=True)
+class ProcessItem:
+    action: str  # 检查, 检索 or 阅读
+    subject: str
+    meta: str
+
+
+@dataclass(frozen=True)
+class Process:
+    """The checks, searches and reads of a turn, listed above its answer."""
+
+    summary: str
+    items: tuple[ProcessItem, ...]
+
+
 AnswerStatus = Literal["answered", "insufficient", "direct", "not_found", "blocked", "error"]
 
 
@@ -73,34 +88,14 @@ class Answer:
     tool_calls: tuple[str, ...] = ()
     story_ids: tuple[int, ...] = ()  # 被引用来源所属的故事，供阅读记录使用
     followed_queries: tuple[str, ...] = ()  # 本轮检索命中的关注项，供更新查看时间使用
+    process: Process | None = None  # None when no tool call was executed
     request_id: str = ""
     error_code: str | None = None
 
 
 @dataclass(frozen=True)
 class Progress:
-    stage: str  # understanding | retrieving | reading | synthesizing
+    """The status line the chat page shows while a turn runs."""
+
     title: str
     detail: str = ""
-
-
-@dataclass(frozen=True)
-class EvidenceFound:
-    eid: str
-    title: str
-    source: str
-    url: str
-    published_at: str
-
-
-@dataclass(frozen=True)
-class Delta:  # 逐字流式启用后使用，见第 30 节
-    text: str
-
-
-@dataclass(frozen=True)
-class Final:
-    answer: Answer
-
-
-Event = Progress | EvidenceFound | Delta | Final

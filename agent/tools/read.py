@@ -95,8 +95,6 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
     from .registry import ToolOutcome
 
     lines = ["read_articles results:"]
-    # A search lead was already reported when it became citable; only items that become citable here are new.
-    citable_before = registry.citable_ids()
     read = []
     for item in result.items:
         evidence = registry.get(item.target)
@@ -119,5 +117,4 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
     text = "\n".join(lines)
     ok = bool(read)
     return ToolOutcome(index=0, call_id="", name="read_articles", ok=ok, gather_text=text,
-                       new_evidence=tuple(e for e in read if e.eid not in citable_before),
                        error=None if ok else text)

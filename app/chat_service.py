@@ -9,10 +9,11 @@ from typing import AsyncIterator, Callable
 
 from fastapi import HTTPException
 
-from agent import Answer, EvidenceFound, Final, Progress, memory, run_turn
+from agent import Answer, Progress, memory, run_turn
 from agent.config import zone_named
+from agent.types import Process
 from app import streaming
-from app.schemas import ChatRequest, ChatResponse, SourceItem
+from app.schemas import ChatRequest, ChatResponse, ProcessRecord, SourceItem
 from app import quota_service
 from app.conversations import (
     ConversationThreadNotFoundError,
@@ -83,12 +84,19 @@ def user_history_item(message: str) -> dict:
 
 
 def model_history_item(answer: Answer) -> dict:
-    return {
+    item = {
         "role": "model",
         "parts": [{"text": answer.text}],
         "status": answer.status,
         "sources": [asdict(source) for source in answer.sources],
     }
+    if answer.process is not None:
+        item["process"] = _process_dict(answer.process)
+    return item
+
+
+def _process_dict(process: Process) -> dict:
+    return {"summary": process.summary, "items": [asdict(item) for item in process.items]}
 
 
 def persist_conversation_turn(
@@ -151,9 +159,7 @@ def prepare_chat_turn(body: ChatRequest, token_info: dict, request_id: str, *, s
     )
 
 
-def run_agent_turn(
-    turn: ChatTurn, *, on_event: Callable[[Progress | EvidenceFound | Final], None] | None = None
-) -> Answer:
+def run_agent_turn(turn: ChatTurn, *, on_event: Callable[[Progress], None] | None = None) -> Answer:
     answer = run_turn(
         turn.body.message,
         turn.history,
@@ -191,6 +197,7 @@ def chat_response(turn: ChatTurn, answer: Answer) -> ChatResponse:
         thread_id=turn.thread_id,
         kind=answer.status,
         sources=[SourceItem(**asdict(source)) for source in answer.sources],
+        process=None if answer.process is None else ProcessRecord(**_process_dict(answer.process)),
         remaining=remaining,
         quota=int(turn.reservation["quota"]),
         unlimited=bool(turn.reservation.get("unlimited", False)),
@@ -244,7 +251,7 @@ async def stream_chat_events(turn: ChatTurn) -> AsyncIterator[str]:
         refunded = True
         quota_service.refund_reserved_quota(turn.token_info)
 
-    def on_event(event: Progress | EvidenceFound | Final) -> None:
+    def on_event(event: Progress) -> None:
         loop.call_soon_threadsafe(event_queue.put_nowait, event)
 
     def worker() -> None:
@@ -265,9 +272,7 @@ async def stream_chat_events(turn: ChatTurn) -> AsyncIterator[str]:
                 event = await asyncio.wait_for(event_queue.get(), timeout=0.25)
             except asyncio.TimeoutError:
                 continue
-            chunk = streaming.event_to_sse(event)
-            if chunk is not None:
-                yield chunk
+            yield streaming.event_to_sse(event)
 
         await worker_task
 
@@ -282,8 +287,8 @@ async def stream_chat_events(turn: ChatTurn) -> AsyncIterator[str]:
             yield streaming.sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
             return
 
-        # run_turn emits Final before the turn is persisted; the final SSE waits for the
-        # worker so that a persistence failure still ends the stream with an error.
+        # The final SSE waits for the worker, which persists the turn, so that a persistence
+        # failure still ends the stream with an error.
         answer = result_holder["answer"]
         if answer.status == "answered":
             quota_service.maybe_send_quota_exhausted_notifications(turn.token_info, turn.reservation)

@@ -75,7 +75,7 @@ def test_run_searches_every_follow_at_once(monkeypatch):
     assert run_check_follows(call, registry=None, state=TurnState(user_urls=set())).checks == []
 
 
-def test_commit_groups_by_follow_and_reports_each_evidence_once():
+def test_commit_groups_by_follow_and_registers_each_evidence_once():
     found = SearchResult(hits=[HIT], weak_match=False)
     result = FollowsResult([FollowCheck(_follow("Nvidia"), "Nvidia", 7, found, None),
                             FollowCheck(_follow("英伟达"), "NVIDIA", 7, found, None),
@@ -84,7 +84,7 @@ def test_commit_groups_by_follow_and_reports_each_evidence_once():
 
     outcome = commit_check_follows(CheckFollowsArgs(), result, registry=registry)
 
-    assert outcome.ok and [e.eid for e in outcome.new_evidence] == ["E1"]
+    assert outcome.ok
     assert [e.eid for e in registry.items()] == ["E1"]
     lines = outcome.gather_text.splitlines()
     assert lines[0] == "check_follows results: 3 follows"

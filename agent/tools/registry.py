@@ -14,7 +14,7 @@ from agent.evidence import EvidenceRegistry
 from agent.memory import MAX_FOLLOWS, Follow
 from agent.retrieval.search import SearchResult
 from agent.trace import Span, trace_span, warn
-from agent.types import Evidence
+from agent.types import StoryHit
 from common import prompt_text
 from common.taxonomy import KINDS, TOPICS
 
@@ -126,7 +126,6 @@ class ToolOutcome:
     name: str
     ok: bool
     gather_text: str  # 返回给取证模型的文本
-    new_evidence: tuple[Evidence, ...] = ()
     error: str | None = None
     reason: str | None = None  # 拒绝的原因：call_limit、unknown_tool、duplicate、invalid_args、read_quota
 
@@ -256,3 +255,12 @@ def commit_call(payload: ToolPayload, *, registry: EvidenceRegistry, state: Turn
         return reject(payload.index, payload.call_id, payload.name, payload.error)
     outcome = _SPECS[payload.name].commit(payload.args, payload.data, registry=registry)
     return replace(outcome, index=payload.index, call_id=payload.call_id)
+
+
+def story_hits(payload: ToolPayload) -> list[StoryHit]:
+    """The stories a successful search or follow check returned."""
+    if payload.name == "search_news":
+        return payload.data.hits
+    if payload.name == "check_follows":
+        return [hit for check in payload.data.checks if check.result for hit in check.result.hits]
+    return []

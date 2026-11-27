@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from agent import Answer, EvidenceFound, Final, Progress, run_turn
+from agent import Answer, Progress, run_turn
 from agent import context, memory, prompts, trace_store
 from agent.citations import BLOCKED_TEXT, ERROR_TEXT, NOT_FOUND_TEXT
 from agent.config import AgentConfig
@@ -17,7 +17,7 @@ from agent.llm import ModelHandle
 from agent.memory import Follow
 from agent.retrieval.search import SearchResult
 from agent.tools import follows, read, registry
-from agent.types import Article, Source, StoryHit, StoryStats
+from agent.types import Article, Process, ProcessItem, Source, StoryHit, StoryStats
 from common import prompt_text
 
 QUESTION = "Genie 4 有什么新功能？"
@@ -36,10 +36,14 @@ SOURCE = Source(n=1, url=ARTICLE.url, title="Genie 4 adds audio", title_zh="", s
 
 DONE = AIMessage(content="DONE")
 ANSWERED = AIMessage(content="STATUS: answered\nGenie 4 新增了音频 [E1]。")
-UNDERSTANDING = Progress("understanding", "正在理解问题")
-RETRIEVING = Progress("retrieving", "正在检索相关新闻", "Genie 4 最近 14 天")
-FOUND = EvidenceFound("E1", "Genie 4 adds audio", "TechCrunch", ARTICLE.url, "2026-11-12")
-SYNTHESIZING = Progress("synthesizing", "正在生成回答")
+UNDERSTANDING = Progress("正在理解问题")
+SEARCHING = Progress("正在检索", "Genie 4，最近 14 天")
+FOUND = Progress("正在分析结果", "找到 1 条新闻")
+WRITING = Progress("正在撰写回答", "依据 1 篇报道")
+SEARCHED = ProcessItem("检索", "Genie 4", "最近 14 天，1 条新闻")
+READ = ProcessItem("阅读", "Genie 4 adds audio", "TechCrunch，2026-11-12")
+SEARCH_ONLY = Process("检索 1 次", (SEARCHED,))
+SEARCH_AND_READ = Process("检索 1 次，阅读 1 篇报道", (SEARCHED, READ))
 
 
 class FakeChat:
@@ -125,7 +129,7 @@ def test_direct_reply(turn):
 
     expected = Answer(status="direct", text="你好！有什么想了解的科技新闻？", request_id="r1")
     assert r.answer == expected
-    assert r.events == [UNDERSTANDING, Final(expected)]
+    assert r.events == [UNDERSTANDING]
     system = prompt_text.render("gather.system", clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS,
                                 follows="")
     assert r.gather.calls == [[SystemMessage(system), HumanMessage(QUESTION)]]
@@ -165,17 +169,19 @@ def test_turn_runs_in_the_user_zone(turn, monkeypatch):
     last = r.final.calls[0][-1].content
     assert last.startswith(prompts.final_clock(now) + "\n\nUser question:\n")
     assert "Date: 2026-11-11" in last and "first 2026-11-11, latest 2026-11-11" in last
-    assert EvidenceFound("E1", "Genie 4 adds audio", "TechCrunch", ARTICLE.url, "2026-11-11") in r.events
+    assert r.answer.process.items[1] == replace(READ, meta="TechCrunch，2026-11-11")
     assert r.answer.sources[0].published_at == "2026-11-11"
 
 
 def test_tool_call_without_evidence_is_not_found(turn):
     r = turn([_search("不存在的产品"), DONE])
 
-    expected = Answer(status="not_found", text=NOT_FOUND_TEXT["zh"], tool_calls=("search_news",), request_id="r1")
+    expected = Answer(status="not_found", text=NOT_FOUND_TEXT["zh"], tool_calls=("search_news",),
+                      process=Process("检索 1 次", (ProcessItem("检索", "不存在的产品", "最近 14 天，无结果"),)),
+                      request_id="r1")
     assert r.answer == expected
-    assert r.events == [UNDERSTANDING, Progress("retrieving", "正在检索相关新闻", "不存在的产品 最近 14 天"),
-                        Final(expected)]
+    assert r.events == [UNDERSTANDING, Progress("正在检索", "不存在的产品，最近 14 天"),
+                        Progress("正在分析结果", "没有找到新闻")]
     assert r.final.calls == []
 
 
@@ -185,11 +191,10 @@ def test_normal_answer(turn):
     r = turn([_search("Genie 4"), _calls(("c2", "read_articles", {"ids": ["E1"]})), DONE], [ANSWERED],
              history=history)
 
-    expected = _answered(tool_calls=("search_news", "read_articles"))
+    expected = _answered(tool_calls=("search_news", "read_articles"), process=SEARCH_AND_READ)
     assert r.answer == expected
-    # Reading E1 does not report it again: it became citable, and was reported, when the search found it.
-    assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, Progress("reading", "正在读取正文"),
-                        SYNTHESIZING, Final(expected)]
+    assert r.events == [UNDERSTANDING, SEARCHING, FOUND, Progress("正在阅读 1 篇报道", "Genie 4 adds audio"),
+                        Progress("正在分析结果", "读到 1 篇全文"), WRITING]
     assert [(type(m).__name__, getattr(m, "tool_call_id", None)) for m in r.gather.calls[2]] == [
         ("SystemMessage", None), ("HumanMessage", None), ("AIMessage", None), ("HumanMessage", None),
         ("AIMessage", None), ("ToolMessage", "c1"), ("AIMessage", None), ("ToolMessage", "c2"),
@@ -228,17 +233,17 @@ def test_normal_answer(turn):
 
 @pytest.mark.parametrize("raw, expected", [
     ("STATUS: answered\nGenie 4 新增了音频 [E9]。",
-     Answer(status="blocked", text=BLOCKED_TEXT["zh"], tool_calls=("search_news",), request_id="r1",
-            error_code="no_valid_citation")),
+     Answer(status="blocked", text=BLOCKED_TEXT["zh"], tool_calls=("search_news",), process=SEARCH_ONLY,
+            request_id="r1", error_code="no_valid_citation")),
     ("STATUS: insufficient\n材料没有提到价格 [E1]。",
      Answer(status="insufficient", text="材料没有提到价格 [1]。", sources=(SOURCE,), tool_calls=("search_news",),
-            request_id="r1")),
+            process=SEARCH_ONLY, request_id="r1")),
 ], ids=["blocked", "insufficient"])
 def test_synthesis_outcome(turn, raw, expected):
     r = turn([_search("Genie 4"), DONE], [AIMessage(content=raw)])
 
     assert r.answer == expected
-    assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
+    assert r.events == [UNDERSTANDING, SEARCHING, FOUND, WRITING]
     assert r.trace.status == expected.status
     # The model cited E9, which was never registered.
     assert ("citations_removed" in r.trace.warnings) == (expected.status == "blocked")
@@ -251,6 +256,8 @@ def test_body_dropped_from_the_evidence_block_is_recorded(turn):
     assert BODY not in r.final.calls[0][-1].content
     assert r.trace.warnings == ["evidence_truncated"]
     assert r.trace.output["evidence"][0]["body_in_block"] is False
+    # The entry stays in the brief without its body, so it still counts.
+    assert r.events[-1] == WRITING
 
 
 def test_history_evidence_left_out_of_the_brief_is_recorded(turn, monkeypatch):
@@ -266,15 +273,16 @@ def test_history_evidence_left_out_of_the_brief_is_recorded(turn, monkeypatch):
     assert "Genie 4 hands-on" not in r.final.calls[0][-1].content
     assert r.trace.warnings == ["evidence_truncated"]
     assert [(row["eid"], row.get("in_block")) for row in r.trace.output["evidence"]] == [("E1", False), ("E2", None)]
+    assert r.events[-1] == WRITING
 
 
 def test_step_limit_goes_to_synthesis(turn):
     r = turn([_search("Genie 4")], [ANSWERED], config=AgentConfig(max_steps=1))
 
-    expected = _answered(tool_calls=("search_news",))
+    expected = _answered(tool_calls=("search_news",), process=SEARCH_ONLY)
     assert r.answer == expected
     assert len(r.gather.calls) == 1
-    assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
+    assert r.events == [UNDERSTANDING, SEARCHING, WRITING]
     assert len(_spans(r.trace, "step")) == 1
     assert r.trace.warnings == ["step_budget_exhausted"]
 
@@ -282,13 +290,13 @@ def test_step_limit_goes_to_synthesis(turn):
 def test_calls_over_step_limit_are_rejected(turn):
     r = turn([_search("Genie 4", "Gemini", "Veo"), DONE], [ANSWERED], config=AgentConfig(max_calls_per_step=2))
 
-    expected = _answered(tool_calls=("search_news", "search_news"))
+    expected = _answered(tool_calls=("search_news", "search_news"),
+                         process=Process("检索 2 次", (SEARCHED, ProcessItem("检索", "Gemini", "最近 14 天，无结果"))))
     assert r.answer == expected
     tool_messages = [m for m in r.gather.calls[1] if isinstance(m, ToolMessage)]
     assert [m.tool_call_id for m in tool_messages] == ["c1", "c2", "c3"]
     assert tool_messages[2].content.startswith("This step exceeded its call limit; this call was not run.\n\n")
-    assert r.events == [UNDERSTANDING, RETRIEVING, Progress("retrieving", "正在检索相关新闻", "Gemini 最近 14 天"),
-                        FOUND, SYNTHESIZING, Final(expected)]
+    assert r.events == [UNDERSTANDING, Progress("正在检索", "Genie 4、Gemini，最近 14 天"), FOUND, WRITING]
     step = _spans(r.trace, "step")[0]
     assert [(call["disposition"], call.get("reason")) for call in step.output["calls"]] == [
         ("executed", None), ("executed", None), ("rejected", "call_limit")]
@@ -299,12 +307,13 @@ def test_argument_error_then_model_corrects(turn):
     r = turn([_calls(("c1", "search_news", {"query": "Genie 4", "days": 0})),
               _calls(("c2", "search_news", {"query": "Genie 4"})), DONE], [ANSWERED])
 
-    expected = _answered(tool_calls=("search_news",))
+    expected = _answered(tool_calls=("search_news",), process=SEARCH_ONLY)
     assert r.answer == expected
     last = r.gather.calls[1][-1]
     assert (type(last), last.tool_call_id) == (ToolMessage, "c1")
     assert last.content.startswith("Invalid arguments: days: Input should be greater than or equal to 1\n\n")
-    assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
+    # The rejected call of step 1 shows nothing and finds nothing.
+    assert r.events == [UNDERSTANDING, Progress("正在分析结果"), SEARCHING, FOUND, WRITING]
 
 
 def test_each_step_result_ends_with_the_remaining_budget(turn):
@@ -325,10 +334,10 @@ def test_each_step_result_ends_with_the_remaining_budget(turn):
 def test_model_call_failure(turn):
     r = turn([_search("Genie 4"), DONE], [TimeoutError("slow")])
 
-    expected = Answer(status="error", text=ERROR_TEXT["zh"], tool_calls=("search_news",), request_id="r1",
-                      error_code="model_timeouterror")
+    expected = Answer(status="error", text=ERROR_TEXT["zh"], tool_calls=("search_news",), process=SEARCH_ONLY,
+                      request_id="r1", error_code="model_timeouterror")
     assert r.answer == expected
-    assert r.events == [UNDERSTANDING, RETRIEVING, FOUND, SYNTHESIZING, Final(expected)]
+    assert r.events == [UNDERSTANDING, SEARCHING, FOUND, WRITING]
     assert (r.trace.status, r.trace.error_code, r.trace.error_message) == ("error", "model_timeouterror", "slow")
     final = _spans(r.trace, "llm")[-1]
     assert (final.name, final.status, final.error_code) == ("final", "error", "model_timeouterror")
@@ -380,6 +389,13 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
         ("embodied AI", 14, "importance", follows.STORY_LIMIT)]
     assert answer.followed_queries == ("Genie 4",)
     assert answer.story_ids == (5,)
+    days = memory.check_window(FOLLOWS[0], now.date())
+    assert answer.process == Process("检查 2 个关注项，检索 1 次，阅读 1 篇报道", (
+        ProcessItem("检查", "Genie 4", f"Genie 4 world model，最近 {days} 天，1 条新闻"),
+        ProcessItem("检查", "具身智能", "embodied AI，最近 14 天，失败"),
+        ProcessItem("检索", "具身智能", "最近 14 天，无结果"),
+        READ,
+    ))
     assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5]), ("seen", "tg:1", [])]
     assert _spans(trace, "context")[0].output["follows"] == [
         {"query": "Genie 4", "last_checked_at": "2026-11-09T17:00:00+00:00"},
@@ -422,5 +438,5 @@ def test_turn_without_user_key_skips_memory(turn, monkeypatch):
 
     r = turn([_search("Genie 4"), DONE], [ANSWERED])
 
-    assert r.answer == _answered(tool_calls=("search_news",))
+    assert r.answer == _answered(tool_calls=("search_news",), process=SEARCH_ONLY)
     assert "already mentioned" not in r.final.calls[0][-1].content

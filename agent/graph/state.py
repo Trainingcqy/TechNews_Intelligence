@@ -14,7 +14,7 @@ from agent.evidence import EvidenceRegistry
 from agent.llm import ModelHandle
 from agent.tools.registry import PreparedCall, ToolOutcome, ToolPayload, TurnState
 from agent.trace import Span
-from agent.types import Answer, Event
+from agent.types import Answer, ProcessItem, Progress
 
 
 def merge_payloads(left: dict, right: dict) -> dict:
@@ -42,12 +42,15 @@ class TurnRuntime:
     tool_state: TurnState
     config: AgentConfig
     models: tuple[ModelHandle, ModelHandle] | None  # run_turn 在 try 内构建
-    emit: Callable[[Event], None]
+    emit: Callable[[Progress], None]
     user_key: str | None
     follows: list[Any]  # prepare 写入，元素为 agent.memory.Follow；没有 user_key 时为空
     tool_names: list[str]  # 已执行的工具名，按调用顺序
     followed_queries: list[str]
     now: datetime  # 本轮开始的时刻，在用户时区；两个模型拿到的当前时间都取它
+    process: list[ProcessItem] = field(default_factory=list)
+    read_ids: set[int] = field(default_factory=set)  # articles already in process
+    found: str = ""  # what the last step found, shown while the gather model weighs it
     # 以下供请求记录使用。step 跨 gather、run_tool、collect 三个节点，节点之间不能经 ContextVar 传递，由这里持有。
     step_span: Span | None = None
     provenance: dict[str, dict] = field(default_factory=dict)  # 证据编号到登记与升级的位置

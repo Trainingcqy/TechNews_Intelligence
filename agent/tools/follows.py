@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from agent.evidence import counted
 from agent.memory import Follow, check_window
 from agent.retrieval.search import SearchResult, search_stories
-from agent.types import Evidence
 
 from .search import render_hit
 
@@ -76,7 +75,6 @@ def commit_check_follows(args: CheckFollowsArgs, result: FollowsResult, *, regis
         return ToolOutcome(index=0, call_id="", name="check_follows", ok=True,
                            gather_text="check_follows: the user has no follows.")
     lines = [f"check_follows results: {counted(len(result.checks), 'follow', 'follows')}"]
-    leads: dict[str, Evidence] = {}
     for check in result.checks:
         head = f'Follow "{check.follow.query}", query="{check.query}", last {counted(check.days, "day", "days")}'
         if check.error is not None:
@@ -89,9 +87,8 @@ def commit_check_follows(args: CheckFollowsArgs, result: FollowsResult, *, regis
         for hit in check.result.hits:
             lead = registry.add_article(hit.lead, "summary", hit.stats)
             related = [registry.add_article(article, "listed") for article in hit.related]
-            leads.setdefault(lead.eid, lead)
             lines.extend(render_hit(hit, lead.eid, [e.eid for e in related], registry.seen_dates.get(hit.stats.story_id)))
     text = "\n".join(lines)
     ok = any(check.error is None for check in result.checks)
     return ToolOutcome(index=0, call_id="", name="check_follows", ok=ok, gather_text=text,
-                       new_evidence=tuple(leads.values()), error=None if ok else text)
+                       error=None if ok else text)

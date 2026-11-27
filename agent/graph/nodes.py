@@ -8,9 +8,8 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END
 from langgraph.types import Send
 
-from agent import memory, prompts
+from agent import memory, progress, prompts
 from agent.citations import NOT_FOUND_TEXT, clean_direct_reply, contains_cjk, finalize_answer
-from agent.config import user_zone
 from agent.context import build_context
 from agent.evidence import EvidenceRegistry, counted
 from agent.llm import call_text, call_with_tools, coerce_to_text
@@ -23,10 +22,11 @@ from agent.tools.registry import (
     prepare_call,
     reject,
     run_call,
+    story_hits,
     tool_schemas,
 )
 from agent.trace import start_span, trace_span, warn, within
-from agent.types import Answer, Evidence, EvidenceFound, Progress
+from agent.types import Answer
 from common import prompt_text
 from common.urls import extract_urls, url_key
 
@@ -74,7 +74,7 @@ def prepare(state, config) -> dict:
                          "last_checked_at": follow.last_checked_at.isoformat() if follow.last_checked_at else None}
                         for follow in runtime.follows],
         }
-    runtime.emit(Progress("understanding", "正在理解问题"))
+    runtime.emit(progress.UNDERSTANDING)
     return {
         "context_messages": context.messages,
         "messages": [SystemMessage(system), *context.messages, HumanMessage(question)],
@@ -88,6 +88,8 @@ def gather(state, config) -> dict:
     if state["step"] >= limits.max_steps:
         warn("step_budget_exhausted")
         return {"pending": [], "rejected": []}
+    if state["step"]:
+        runtime.emit(progress.analyzing(runtime.found))
     # The step stays open until collect has registered this step's evidence.
     step = runtime.step_span = start_span("step", attributes={"step": state["step"] + 1})
     with within(step):
@@ -108,9 +110,11 @@ def gather(state, config) -> dict:
         prepared = prepare_call(index, call, state=runtime.tool_state, config=limits)
         if isinstance(prepared, PreparedCall):
             pending.append(prepared)
-            runtime.emit(_progress(prepared))
         else:
             rejected.append(prepared)
+    if pending:
+        follows = [follow.query for follow in runtime.follows]
+        runtime.emit(progress.step(pending, runtime.registry, follows, runtime.now.date()))
     rejected_by_index = {outcome.index: outcome for outcome in rejected}
     step.output = {"calls": [_call_record(index, call, rejected_by_index.get(index))
                              for index, call in enumerate(reply.tool_calls)]}
@@ -141,7 +145,7 @@ def collect(state, config) -> dict:
     messages = list(state["messages"])
     with within(runtime.step_span):
         if runtime.user_key:
-            story_ids = [hit.stats.story_id for payload in current if payload.ok for hit in _hits(payload)]
+            story_ids = [hit.stats.story_id for payload in current if payload.ok for hit in story_hits(payload)]
             runtime.registry.seen_dates.update(memory.seen_story_dates(runtime.user_key, story_ids))
         for item in sorted([*current, *state["rejected"]], key=lambda item: item.index):
             span = None
@@ -152,13 +156,13 @@ def collect(state, config) -> dict:
                 outcome = commit_call(item, registry=runtime.registry, state=runtime.tool_state,
                                       config=runtime.config)
                 _note_registration(runtime, before, step + 1, item.index)
+                runtime.process.extend(progress.record(item, runtime.now.date(), runtime.read_ids))
                 span = item.span
                 if span is not None:
                     span.output["text"] = outcome.gather_text
                 item = outcome
             messages.append(ToolMessage(item.gather_text, tool_call_id=item.call_id))
-            for evidence in item.new_evidence:
-                runtime.emit(_evidence_found(evidence))
+    runtime.found = progress.found(current)
     left = runtime.config.max_steps - (step + 1)
     if left > 0:
         # The budget follows the step's last result, which the tool span records as the model saw it.
@@ -192,11 +196,14 @@ def after_route(state) -> str:
 
 def synthesize(state, config) -> dict:
     runtime = _runtime(config)
-    runtime.emit(Progress("synthesizing", "正在生成回答"))
+    registry = runtime.registry
     user, runtime.left_out = prompts.render_final_user(
-        state["question"], runtime.registry, runtime.config.synthesis_evidence_chars, runtime.now)
+        state["question"], registry, runtime.config.synthesis_evidence_chars, runtime.now)
     if runtime.left_out:
         warn("evidence_truncated")
+    # A left-out history item is not in the brief; an item whose body is left out keeps its entry.
+    reports = len(registry.citable_ids()) - sum(registry.get(eid).history for eid in runtime.left_out)
+    runtime.emit(progress.writing(reports))
     messages = [SystemMessage(prompts.FINAL_SYSTEM_PROMPT), *state["context_messages"], HumanMessage(user)]
     return {"raw_answer": call_text(runtime.models[1], messages)}
 
@@ -239,14 +246,6 @@ def _note_registration(runtime: TurnRuntime, before: dict[str, str], step: int, 
             runtime.provenance[eid]["upgraded"].append({**where, "level": level})
 
 
-def _hits(payload: ToolPayload) -> list:
-    if payload.name == "search_news":
-        return payload.data.hits
-    if payload.name == "check_follows":
-        return [hit for check in payload.data.checks if check.result for hit in check.result.hits]
-    return []
-
-
 def _record_followed(runtime: TurnRuntime, payload: ToolPayload) -> None:
     # Only check_follows checks a follow, so a search for the same words does not count.
     if not (payload.ok and payload.name == "check_follows"):
@@ -254,25 +253,3 @@ def _record_followed(runtime: TurnRuntime, payload: ToolPayload) -> None:
     for check in payload.data.checks:
         if check.error is None and check.follow.query not in runtime.followed_queries:
             runtime.followed_queries.append(check.follow.query)
-
-
-def _progress(call: PreparedCall) -> Progress:
-    if call.name == "read_articles":
-        return Progress("reading", "正在读取正文")
-    if call.name == "check_follows":
-        return Progress("retrieving", "正在检查关注项")
-    args = call.args
-    if args.start_date is None:
-        window = f"最近 {args.days} 天"
-    elif args.end_date is None:
-        window = f"{args.start_date} 至今"
-    else:
-        window = f"{args.start_date} 至 {args.end_date}"
-    subject = args.query or args.topic
-    return Progress("retrieving", "正在检索相关新闻", f"{subject} {window}" if subject else window)
-
-
-def _evidence_found(evidence: Evidence) -> EvidenceFound:
-    article = evidence.article
-    return EvidenceFound(evidence.eid, article.title, article.publisher, article.url,
-                         f"{article.published_at.astimezone(user_zone()):%Y-%m-%d}")

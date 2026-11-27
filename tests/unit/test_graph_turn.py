@@ -16,7 +16,7 @@ from agent.graph import nodes
 from agent.llm import ModelHandle
 from agent.memory import Follow
 from agent.retrieval.search import SearchResult
-from agent.tools import read, registry
+from agent.tools import follows, read, registry
 from agent.types import Article, Source, StoryHit, StoryStats
 from common import prompt_text
 
@@ -333,19 +333,21 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     monkeypatch.setattr(nodes.memory, "seen_story_dates",
                         lambda user_key, ids: lookups.append(("seen", user_key, ids)) or {5: date(2026, 11, 10)})
 
-    def search(args):
-        if args.query == "embodied AI":
-            raise RuntimeError("search failed")
-        hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=0.9)]
-        return SearchResult(hits=hits if (args.query or "").lower() == "genie 4" else [], weak_match=False)
+    searched: list[tuple] = []
 
-    monkeypatch.setattr(registry, "run_search_news", search)
+    def search_stories(*, query, days, sort, limit, **filters):
+        searched.append((query, days, sort, limit))
+        if query == "embodied AI":
+            raise RuntimeError("search failed")
+        return SearchResult(hits=[StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=0.9)], weak_match=False)
+
+    monkeypatch.setattr(follows, "search_stories", search_stories)
+    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[], weak_match=False))
     gather = FakeChat([
-        _calls(("c1", "search_news", {"query": "Genie 4", "follow": "genie 4", "days": 7}),
-               ("c2", "search_news", {"query": "embodied AI", "follow": "具身智能"}),
-               ("c3", "search_news", {"query": "GENIE 4", "follow": "GENIE 4", "days": 30}),
-               ("c4", "search_news", {"topic": "ai"})),
-        _calls(("c5", "read_articles", {"ids": ["E1"]}), ("c6", "search_news", {"query": "具身智能"})),
+        _calls(("c1", "check_follows", {"queries": [{"follow": "genie 4", "query": "Genie 4 world model"},
+                                                    {"follow": "具身智能", "query": "embodied AI"}]}),
+               ("c2", "search_news", {"query": "具身智能"})),
+        _calls(("c3", "read_articles", {"ids": ["E1"]})),
         DONE,
     ])
     final = FakeChat([ANSWERED])
@@ -354,25 +356,30 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
                       config=AgentConfig(),
                       models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
 
-    # Only a successful search marked with a follow checks it: not the failed c2, nor c6, whose query is the follow
-    # but which is not marked. A follow checked twice is recorded once.
+    trace = turn.persisted[-1]
+    now = _turn_now(trace)
+    # Each follow is searched with its English terms over the days since its last check. Only the follow whose search
+    # succeeded counts as checked; c2, a search for a follow's own words, does not.
+    assert sorted(searched) == [
+        ("Genie 4 world model", memory.check_window(FOLLOWS[0], now.date()), "importance", follows.STORY_LIMIT),
+        ("embodied AI", 14, "importance", follows.STORY_LIMIT)]
     assert answer.followed_queries == ("Genie 4",)
     assert answer.story_ids == (5,)
-    assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5, 5]), ("seen", "tg:1", [])]
-    trace = turn.persisted[-1]
+    assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5]), ("seen", "tg:1", [])]
     assert _spans(trace, "context")[0].output["follows"] == [
         {"query": "Genie 4", "last_checked_at": "2026-11-09T17:00:00+00:00"},
         {"query": "具身智能", "last_checked_at": None}]
-    failed = next(span for span in _spans(trace, "tool") if span.status == "error")
-    assert (failed.input["query"], failed.output["text"]) == ("embodied AI", "Tool failed: RuntimeError")
+    check = next(span for span in _spans(trace, "tool") if span.name == "check_follows")
+    assert [(item["follow"], item["error"]) for item in check.output["follows"]] == [
+        ("Genie 4", None), ("具身智能", "RuntimeError")]
     assert trace.output["seen_dates"] == {"5": "2026-11-10"}
     system = gather.calls[0][0]
-    now = _turn_now(trace)
     assert system == SystemMessage(prompt_text.render(
         "gather.system", clock=prompts.gather_clock(now), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, now.date())))
     assert "- Genie 4: last checked 2026-11-10, " in system.content
     first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
     assert " | Coverage: 1 report, 1 publisher; already mentioned in the answer on 11-10\n" in first_result.content
+    assert 'Follow "具身智能", query="embodied AI", last 14 days: search failed: RuntimeError.' in first_result.content
     assert '"already mentioned in the answer on MM-DD"' in final.calls[0][0].content
     brief = final.calls[0][-1].content
     assert ("Coverage: 1 report, 1 publisher, first 2026-11-12, latest 2026-11-12; "

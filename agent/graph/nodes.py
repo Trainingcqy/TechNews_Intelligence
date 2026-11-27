@@ -57,6 +57,8 @@ def prepare(state, config) -> dict:
                 warn("follows_unavailable")
                 runtime.follows = []
             follows = memory.render_follows(runtime.follows, runtime.now.date())
+            runtime.tool_state.follows = runtime.follows
+            runtime.tool_state.today = runtime.now.date()
         system = prompts.render_gather_system(runtime.now, corpus_info(), follows)
         history_eids = [evidence.eid for evidence in runtime.registry.items()]
         for eid in history_eids:
@@ -139,7 +141,7 @@ def collect(state, config) -> dict:
     messages = list(state["messages"])
     with within(runtime.step_span):
         if runtime.user_key:
-            story_ids = [hit.stats.story_id for p in current if p.ok and p.name == "search_news" for hit in p.data.hits]
+            story_ids = [hit.stats.story_id for payload in current if payload.ok for hit in _hits(payload)]
             runtime.registry.seen_dates.update(memory.seen_story_dates(runtime.user_key, story_ids))
         for item in sorted([*current, *state["rejected"]], key=lambda item: item.index):
             span = None
@@ -237,20 +239,28 @@ def _note_registration(runtime: TurnRuntime, before: dict[str, str], step: int, 
             runtime.provenance[eid]["upgraded"].append({**where, "level": level})
 
 
+def _hits(payload: ToolPayload) -> list:
+    if payload.name == "search_news":
+        return payload.data.hits
+    if payload.name == "check_follows":
+        return [hit for check in payload.data.checks if check.result for hit in check.result.hits]
+    return []
+
+
 def _record_followed(runtime: TurnRuntime, payload: ToolPayload) -> None:
-    # Only a search the gather model marks with a follow counts as checking it, so an incidental search for the same
-    # words does not, and the English query need not match a follow written in another language.
-    marked = payload.args.follow if payload.ok and payload.name == "search_news" else None
-    if not marked:
+    # Only check_follows checks a follow, so a search for the same words does not count.
+    if not (payload.ok and payload.name == "check_follows"):
         return
-    for follow in runtime.follows:
-        if follow.query.lower() == marked.lower() and follow.query not in runtime.followed_queries:
-            runtime.followed_queries.append(follow.query)
+    for check in payload.data.checks:
+        if check.error is None and check.follow.query not in runtime.followed_queries:
+            runtime.followed_queries.append(check.follow.query)
 
 
 def _progress(call: PreparedCall) -> Progress:
     if call.name == "read_articles":
         return Progress("reading", "正在读取正文")
+    if call.name == "check_follows":
+        return Progress("retrieving", "正在检查关注项")
     args = call.args
     if args.start_date is None:
         window = f"最近 {args.days} 天"

@@ -11,18 +11,20 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
+from agent.memory import MAX_FOLLOWS, Follow
 from agent.retrieval.search import SearchResult
 from agent.trace import Span, trace_span, warn
 from agent.types import Evidence
 from common import prompt_text
 from common.taxonomy import KINDS, TOPICS
 
+from .follows import FollowsResult, commit_check_follows, follows_trace_output, run_check_follows
 from .read import ReadResult, commit_read_articles, read_trace_output, run_read_articles
 from .search import commit_search_news, run_search_news, search_trace_output
 
 
-def _field(tool: str, name: str) -> str:
-    return prompt_text.text(f"tools.{tool}.fields.{name}")
+def _field(tool: str, name: str, table: str = "fields") -> str:
+    return prompt_text.text(f"tools.{tool}.{table}.{name}")
 
 
 class SearchNewsArgs(BaseModel):
@@ -37,7 +39,6 @@ class SearchNewsArgs(BaseModel):
     sort: Literal["relevance", "importance", "time"] | None = Field(
         default=None, description=_field("search_news", "sort"))
     limit: int = Field(default=8, ge=1, le=20, description=_field("search_news", "limit"))
-    follow: str | None = Field(default=None, description=_field("search_news", "follow"))
 
     @field_validator("query")
     @classmethod
@@ -69,12 +70,24 @@ class ReadArticlesArgs(BaseModel):
         return self
 
 
+class FollowQuery(BaseModel):
+    follow: str = Field(description=_field("check_follows", "follow", "query_fields"))
+    query: str = Field(description=_field("check_follows", "query", "query_fields"))
+
+
+class CheckFollowsArgs(BaseModel):
+    queries: list[FollowQuery] = Field(default_factory=list, max_length=MAX_FOLLOWS,
+                                       description=_field("check_follows", "queries"))
+
+
 @dataclass
 class TurnState:
     user_urls: set[str]  # 当前问题和历史用户消息中出现过的地址，已经过 url_key
     read_count: int = 0
     seen_calls: set[str] = field(default_factory=set)
     allow_any_library_url: bool = False  # 只有 MCP 入口设为 True，见第 23.8 节
+    follows: list[Follow] = field(default_factory=list)  # the user's follows, set in prepare
+    today: date | None = None  # the user's date, for the check_follows windows
 
 
 @dataclass(frozen=True)
@@ -93,7 +106,7 @@ class ToolPayload:
     name: str
     args: BaseModel
     ok: bool
-    data: Any  # SearchResult 或 ReadResult
+    data: Any  # SearchResult, ReadResult or FollowsResult
     error: str | None = None
     span: Span | None = None  # collect 登记后把返回文本补进这个 span
 
@@ -115,7 +128,7 @@ class ToolSpec:
     name: str
     description: str
     args_model: type[BaseModel]
-    run: Callable[..., SearchResult | ReadResult]  # 只做读取，参数为 PreparedCall
+    run: Callable[..., SearchResult | ReadResult | FollowsResult]  # reads only; takes a PreparedCall
     commit: Callable[..., ToolOutcome]  # 登记证据并生成文本
     trace_output: Callable[[Any], dict[str, Any]]  # tool span 的输出
 
@@ -143,6 +156,14 @@ TOOLS: tuple[ToolSpec, ...] = (
         run=run_read_articles,
         commit=commit_read_articles,
         trace_output=read_trace_output,
+    ),
+    ToolSpec(
+        name="check_follows",
+        description=prompt_text.text("tools.check_follows.description"),
+        args_model=CheckFollowsArgs,
+        run=run_check_follows,
+        commit=commit_check_follows,
+        trace_output=follows_trace_output,
     ),
 )
 _SPECS = {spec.name: spec for spec in TOOLS}
@@ -178,7 +199,7 @@ def prepare_call(index: int, call: dict, *, state: TurnState, config: AgentConfi
     name, raw_args, call_id = call["name"], call["args"], call["id"]
     spec = _SPECS.get(name)
     if spec is None:
-        return reject(index, call_id, name, f"Unknown tool: {name}. Available tools: search_news, read_articles.",
+        return reject(index, call_id, name, f"Unknown tool: {name}. Available tools: {', '.join(_SPECS)}.",
                       "unknown_tool")
 
     key = name + json.dumps(raw_args, sort_keys=True)

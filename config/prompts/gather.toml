@@ -51,4 +51,4 @@ The user's follows, listed below, serve ONLY to tell whether the question is abo
 <follows>
 {items}
 </follows>
-ONLY when the user asks about the follows themselves, such as "我关注的有什么新进展", send one search_news per follow: write query as the English form of the follow; set follow to the follow itself, which MUST be copied exactly as written; and set days to the number of days since it was last checked, at least 1 and at most 30, or 14 if it has never been checked. For any other question, do not search the follows.'''
+ONLY when the user asks about the follows themselves, such as "我关注的有什么新进展", call check_follows once, with the English form of each follow. For any other question, do not check the follows.'''

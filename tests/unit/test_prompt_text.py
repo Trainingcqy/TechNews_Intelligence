@@ -34,11 +34,14 @@ PLACEHOLDERS = {
     "tools.search_news.fields.publisher_kind": set(),
     "tools.search_news.fields.sort": set(),
     "tools.search_news.fields.limit": set(),
-    "tools.search_news.fields.follow": set(),
     "tools.read_articles.description": set(),
     "tools.read_articles.fields.ids": set(),
     "tools.read_articles.fields.urls": set(),
     "tools.read_articles.fields.max_chars": set(),
+    "tools.check_follows.description": set(),
+    "tools.check_follows.fields.queries": set(),
+    "tools.check_follows.query_fields.follow": set(),
+    "tools.check_follows.query_fields.query": set(),
     "analyze.system": set(),
     "analyze.user": {"body_note", "topic_table", "kind_table", "title", "publisher", "body"},
     "analyze.no_body_note": set(),
@@ -68,11 +71,13 @@ def test_tool_schemas_carry_every_description_of_tools_toml():
     for schema in tool_schemas():
         name = schema["function"]["name"]
         assert schema["function"]["description"] == prompt_text.text(f"tools.{name}.description")
-        properties = schema["function"]["parameters"]["properties"]
-        described = {field: spec["description"] for field, spec in properties.items() if "description" in spec}
-        prefix = f"tools.{name}.fields."
-        assert described == {key.removeprefix(prefix): prompt_text.text(key)
-                             for key in PLACEHOLDERS if key.startswith(prefix)}
+        parameters = schema["function"]["parameters"]
+        for table, models in (("fields", [parameters]), ("query_fields", parameters.get("$defs", {}).values())):
+            described = {field: spec["description"] for model in models
+                         for field, spec in model["properties"].items() if "description" in spec}
+            prefix = f"tools.{name}.{table}."
+            assert described == {key.removeprefix(prefix): prompt_text.text(key)
+                                 for key in PLACEHOLDERS if key.startswith(prefix)}
 
 
 def test_render_does_not_substitute_inside_values():

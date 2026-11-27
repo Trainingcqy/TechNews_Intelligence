@@ -15,7 +15,6 @@ kind = 'Article type. When empty, browsing covers only news, release and researc
 publisher_kind = 'official for official releases only, media for media reports only. When empty, both are included.'
 sort = 'relevance ranks by relevance to query; it is the default when query is set and MUST be used with query. importance ranks by the number of publishers and is the default without query; with query, stories whose titles mention the query and that several publishers reported come first, and relevance fills the remaining places. time ranks by publication time, newest first.'
 limit = 'Number of stories to return.'
-follow = 'The follow being checked, which MUST be copied exactly as written in <follows>. Set it ONLY when searching a follow.'
 
 [read_articles]
 description = 'Read the full text of reports. Returns the title, publisher, date, text length and opening text of each report. The full text read is passed to the model that writes the answer.'
@@ -24,3 +23,14 @@ description = 'Read the full text of reports. Returns the title, publisher, date
 ids = 'Evidence ids from search results, such as E3.'
 urls = "Links that appear in the user's messages. No other links are accepted."
 max_chars = 'Maximum number of characters to read from each report.'
+
+[check_follows]
+description = '''
+Check the user's follows: search each follow for stories since it was last checked, ranked by the number of publishers, and return the stories grouped by follow. Use it ONLY when the user asks about the follows themselves.'''
+
+[check_follows.fields]
+queries = 'The English search terms of each follow. A follow left out is searched with its own words.'
+
+[check_follows.query_fields]
+follow = 'The follow, which MUST be copied exactly as written in <follows>.'
+query = 'Search terms for the follow, which MUST be in English.'

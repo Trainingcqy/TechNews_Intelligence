@@ -132,7 +132,7 @@ def test_call_tool_errors_have_status_error(monkeypatch, fake_db):
     assert server.call_tool("read_articles", {})["status"] == "error"
     unknown = server.call_tool("compare_sources", {})
     assert (unknown["status"], unknown["text"], unknown["evidence"]) == (
-        "error", "Unknown tool: compare_sources. Available tools: search_news, read_articles.", [])
+        "error", "Unknown tool: compare_sources. Available tools: search_news, read_articles, check_follows.", [])
 
 
 def test_each_call_starts_a_new_registry(monkeypatch, fake_db):

@@ -118,7 +118,9 @@ def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
 
     server = InProcessMCPServer(server_name=server_name)
     for spec in TOOLS:
-        server.register_tool(spec)
+        # check_follows reads the follows of a signed-in user, which an MCP client does not have.
+        if spec.name != "check_follows":
+            server.register_tool(spec)
     server.register_resource(
         uri="news://corpus",
         name="News database overview",

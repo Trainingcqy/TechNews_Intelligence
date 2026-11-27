@@ -109,8 +109,8 @@ def test_read_args_defaults_and_bounds():
 def test_prepare_unknown_tool():
     outcome = _prepare("query_news", {"query": "x"})
     assert outcome == ToolOutcome(index=2, call_id="c1", name="query_news", ok=False,
-                                  gather_text="Unknown tool: query_news. Available tools: search_news, read_articles.",
-                                  error="Unknown tool: query_news. Available tools: search_news, read_articles.",
+                                  gather_text="Unknown tool: query_news. Available tools: search_news, read_articles, check_follows.",
+                                  error="Unknown tool: query_news. Available tools: search_news, read_articles, check_follows.",
                                   reason="unknown_tool")
 
 

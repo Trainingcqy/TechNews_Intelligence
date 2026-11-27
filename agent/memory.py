@@ -122,6 +122,14 @@ def record_turn(user_key: str, answer: Answer) -> None:
         logger.exception("recording the turn in user memory failed")
 
 
+def check_window(follow: Follow, today: date) -> int:
+    """Days to search when checking a follow: since its last check, at least 1 and at most 30; 14 if never checked."""
+    if follow.last_checked_at is None:
+        return 14
+    days = (today - follow.last_checked_at.astimezone(user_zone()).date()).days
+    return min(max(days, 1), 30)
+
+
 def render_follows(follows: list[Follow], today: date) -> str:
     if not follows:
         return ""

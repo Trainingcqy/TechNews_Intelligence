@@ -124,6 +124,7 @@ export function nodeSubtitle(trace, node) {
       return node.attributes?.model || "";
     case "tool":
       if (node.name === "read_articles") return [...(node.input?.ids || []), ...(node.input?.urls || [])].join("、");
+      if (node.name === "check_follows") return (output.follows || []).map((check) => check.follow).join("、");
       return node.input?.query || node.input?.topic || `${SORT[node.input?.sort] || ""}浏览`;
     case "retrieval":
       return `${output.candidates?.length ?? 0} 个候选`;

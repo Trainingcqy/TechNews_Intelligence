@@ -72,6 +72,22 @@ def test_keeps_last_turns_but_collects_user_urls_from_all_history(monkeypatch):
     assert (ctx.history_turns, ctx.turns_used) == (3, 2)
 
 
+def test_only_the_latest_answer_with_sources_becomes_history_evidence(monkeypatch):
+    lookups = _patch(monkeypatch, urls=["https://a.com/1", "https://a.com/2"])
+    history = [
+        _user("q1"), _model("x[1]", citation_urls=["https://a.com/1"]),
+        _user("q2"), _model("y[1]", citation_urls=["https://a.com/2"]),
+        _user("q3"), _model("不客气"),
+    ]
+    registry = EvidenceRegistry()
+
+    ctx = context.build_context(history, registry, AgentConfig())
+
+    assert lookups == [["a.com/2"]]
+    assert [(e.eid, e.article.url, e.history) for e in registry.items()] == [("E1", "https://a.com/2", True)]
+    assert [m.content for m in ctx.messages[1::2]] == ["x", "y[E1]", "不客气"]
+
+
 def test_new_format_registers_the_sources_found_in_the_library(monkeypatch):
     lookups = _patch(monkeypatch, urls=["https://a.com/1"])
     sources = [

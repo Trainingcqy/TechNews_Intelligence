@@ -93,7 +93,9 @@ def _evidence_table(runtime: TurnRuntime) -> list[dict]:
         row = {"eid": evidence.eid, "level": evidence.level, **runtime.provenance.get(evidence.eid, {}),
                "article_id": evidence.article.article_id, "story_id": evidence.article.story_id}
         if synthesized and evidence.level == "fulltext":
-            row["body_in_block"] = evidence.eid not in runtime.dropped_bodies
+            row["body_in_block"] = evidence.eid not in runtime.left_out
+        elif synthesized and evidence.eid in runtime.left_out:
+            row["in_block"] = False
         if evidence.eid in cited:
             row["cited"] = cited[evidence.eid]
         rows.append(row)

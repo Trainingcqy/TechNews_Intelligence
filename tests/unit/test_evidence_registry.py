@@ -128,6 +128,31 @@ def test_render_omits_optional_lines_and_marks_missing_body() -> None:
     )
 
 
+def test_brief_puts_this_turn_first_and_leaves_out_history_before_bodies() -> None:
+    registry = EvidenceRegistry()
+    registry.add_article(_article(1, "https://h.com/1"), "summary", history=True)
+    registry.add_article(_article(2, "https://h.com/2"), "summary", history=True)
+    registry.add_article(OTHER, "summary")
+    registry.set_fulltext("E3", "文" * 40, 40, False)
+
+    full, left_out = render_for_synthesis(registry, 100_000)
+    assert left_out == [] and full.index("[E3]") < full.index("[E1]") < full.index("[E2]")
+    without_e2 = full[:full.index("\n\n[E2]")]
+    assert render_for_synthesis(registry, len(without_e2)) == (without_e2, ["E2"])
+    assert render_for_synthesis(registry, 10)[1] == ["E1", "E2", "E3"]
+
+
+def test_finding_or_reading_a_history_item_in_this_turn_makes_it_current() -> None:
+    registry = EvidenceRegistry()
+    registry.add_article(_article(1, "https://h.com/1"), "summary", history=True)
+    registry.add_article(_article(2, "https://h.com/2"), "summary", history=True)
+    registry.add_article(_article(3, "https://h.com/3"), "summary")
+    registry.add_article(_article(1, "https://h.com/1"), "listed")
+    registry.set_fulltext("E2", "body", 4, False)
+    registry.add_article(_article(3, "https://h.com/3"), "summary", history=True)
+    assert [evidence.history for evidence in registry.items()] == [False, False, False]
+
+
 def test_render_drops_bodies_from_the_last_registered_until_within_limit() -> None:
     registry = _two_fulltext_registry()
     without_other_body = ARTICLE_BLOCK + ARTICLE_BODY + "\n\n" + OTHER_BLOCK

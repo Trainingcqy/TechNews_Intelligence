@@ -56,6 +56,7 @@ const removed = computed(() => {
 });
 
 function bodyLabel(row) {
+  if (row.in_block === false) return "未放入";
   if (row.body_in_block === undefined) return "-";
   return row.body_in_block ? "带正文" : "已去掉";
 }

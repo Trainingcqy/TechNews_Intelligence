@@ -39,8 +39,10 @@ def build_context(history: list[dict], registry: EvidenceRegistry, config: Agent
     turns = turns[max(0, len(turns) - config.history_turns):]
 
     turn_sources = [_sources(reply) for _, reply in turns]
-    keys = list(dict.fromkeys(url_key(source["url"]) for sources in turn_sources for source in sources))
-    _register(keys, registry)
+    # Only the latest answer with sources becomes evidence: a follow-up question is about it. The citations of
+    # earlier answers are dropped from their text.
+    latest = next((sources for sources in reversed(turn_sources) if sources), [])
+    _register(list(dict.fromkeys(url_key(source["url"]) for source in latest)), registry)
 
     messages: list[BaseMessage] = []
     for (user, reply), sources in zip(turns, turn_sources):
@@ -87,4 +89,4 @@ def _register(keys: list[str], registry: EvidenceRegistry) -> None:
     by_key = {url_key(article.url): article for article in articles}
     for key in keys:
         if key in by_key:
-            registry.add_article(by_key[key], "summary")
+            registry.add_article(by_key[key], "summary", history=True)

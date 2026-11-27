@@ -29,12 +29,14 @@ class EvidenceRegistry:
         self._eid_by_key: dict[str, str] = {}
         self.seen_dates: dict[int, date] = {}  # 故事编号到用户此前看到它的日期，collect 写入
 
-    def add_article(self, article: Article, level: str, stats: StoryStats | None = None) -> Evidence:
+    def add_article(self, article: Article, level: str, stats: StoryStats | None = None, *,
+                    history: bool = False) -> Evidence:
         key = url_key(article.url)
         eid = self._eid_by_key.get(key)
         if eid is None:
-            return self._new(key, article=article, level=level, stats=stats)
+            return self._new(key, article=article, level=level, stats=stats, history=history)
         evidence = self._items[eid]
+        evidence.history = evidence.history and history
         if _LEVEL_RANK[level] > _LEVEL_RANK[evidence.level]:
             evidence.level = level
         if stats is not None:
@@ -54,6 +56,7 @@ class EvidenceRegistry:
         evidence.fulltext_total_chars = total_chars
         evidence.truncated = truncated
         evidence.level = "fulltext"
+        evidence.history = False
 
     def citable_ids(self) -> set[str]:
         return {eid for eid, evidence in self._items.items() if evidence.level != "listed"}
@@ -70,16 +73,27 @@ class EvidenceRegistry:
 
 
 def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[str, list[str]]:
-    """The evidence block, and the ids whose body was dropped to fit max_chars."""
+    """The evidence brief, and the ids left out of it: a whole history item, or the body of a read.
+
+    This turn's evidence comes first. Over max_chars, history items go first, last registered first, then the bodies
+    of this turn's reads, last read first.
+    """
     citable = [evidence for evidence in registry.items() if evidence.level != "listed"]
-    fulltext = [e.eid for e in citable if e.level == "fulltext"]
+    current = [e for e in citable if not e.history]
+    history = [e for e in citable if e.history]
+    fulltext = [e.eid for e in current if e.level == "fulltext"]
     with_body = list(fulltext)
+    kept = list(history)
     while True:
         shown = set(with_body)
-        text = "\n\n".join(_render(e, e.eid in shown, registry.seen_dates) for e in citable)
-        if len(text) <= max_chars or not with_body:
-            return text, [eid for eid in fulltext if eid not in shown]
-        with_body.pop()
+        text = "\n\n".join(_render(e, e.eid in shown, registry.seen_dates) for e in current + kept)
+        if len(text) <= max_chars or not (kept or with_body):
+            left_out = [e.eid for e in history[len(kept):]]
+            return text, left_out + [eid for eid in fulltext if eid not in shown]
+        if kept:
+            kept.pop()
+        else:
+            with_body.pop()
 
 
 def _render(evidence: Evidence, with_body: bool, seen_dates: dict[int, date]) -> str:

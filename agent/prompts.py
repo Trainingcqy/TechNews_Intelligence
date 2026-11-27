@@ -37,6 +37,6 @@ def render_gather_system(now: datetime, corpus: str, follows: str) -> str:
 
 def render_final_user(question: str, registry: EvidenceRegistry, max_chars: int,
                       now: datetime) -> tuple[str, list[str]]:
-    """The synthesis user message, and the evidence ids whose body was dropped from it."""
-    brief, dropped = render_for_synthesis(registry, max_chars)
-    return prompt_text.render("final.user", clock=final_clock(now), question=question, brief=brief), dropped
+    """The synthesis user message, and the evidence ids left out of its brief, see render_for_synthesis."""
+    brief, left_out = render_for_synthesis(registry, max_chars)
+    return prompt_text.render("final.user", clock=final_clock(now), question=question, brief=brief), left_out

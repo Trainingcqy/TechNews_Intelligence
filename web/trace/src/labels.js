@@ -22,7 +22,7 @@ export const WARNING = {
   semantic_skipped: "跳过语义召回",
   rerank_fallback: "重排失败，保留融合顺序",
   usage_inconsistent: "token 总数不一致",
-  evidence_truncated: "证据块去掉了正文",
+  evidence_truncated: "证据块超出预算",
   citations_removed: "引用校验删除了内容"
 };
 
@@ -38,7 +38,7 @@ export const WARNING_DETAIL = {
   semantic_skipped: "没有取得查询向量，这次检索跳过了语义召回。",
   rerank_fallback: "重排调用失败，候选保留融合后的顺序。",
   usage_inconsistent: "服务商返回的 token 总数既不等于输入加输出，也不等于输入、输出、推理三项之和。",
-  evidence_truncated: "证据块超出字数预算，部分已读全文的证据只放入了摘要，见证据表的“证据块”一列。",
+  evidence_truncated: "证据块超出字数预算：先不放入历史来源，仍超出时去掉部分已读全文证据的正文，见证据表的“证据块”一列。",
   citations_removed: "引用校验删掉了回答中不可引用的编号、原始地址或数字引用，见引用校验。"
 };
 

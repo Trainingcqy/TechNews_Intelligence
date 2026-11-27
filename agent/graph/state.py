@@ -52,5 +52,5 @@ class TurnRuntime:
     step_span: Span | None = None
     provenance: dict[str, dict] = field(default_factory=dict)  # 证据编号到登记与升级的位置
     route: dict | None = None
-    dropped_bodies: list[str] = field(default_factory=list)  # 证据块中被去掉正文的编号
+    left_out: list[str] = field(default_factory=list)  # ids whose body, or for a history item the whole entry, is not in the brief
     citations: CitationCheck | None = None

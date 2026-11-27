@@ -49,6 +49,7 @@ class Evidence:
     fulltext: str | None = None
     fulltext_total_chars: int = 0
     truncated: bool = False
+    history: bool = False  # registered from a past answer and not found again in this turn
 
 
 @dataclass(frozen=True)

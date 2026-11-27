@@ -193,9 +193,9 @@ def after_route(state) -> str:
 def synthesize(state, config) -> dict:
     runtime = _runtime(config)
     runtime.emit(Progress("synthesizing", "正在生成回答"))
-    user, runtime.dropped_bodies = prompts.render_final_user(
+    user, runtime.left_out = prompts.render_final_user(
         state["question"], runtime.registry, runtime.config.synthesis_evidence_chars, runtime.now)
-    if runtime.dropped_bodies:
+    if runtime.left_out:
         warn("evidence_truncated")
     messages = [SystemMessage(prompts.FINAL_SYSTEM_PROMPT), *state["context_messages"], HumanMessage(user)]
     return {"raw_answer": call_text(runtime.models[1], messages)}

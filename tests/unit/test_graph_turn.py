@@ -9,7 +9,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent import Answer, EvidenceFound, Final, Progress, run_turn
-from agent import memory, prompts, trace_store
+from agent import context, memory, prompts, trace_store
 from agent.citations import BLOCKED_TEXT, ERROR_TEXT, NOT_FOUND_TEXT
 from agent.config import AgentConfig
 from agent.graph import nodes
@@ -251,6 +251,21 @@ def test_body_dropped_from_the_evidence_block_is_recorded(turn):
     assert BODY not in r.final.calls[0][-1].content
     assert r.trace.warnings == ["evidence_truncated"]
     assert r.trace.output["evidence"][0]["body_in_block"] is False
+
+
+def test_history_evidence_left_out_of_the_brief_is_recorded(turn, monkeypatch):
+    earlier = replace(ARTICLE, article_id=31, url="https://www.theverge.com/genie-4", title="Genie 4 hands-on")
+    monkeypatch.setattr(context, "get_conn", FakeConn)
+    monkeypatch.setattr(context, "put_conn", lambda conn: None)
+    monkeypatch.setattr(context, "fetch_articles_by_url_keys", lambda cur, keys: [earlier])
+    history = [{"role": "user", "parts": [{"text": "上一个问题"}]},
+               {"role": "model", "parts": [{"text": "上一个回答 [1]"}], "citation_urls": [earlier.url]}]
+
+    r = turn([_search("Genie 4"), DONE], [ANSWERED], history=history, config=AgentConfig(synthesis_evidence_chars=10))
+
+    assert "Genie 4 hands-on" not in r.final.calls[0][-1].content
+    assert r.trace.warnings == ["evidence_truncated"]
+    assert [(row["eid"], row.get("in_block")) for row in r.trace.output["evidence"]] == [("E1", False), ("E2", None)]
 
 
 def test_step_limit_goes_to_synthesis(turn):

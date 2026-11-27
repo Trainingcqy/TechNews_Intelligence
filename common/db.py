@@ -14,8 +14,13 @@ from psycopg2 import extensions
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 
-def init_db_pool(maxconn: int = 5):
-    """根据环境变量初始化连接池。"""
+def init_db_pool(maxconn: int = 20):
+    """Create the connection pool from the environment.
+
+    A turn runs up to five tool calls at once and check_follows three searches inside one, each holding a
+    connection; a full pool raises instead of waiting. Connections above minconn close when returned, so maxconn
+    only caps concurrency.
+    """
     global _pool
     if _pool is not None:
         return

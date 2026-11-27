@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from agent.config import AgentConfig, user_zone
+from agent.config import user_zone
 from agent.retrieval.stories import fetch_articles_by_url_keys, fetch_bodies
 from agent.trace import warn
 from agent.types import Article
@@ -15,7 +15,6 @@ from common.urls import url_key
 if TYPE_CHECKING:
     from .registry import PreparedCall, ReadArticlesArgs, ToolOutcome
 
-PREVIEW_CHARS = AgentConfig().gather_read_preview_chars
 OVER_QUOTA = "over the read limit of this request"
 
 
@@ -116,8 +115,7 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
         size = f"{item.total_chars} characters in full"
         if truncated:
             size += f", first {len(item.text)} read"
-        lines.append(f"{head} | {size}")
-        lines.append(f"Opening: {item.text[:PREVIEW_CHARS]}")
+        lines.append(f"{head} | {size}; added to the evidence")
     text = "\n".join(lines)
     ok = bool(read)
     return ToolOutcome(index=0, call_id="", name="read_articles", ok=ok, gather_text=text,

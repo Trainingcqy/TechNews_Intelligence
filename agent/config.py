@@ -46,7 +46,6 @@ class AgentConfig:
     history_turns: int = 4  # AGENT_HISTORY_TURNS
     history_answer_chars: int = 6000
     synthesis_evidence_chars: int = 60000
-    gather_read_preview_chars: int = 800
 
 
 def load_config() -> AgentConfig:

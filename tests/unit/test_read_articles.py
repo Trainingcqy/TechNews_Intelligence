@@ -130,7 +130,7 @@ def test_new_evidence_leaves_out_items_already_citable(monkeypatch):
     assert [evidence.eid for evidence in outcome.new_evidence] == ["E2"]
 
 
-def test_truncation_and_preview(monkeypatch):
+def test_truncation_and_result_text(monkeypatch):
     body = "a" * 700 + "b" * 300 + "c" * 500
     _fake_db(monkeypatch, bodies={30: body})
     registry = EvidenceRegistry()
@@ -143,8 +143,8 @@ def test_truncation_and_preview(monkeypatch):
         "fulltext", body[:1000], 1500, True)
     assert outcome.gather_text.splitlines() == [
         "read_articles results:",
-        '[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 1500 characters in full, first 1000 read',
-        "Opening: " + body[:800],
+        '[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 1500 characters in full, first 1000 read; added to the '
+        'evidence',
         "[E5] read failed: unknown id.",
     ]
     assert outcome.ok is True

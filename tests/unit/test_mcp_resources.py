@@ -99,7 +99,8 @@ def test_call_tool_reads_library_url_without_user_provided_check(monkeypatch, fa
     result = _newsdb_server(monkeypatch).call_tool("read_articles", {"urls": ["https://techcrunch.com/genie-4"]})
     assert result == {
         "status": "ok",
-        "text": 'read_articles results:\n[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 4 characters in full\nOpening: 文章正文',
+        "text": ('read_articles results:\n[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 4 characters in full; '
+                 'added to the evidence'),
         "evidence": [{"eid": "E1", "url": ARTICLE.url, "title": "Genie 4 adds audio",
                       "source": "TechCrunch", "published_at": "2026-11-12"}],
     }

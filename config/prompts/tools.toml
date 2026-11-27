@@ -17,7 +17,7 @@ sort = 'relevance ranks by relevance to query; it is the default when query is s
 limit = 'Number of stories to return.'
 
 [read_articles]
-description = 'Read the full text of reports. Returns the title, publisher, date, text length and opening text of each report. The full text read is passed to the model that writes the answer.'
+description = 'Read the full text of reports. Returns the title, publisher, date and text length of each report; the full text is added to the evidence for the model that writes the answer.'
 
 [read_articles.fields]
 ids = 'Evidence ids from search results, such as E3.'

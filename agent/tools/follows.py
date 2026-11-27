@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 STORY_LIMIT = 5
-WORKERS = 3
 
 
 @dataclass(frozen=True)
@@ -42,7 +41,10 @@ def run_check_follows(prepared: PreparedCall, *, registry, state) -> FollowsResu
     english = {item.follow.lower(): item.query for item in prepared.args.queries}
     plans = [(follow, english.get(follow.query.lower(), follow.query), check_window(follow, state.today))
              for follow in state.follows]
-    with ThreadPoolExecutor(WORKERS) as pool:
+    if not plans:
+        return FollowsResult([])
+    # All follows at once: the searches wait on Jina and the database, not on this process.
+    with ThreadPoolExecutor(len(plans)) as pool:
         # Each search runs in a copy of this context, so its spans land under the check_follows span.
         futures = [pool.submit(contextvars.copy_context().run, _check, *plan) for plan in plans]
         return FollowsResult([future.result() for future in futures])

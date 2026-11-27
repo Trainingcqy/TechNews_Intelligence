@@ -14,10 +14,10 @@ from psycopg2 import extensions
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 
-def init_db_pool(maxconn: int = 20):
+def init_db_pool(maxconn: int = 30):
     """Create the connection pool from the environment.
 
-    A turn runs up to five tool calls at once and check_follows three searches inside one, each holding a
+    A step runs up to five tool calls at once, and check_follows one search per follow, up to 20, each holding a
     connection; a full pool raises instead of waiting. Connections above minconn close when returned, so maxconn
     only caps concurrency.
     """

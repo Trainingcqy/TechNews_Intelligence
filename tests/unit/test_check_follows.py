@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import date, datetime, timezone
 
 import pytest
@@ -56,6 +57,22 @@ def test_run_searches_each_follow_in_english_or_in_its_own_words_under_the_tool_
 
     assert [(check.follow.query, check.query) for check in result.checks] == [("英伟达", "NVIDIA"), ("OpenAI", "OpenAI")]
     assert searched == {"NVIDIA": (14, tool.span_id), "OpenAI": (14, tool.span_id)}
+
+
+def test_run_searches_every_follow_at_once(monkeypatch):
+    many = [_follow(f"follow {i}") for i in range(4)]
+    barrier = threading.Barrier(len(many), timeout=5)
+
+    def search_stories(**kwargs):
+        barrier.wait()
+        return SearchResult(hits=[], weak_match=False)
+
+    monkeypatch.setattr(follows, "search_stories", search_stories)
+    call = PreparedCall(0, "c1", "check_follows", CheckFollowsArgs())
+    result = run_check_follows(call, registry=None, state=TurnState(user_urls=set(), follows=many, today=TODAY))
+
+    assert [check.error for check in result.checks] == [None] * len(many)
+    assert run_check_follows(call, registry=None, state=TurnState(user_urls=set())).checks == []
 
 
 def test_commit_groups_by_follow_and_reports_each_evidence_once():

@@ -44,7 +44,8 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
-        init_db_pool()
+        # The dashboard runs no turns; a small pool keeps the server's total under max_connections.
+        init_db_pool(maxconn=5)
         logger.info("trace dashboard database pool initialized")
     except Exception as exc:  # noqa: BLE001
         logger.warning("trace dashboard database pool initialization failed: %s", exc)

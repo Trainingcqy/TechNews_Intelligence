@@ -45,7 +45,7 @@ _SECTION_END = re.compile(
     r"more like this|related(?: articles| stories| posts| content| reading| coverage)?|read next|keep reading"
     r"|most (?:read|popular|viewed)|recommended(?: for you| stories| articles)?|you (?:may|might) also like"
     r"|more (?:from|on|in) .{1,40}|trending(?: now| stories)?|latest (?:news|stories|articles)"
-    r"|popular (?:posts|stories|articles)|editor.s picks|this post is for paid members only|comments?|\d+ comments",
+    r"|popular (?:posts|stories|articles)|editor.s picks|comments?|\d+ comments",
     re.I,
 )
 _READ_MORE = re.compile(r"read more", re.I)
@@ -86,12 +86,17 @@ _EXTEND_FILLER = 2
 def extract_article(content: str, title: str | None) -> str:
     """The article text of a Reader page, or the whole content when no line reads as prose.
 
-    title is the article's title as the page or the feed gives it; the heading that repeats it marks the start.
+    title is the article's title as the page or the feed gives it; the heading that repeats it marks the start. On a
+    paywalled page the article is the free part before the paywall notice, and nothing when none of it reads as prose:
+    what follows the notice is the site's, such as teasers of other articles.
     """
     lines = content.splitlines()
+    paywall = next((i for i, line in enumerate(lines) if _PAYWALL.search(line)), None)
+    if paywall is not None:
+        lines = lines[:paywall]
     span = _article_span(lines, title)
     if span is None:
-        return content.strip()
+        return "" if paywall is not None else content.strip()
     start, end = span
     kept, seen = [], set()
     for line in lines[start:end + 1]:

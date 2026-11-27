@@ -182,6 +182,19 @@ def test_page_with_no_prose_is_returned_whole():
     assert extract_article(notes, None) == notes
 
 
+def test_paywalled_page_is_cut_at_the_paywall_notice():
+    # The free part is only the standfirst; the site's teasers after the notice read as more prose than it.
+    standfirst = "Model X reads long documents and answers questions about them in seconds."
+    content = page(NAV, f"# {TITLE}", standfirst, "## This post is for paid members only",
+                   "Become a paid member for unlimited access.", "###### More like this", TEASERS, FOOTER)
+    assert extract_article(content, TITLE) == standfirst
+
+
+def test_paywalled_page_without_a_free_part_has_no_article():
+    content = page(NAV, "To access our exclusive content you’ll need to subscribe.", TEASERS, FOOTER)
+    assert extract_article(content, None) == ""
+
+
 @pytest.mark.parametrize(
     ("content", "expected"),
     [

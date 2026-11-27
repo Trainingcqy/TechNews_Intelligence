@@ -123,12 +123,12 @@ def test_promotional_analysis_is_excluded() -> None:
 @pytest.mark.parametrize(
     ("stage", "attempts_before", "config", "expected"),
     [
-        ("fetch", 0, IngestConfig(), ("discovered", 1, "timeout", 10)),
-        ("fetch", 1, IngestConfig(), ("discovered", 2, "timeout", 60)),
-        ("fetch", 2, IngestConfig(), ("discovered", 3, "timeout", 360)),
-        ("fetch", 3, IngestConfig(), ("discovered", 4, "timeout", 1440)),
-        ("analyze", 1, IngestConfig(), ("fetched", 2, "timeout", 60)),
-        ("embed", 5, IngestConfig(embed_max_attempts=7), ("analyzed", 6, "timeout", 1440)),
+        ("fetch", 0, IngestConfig(), ("discovered", 1, "timeout", 5)),
+        ("fetch", 1, IngestConfig(), ("discovered", 2, "timeout", 30)),
+        ("fetch", 2, IngestConfig(), ("discovered", 3, "timeout", 180)),
+        ("fetch", 3, IngestConfig(), ("discovered", 4, "timeout", 720)),
+        ("analyze", 1, IngestConfig(), ("fetched", 2, "timeout", 30)),
+        ("embed", 5, IngestConfig(embed_max_attempts=7), ("analyzed", 6, "timeout", 720)),
     ],
 )
 def test_failure_counts_attempt_and_backs_off(stage, attempts_before, config, expected) -> None:

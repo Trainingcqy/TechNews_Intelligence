@@ -25,7 +25,7 @@ class IngestConfig:
     analyze_max_attempts: int = 3
     embed_max_attempts: int = 5
     # Minutes before the next attempt; attempts beyond the table length use the last entry.
-    backoff_minutes: tuple[int, ...] = (10, 60, 360, 1440)
+    backoff_minutes: tuple[int, ...] = (5, 30, 180, 720)
 
     analyze_body_chars: int = 30_000
 

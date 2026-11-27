@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any, Callable, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
@@ -27,7 +27,12 @@ def _field(tool: str, name: str, table: str = "fields") -> str:
     return prompt_text.text(f"tools.{tool}.{table}.{name}")
 
 
+# An argument the schema does not define is rejected, so the model learns of it instead of it being dropped.
+_STRICT = ConfigDict(extra="forbid")
+
+
 class SearchNewsArgs(BaseModel):
+    model_config = _STRICT
     query: str | None = Field(default=None, description=_field("search_news", "query"))
     days: int = Field(default=14, ge=1, le=365, description=_field("search_news", "days"))
     start_date: date | None = Field(default=None, description=_field("search_news", "start_date"))
@@ -59,6 +64,7 @@ class SearchNewsArgs(BaseModel):
 
 
 class ReadArticlesArgs(BaseModel):
+    model_config = _STRICT
     ids: list[str] = Field(default_factory=list, max_length=5, description=_field("read_articles", "ids"))
     urls: list[str] = Field(default_factory=list, max_length=5, description=_field("read_articles", "urls"))
     max_chars: int = Field(default=4000, ge=800, le=12000, description=_field("read_articles", "max_chars"))
@@ -71,11 +77,13 @@ class ReadArticlesArgs(BaseModel):
 
 
 class FollowQuery(BaseModel):
+    model_config = _STRICT
     follow: str = Field(description=_field("check_follows", "follow", "query_fields"))
     query: str = Field(description=_field("check_follows", "query", "query_fields"))
 
 
 class CheckFollowsArgs(BaseModel):
+    model_config = _STRICT
     queries: list[FollowQuery] = Field(default_factory=list, max_length=MAX_FOLLOWS,
                                        description=_field("check_follows", "queries"))
 
@@ -202,15 +210,16 @@ def prepare_call(index: int, call: dict, *, state: TurnState, config: AgentConfi
         return reject(index, call_id, name, f"Unknown tool: {name}. Available tools: {', '.join(_SPECS)}.",
                       "unknown_tool")
 
-    key = name + json.dumps(raw_args, sort_keys=True)
-    if key in state.seen_calls:
-        return reject(index, call_id, name, "Identical to an earlier call; see its result above.", "duplicate")
-    state.seen_calls.add(key)
-
     try:
         args = spec.args_model.model_validate(raw_args)
     except ValidationError as exc:
         return reject(index, call_id, name, _validation_text(exc), "invalid_args")
+
+    # Compared after validation, so that spelling out a default value does not make a call new.
+    key = name + json.dumps(args.model_dump(mode="json"), sort_keys=True)
+    if key in state.seen_calls:
+        return reject(index, call_id, name, "Identical to an earlier call; see its result above.", "duplicate")
+    state.seen_calls.add(key)
 
     dropped: tuple[str, ...] = ()
     if isinstance(args, ReadArticlesArgs):

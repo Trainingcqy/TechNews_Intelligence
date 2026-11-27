@@ -119,9 +119,12 @@ def test_prepare_duplicate_call_ignores_key_order():
     first = _prepare("search_news", {"query": "Genie 4", "days": 7}, state)
     second = _prepare("search_news", {"days": 7, "query": "Genie 4"}, state)
     other = _prepare("search_news", {"query": "Genie 4", "days": 8}, state)
+    defaults = _prepare("search_news", {"query": "Genie 4", "days": 7, "limit": 8, "sort": "relevance"}, state)
     assert isinstance(first, PreparedCall) and isinstance(other, PreparedCall)
     assert (second.ok, second.reason, second.gather_text) == (
         False, "duplicate", "Identical to an earlier call; see its result above.")
+    # The same call as the first once the defaults are filled in.
+    assert (defaults.ok, defaults.reason) == (False, "duplicate")
 
 
 def test_prepare_validation_error_text_lists_fields():
@@ -133,6 +136,9 @@ def test_prepare_validation_error_text_lists_fields():
     )
     combined = _prepare("search_news", {"end_date": "2026-10-31"})
     assert combined.gather_text == "Invalid arguments: Value error, end_date requires start_date"
+    unknown = _prepare("search_news", {"query": "x", "query_placeholder": "x"})
+    assert (unknown.reason, unknown.gather_text) == (
+        "invalid_args", "Invalid arguments: query_placeholder: Extra inputs are not permitted")
 
 
 def test_prepare_returns_validated_args():

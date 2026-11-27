@@ -68,8 +68,10 @@ function preview(message) {
     </header>
 
     <dl class="kv">
+      <dt>服务商</dt>
+      <dd>{{ attrs.provider }}</dd>
       <dt>模型</dt>
-      <dd>{{ attrs.provider }} {{ attrs.model }}</dd>
+      <dd>{{ attrs.model }}</dd>
       <template v-if="attrs.response_model && attrs.response_model !== attrs.model">
         <dt>响应中的模型</dt>
         <dd>{{ attrs.response_model }}</dd>

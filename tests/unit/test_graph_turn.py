@@ -37,10 +37,10 @@ SOURCE = Source(n=1, url=ARTICLE.url, title="Genie 4 adds audio", title_zh="", s
 DONE = AIMessage(content="DONE")
 ANSWERED = AIMessage(content="STATUS: answered\nGenie 4 新增了音频 [E1]。")
 UNDERSTANDING = Progress("正在理解问题")
-SEARCHING = Progress("正在检索", "Genie 4 最近 14 天")
+SEARCHING = Progress("正在检索", "Genie 4")
 FOUND = Progress("正在分析结果", "找到 1 条新闻")
 WRITING = Progress("正在撰写回答", "依据 1 篇报道")
-SEARCHED = ProcessItem("检索", "Genie 4", "最近 14 天 1 条新闻")
+SEARCHED = ProcessItem("检索", "Genie 4", "最近 14 天内找到 1 条新闻")
 READ = ProcessItem("阅读", "Genie 4 adds audio", "TechCrunch 2026-11-12")
 SEARCH_ONLY = Process("检索 1 次", (SEARCHED,))
 SEARCH_AND_READ = Process("检索 1 次，阅读 1 篇报道", (SEARCHED, READ))
@@ -177,10 +177,10 @@ def test_tool_call_without_evidence_is_not_found(turn):
     r = turn([_search("不存在的产品"), DONE])
 
     expected = Answer(status="not_found", text=NOT_FOUND_TEXT["zh"], tool_calls=("search_news",),
-                      process=Process("检索 1 次", (ProcessItem("检索", "不存在的产品", "最近 14 天 无结果"),)),
+                      process=Process("检索 1 次", (ProcessItem("检索", "不存在的产品", "最近 14 天内没有找到"),)),
                       request_id="r1")
     assert r.answer == expected
-    assert r.events == [UNDERSTANDING, Progress("正在检索", "不存在的产品 最近 14 天"),
+    assert r.events == [UNDERSTANDING, Progress("正在检索", "不存在的产品"),
                         Progress("正在分析结果", "没有找到新闻")]
     assert r.final.calls == []
 
@@ -291,12 +291,12 @@ def test_calls_over_step_limit_are_rejected(turn):
     r = turn([_search("Genie 4", "Gemini", "Veo"), DONE], [ANSWERED], config=AgentConfig(max_calls_per_step=2))
 
     expected = _answered(tool_calls=("search_news", "search_news"),
-                         process=Process("检索 2 次", (SEARCHED, ProcessItem("检索", "Gemini", "最近 14 天 无结果"))))
+                         process=Process("检索 2 次", (SEARCHED, ProcessItem("检索", "Gemini", "最近 14 天内没有找到"))))
     assert r.answer == expected
     tool_messages = [m for m in r.gather.calls[1] if isinstance(m, ToolMessage)]
     assert [m.tool_call_id for m in tool_messages] == ["c1", "c2", "c3"]
     assert tool_messages[2].content.startswith("This step exceeded its call limit; this call was not run.\n\n")
-    assert r.events == [UNDERSTANDING, Progress("正在检索", "Genie 4、Gemini 最近 14 天"), FOUND, WRITING]
+    assert r.events == [UNDERSTANDING, Progress("正在检索", "Genie 4、Gemini"), FOUND, WRITING]
     step = _spans(r.trace, "step")[0]
     assert [(call["disposition"], call.get("reason")) for call in step.output["calls"]] == [
         ("executed", None), ("executed", None), ("rejected", "call_limit")]
@@ -390,10 +390,10 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     assert answer.followed_queries == ("Genie 4",)
     assert answer.story_ids == (5,)
     days = memory.check_window(FOLLOWS[0], now.date())
-    assert answer.process == Process("检查 2 个关注项，检索 1 次，阅读 1 篇报道", (
-        ProcessItem("检查", "Genie 4", f"Genie 4 world model 最近 {days} 天 1 条新闻"),
-        ProcessItem("检查", "具身智能", "embodied AI 最近 14 天 失败"),
-        ProcessItem("检索", "具身智能", "最近 14 天 无结果"),
+    assert answer.process == Process("查看 2 个关注项，检索 1 次，阅读 1 篇报道", (
+        ProcessItem("查看", "Genie 4 的新动态", f"最近 {days} 天内找到 1 条新闻"),
+        ProcessItem("查看", "具身智能的新动态", "检索失败"),
+        ProcessItem("检索", "具身智能", "最近 14 天内没有找到"),
         READ,
     ))
     assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5]), ("seen", "tg:1", [])]

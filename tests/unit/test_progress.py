@@ -48,12 +48,13 @@ def test_window(fields, expected):
 
 @pytest.mark.parametrize("fields, expected", [
     ({"query": "Huawei verdict"}, "Huawei verdict"),
-    ({}, "要闻"),
-    ({"topic": "ai"}, "人工智能要闻"),
-    ({"topic": "ai", "sort": "time"}, "人工智能最新新闻"),
+    ({}, "最近 14 天的要闻"),
+    ({"topic": "ai", "start_date": "2026-11-27"}, "今天的人工智能要闻"),
+    ({"topic": "ai", "sort": "time", "start_date": "2026-11-01", "end_date": "2026-11-15"},
+     "2026-11-01 至 2026-11-15 的人工智能最新新闻"),
 ])
 def test_subject(fields, expected):
-    assert progress.subject(SearchNewsArgs(**fields)) == expected
+    assert progress.subject(SearchNewsArgs(**fields), TODAY) == expected
 
 
 def test_step_merges_the_calls_of_a_step():
@@ -65,20 +66,21 @@ def test_step_merges_the_calls_of_a_step():
     read = PreparedCall(2, "c2", "read_articles", ReadArticlesArgs(ids=["E1", "E9"], urls=["https://www.cnbc.com/x"]))
 
     assert progress.step([*searches, read], registry, [], TODAY) == Progress(
-        "正在检索并阅读 3 篇报道", "Huawei verdict、China reaction 最近 7 天")
+        "正在检索并阅读 3 篇报道", "Huawei verdict、China reaction")
     assert progress.step([read], registry, [], TODAY) == Progress("正在阅读 3 篇报道", "U.S. jury convicts Huawei、cnbc.com")
 
 
-def test_step_names_the_follows_and_windows_that_differ():
+def test_step_names_the_follows_and_what_it_searches():
     check = PreparedCall(0, "c0", "check_follows", CheckFollowsArgs())
     search = PreparedCall(1, "c1", "search_news", SearchNewsArgs(query="Nvidia"))
     browse = PreparedCall(2, "c2", "search_news", SearchNewsArgs(start_date="2026-11-27"))
     read = PreparedCall(3, "c3", "read_articles", ReadArticlesArgs(ids=["E1"]))
 
     assert progress.step([check], EvidenceRegistry(), ["谷歌", "OpenAI"], TODAY) == Progress(
-        "正在检查 2 个关注项", "谷歌、OpenAI")
+        "正在查看 2 个关注项", "谷歌、OpenAI")
+    # A search without query carries its window in its subject.
     assert progress.step([check, search, browse, read], EvidenceRegistry(), ["谷歌"], TODAY) == Progress(
-        "正在检查 1 个关注项、检索并阅读 1 篇报道", "Nvidia 最近 14 天、要闻 今天")
+        "正在查看 1 个关注项、检索并阅读 1 篇报道", "Nvidia、今天的要闻")
 
 
 def test_found_counts_distinct_stories_and_read_bodies():
@@ -97,18 +99,30 @@ def test_found_counts_distinct_stories_and_read_bodies():
     assert progress.found([]) == ""
 
 
+@pytest.mark.parametrize("fields, expected", [
+    ({"days": 7}, "最近 7 天内找到 1 条新闻"),
+    ({"start_date": "2026-11-27"}, "今天找到 1 条新闻"),
+    ({"start_date": "2026-11-01"}, "2026-11-01 至今找到 1 条新闻"),
+    ({"start_date": "2026-11-20", "end_date": "2026-11-20"}, "2026-11-20 找到 1 条新闻"),
+])
+def test_record_of_a_search_says_what_it_found_in_its_window(fields, expected):
+    payload = _payload("search_news", SearchNewsArgs(query="Nvidia", **fields),
+                       SearchResult(hits=[_hit(1)], weak_match=False))
+    assert progress.record(payload, TODAY, set()) == [ProcessItem("检索", "Nvidia", expected)]
+
+
 def test_record_lists_filters_failures_and_each_article_once():
     args = SearchNewsArgs(query="OpenAI", topic="ai", kind="research", publisher_kind="official", start_date="2026-11-01")
     nothing = SearchResult(hits=[], weak_match=False)
 
     assert progress.record(_payload("search_news", args, nothing), TODAY, set()) == [
-        ProcessItem("检索", "OpenAI", "仅人工智能领域 仅研究类 仅官方渠道 2026-11-01 至今 无结果")]
-    # Without query the topic is part of the subject, not a filter.
+        ProcessItem("检索", "OpenAI", "仅人工智能领域、研究类、官方渠道，2026-11-01 至今没有找到")]
+    # Without query the window and topic are part of the subject.
     browse = SearchNewsArgs(topic="ai", days=7)
     assert progress.record(_payload("search_news", browse, SearchResult(hits=[_hit(1)], weak_match=False)), TODAY,
-                           set()) == [ProcessItem("检索", "人工智能要闻", "最近 7 天 1 条新闻")]
+                           set()) == [ProcessItem("检索", "最近 7 天的人工智能要闻", "找到 1 条新闻")]
     assert progress.record(_payload("search_news", SearchNewsArgs(), None, ok=False), TODAY, set()) == [
-        ProcessItem("检索", "要闻", "最近 14 天 失败")]
+        ProcessItem("检索", "最近 14 天的要闻", "检索失败")]
 
     read_ids: set[int] = set()
     read = _payload("read_articles", ReadArticlesArgs(ids=["E1", "E2"]),
@@ -117,21 +131,25 @@ def test_record_lists_filters_failures_and_each_article_once():
     assert progress.record(read, TODAY, read_ids) == []
 
 
-def test_record_of_a_follow_check_names_the_search_terms_only_when_they_differ():
+def test_record_of_a_follow_check_names_the_follow_and_what_it_found():
     checks = FollowsResult([
         FollowCheck(Follow(1, "谷歌", None), "Google", 3, SearchResult(hits=[_hit(1)], weak_match=False), None),
         FollowCheck(Follow(2, "OpenAI", None), "openai", 14, None, "TimeoutError"),
+        FollowCheck(Follow(3, "具身智能", None), "embodied AI", 5, None, "TimeoutError"),
+        FollowCheck(Follow(4, "Anthropic", None), "Anthropic", 5, SearchResult(hits=[], weak_match=False), None),
     ])
 
     assert progress.record(_payload("check_follows", CheckFollowsArgs(), checks), TODAY, set()) == [
-        ProcessItem("检查", "谷歌", "Google 最近 3 天 1 条新闻"),
-        ProcessItem("检查", "OpenAI", "最近 14 天 失败"),
+        ProcessItem("查看", "谷歌的新动态", "最近 3 天内找到 1 条新闻"),
+        ProcessItem("查看", "OpenAI 的新动态", "检索失败"),
+        ProcessItem("查看", "具身智能的新动态", "检索失败"),
+        ProcessItem("查看", "Anthropic 的新动态", "最近 5 天内没有找到"),
     ]
 
 
 def test_process_summary_counts_each_action():
-    items = [ProcessItem("检索", "a", ""), ProcessItem("阅读", "b", ""), ProcessItem("检查", "c", ""),
+    items = [ProcessItem("检索", "a", ""), ProcessItem("阅读", "b", ""), ProcessItem("查看", "c", ""),
              ProcessItem("检索", "d", "")]
 
-    assert progress.process(items) == Process("检查 1 个关注项，检索 2 次，阅读 1 篇报道", tuple(items))
+    assert progress.process(items) == Process("查看 1 个关注项，检索 2 次，阅读 1 篇报道", tuple(items))
     assert progress.process([]) is None

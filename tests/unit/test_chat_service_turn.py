@@ -22,8 +22,9 @@ from app import chat_service
 SOURCE = Source(
     n=1, url="https://example.com/a", title="Title", title_zh="标题", source="Example", published_at="2026-11-12"
 )
-PROCESS = Process("检索 1 次", (ProcessItem("检索", "Genie 4", "最近 14 天 1 条新闻"),))
-PROCESS_JSON = {"summary": "检索 1 次", "items": [{"action": "检索", "subject": "Genie 4", "meta": "最近 14 天 1 条新闻"}]}
+PROCESS = Process("检索 1 次", (ProcessItem("检索", "Genie 4", "最近 14 天内找到 1 条新闻"),))
+PROCESS_JSON = {"summary": "检索 1 次",
+                "items": [{"action": "检索", "subject": "Genie 4", "meta": "最近 14 天内找到 1 条新闻"}]}
 TOKEN = {"id": 7, "email": "user@example.com"}
 HISTORY = [{"role": "user", "parts": [{"text": "上一问"}]}]
 STATUSES = ["answered", "insufficient", "direct", "not_found", "blocked", "error"]
@@ -79,9 +80,9 @@ def env(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_event_to_sse_mapping() -> None:
-    assert _parse(streaming.event_to_sse(Progress("正在检索", "Genie 4 最近 14 天"))) == (
+    assert _parse(streaming.event_to_sse(Progress("正在检索", "Genie 4"))) == (
         "progress",
-        {"title": "正在检索", "detail": "Genie 4 最近 14 天"},
+        {"title": "正在检索", "detail": "Genie 4"},
     )
 
 
@@ -111,7 +112,7 @@ def test_chat_counts_quota_only_for_answered(env, status: str) -> None:  # noqa:
 
 @pytest.mark.parametrize("status", ["answered", "insufficient", "error"])
 def test_stream_emits_events_then_final(env, status: str) -> None:  # noqa: ANN001
-    env.events = [Progress("正在理解问题"), Progress("正在检索", "Genie 4 最近 14 天")]
+    env.events = [Progress("正在理解问题"), Progress("正在检索", "Genie 4")]
     env.answer = Answer(status=status, text="正文 [1]", sources=(SOURCE,), process=PROCESS)
     turn = chat_service.prepare_chat_turn(ChatRequest(message="问题"), TOKEN, "req-1", stream=True)
 

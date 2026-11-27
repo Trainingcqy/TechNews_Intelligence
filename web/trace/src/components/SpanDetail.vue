@@ -164,7 +164,7 @@ function filterText(input) {
                   <div>{{ story.title }}</div>
                   <div class="muted small">{{ story.meta }}</div>
                 </td>
-                <td>{{ story.reports }} 篇 {{ story.publishers }} 家</td>
+                <td>{{ story.publishers }} 家共 {{ story.reports }} 篇</td>
                 <td class="mono">{{ formatScore(story.match_score) }}</td>
                 <td class="mono">{{ formatScore(story.rerank) }}</td>
               </tr>

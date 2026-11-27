@@ -93,9 +93,13 @@ function upgradeLabel(row) {
         <ol class="sources">
           <li v-for="source in answer.sources" :key="source.n">
             <span class="muted">[{{ source.n }}]</span>
+            <!-- The space between the link and the meta must share one line, or Vue drops it. -->
             <span>
-              <a :href="source.url" target="_blank" rel="noreferrer">{{ source.title_zh || source.title }}</a>
-              <span class="muted"> {{ source.source }} {{ source.published_at }}</span>
+              <a
+                :href="source.url"
+                target="_blank"
+                rel="noreferrer"
+              >{{ source.title_zh || source.title }}</a> <span class="muted">{{ source.source }} {{ source.published_at }}</span>
             </span>
           </li>
         </ol>
@@ -139,9 +143,8 @@ function upgradeLabel(row) {
               <td class="mono">{{ row.eid }}</td>
               <td>
                 <div>{{ row.title }}</div>
-                <div v-if="row.meta || row.seen" class="muted small">
-                  {{ row.meta }}<template v-if="row.seen"> 此前提及 {{ row.seen }}</template>
-                </div>
+                <div v-if="row.meta" class="muted small">{{ row.meta }}</div>
+                <div v-if="row.seen" class="muted small">{{ row.seen }} 的回答中已提及</div>
               </td>
               <td>{{ LEVEL[row.level] || row.level }}</td>
               <td>{{ location(row.registered) }}</td>

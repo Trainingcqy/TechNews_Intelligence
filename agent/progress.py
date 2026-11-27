@@ -15,7 +15,7 @@ from common.taxonomy import KINDS, TOPICS
 
 UNDERSTANDING = Progress("正在理解问题")
 
-CHECK, SEARCH, READ = "检查", "检索", "阅读"
+CHECK, SEARCH, READ = "查看", "检索", "阅读"
 
 
 def window(args: SearchNewsArgs, today: date) -> str:
@@ -29,11 +29,13 @@ def window(args: SearchNewsArgs, today: date) -> str:
     return f"{start} 至 {end}"
 
 
-def subject(args: SearchNewsArgs) -> str:
+def subject(args: SearchNewsArgs, today: date) -> str:
+    """What a search looked for: its query, or for a search without one, the window and topic it browsed."""
     if args.query:
         return args.query
+    span = window(args, today)
     topic = TOPICS[args.topic] if args.topic else ""
-    return topic + ("最新新闻" if args.sort == "time" else "要闻")
+    return f"{span}{_joint(span)}的{topic}{'最新新闻' if args.sort == 'time' else '要闻'}"
 
 
 def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[str], today: date) -> Progress:
@@ -43,13 +45,14 @@ def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[st
     checking = any(call.name == "check_follows" for call in calls)
     actions = []
     if checking:
-        actions.append(f"检查 {len(follows)} 个关注项" if follows else "检查关注项")
+        actions.append(f"查看 {len(follows)} 个关注项" if follows else "查看关注项")
     if searches:
         actions.append("检索")
     if reads:
         actions.append(f"阅读 {sum(len(args.ids) + len(args.urls) for args in reads)} 篇报道")
     if searches:
-        detail = _searches(searches, today)
+        # A query's window is left to the process list, where it reads with the result.
+        detail = "、".join(subject(args, today) for args in searches)
     elif checking:
         detail = "、".join(follows)
     else:
@@ -95,8 +98,12 @@ def record(payload: ToolPayload, today: date, read_ids: set[int]) -> list[Proces
     left out."""
     if payload.name == "search_news":
         args = payload.args
-        meta = [*_filters(args), window(args, today), _outcome(payload.data.hits if payload.ok else [], not payload.ok)]
-        return [ProcessItem(SEARCH, subject(args), " ".join(meta))]
+        # A search without query names its window in the subject.
+        span = window(args, today) if args.query else ""
+        outcome = _outcome(span, payload.data.hits if payload.ok else [], not payload.ok)
+        filters = _filters(args)
+        meta = f"仅{'、'.join(filters)}，{outcome}" if filters else outcome
+        return [ProcessItem(SEARCH, subject(args, today), meta)]
     if not payload.ok:
         return []
     if payload.name == "check_follows":
@@ -116,7 +123,7 @@ def process(items: list[ProcessItem]) -> Process | None:
     counts = {action: sum(item.action == action for item in items) for action in (CHECK, SEARCH, READ)}
     parts = []
     if counts[CHECK]:
-        parts.append(f"检查 {counts[CHECK]} 个关注项")
+        parts.append(f"查看 {counts[CHECK]} 个关注项")
     if counts[SEARCH]:
         parts.append(f"检索 {counts[SEARCH]} 次")
     if counts[READ]:
@@ -130,40 +137,42 @@ def _joined(actions: list[str]) -> str:
     return "、".join(actions[:-1]) + "并" + actions[-1]
 
 
-def _searches(searches: list[SearchNewsArgs], today: date) -> str:
-    subjects = [subject(args) for args in searches]
-    windows = [window(args, today) for args in searches]
-    if len(set(windows)) == 1:
-        return "、".join(subjects) + " " + windows[0]
-    return "、".join(f"{name} {span}" for name, span in zip(subjects, windows))
-
-
 def _read_titles(reads: list[ReadArticlesArgs], registry: EvidenceRegistry) -> list[str]:
     titles = [_title(evidence.article) for args in reads for evidence in map(registry.get, args.ids) if evidence]
     return titles + [(urlsplit(url).hostname or url).removeprefix("www.") for args in reads for url in args.urls]
 
 
 def _filters(args: SearchNewsArgs) -> list[str]:
-    parts = []
+    names = []
     if args.query and args.topic:
-        parts.append(f"仅{TOPICS[args.topic]}领域")
+        names.append(f"{TOPICS[args.topic]}领域")
     if args.kind:
-        parts.append(f"仅{KINDS[args.kind]}类")
+        names.append(f"{KINDS[args.kind]}类")
     if args.publisher_kind:
-        parts.append("仅官方渠道" if args.publisher_kind == "official" else "仅媒体报道")
-    return parts
+        names.append("官方渠道" if args.publisher_kind == "official" else "媒体报道")
+    return names
 
 
-def _outcome(hits: list, failed: bool) -> str:
+def _outcome(span: str, hits: list, failed: bool) -> str:
+    """What a search found in its window, such as 最近 7 天内找到 10 条新闻; span is empty when the subject names it."""
     if failed:
-        return "失败"
-    return f"{len(hits)} 条新闻" if hits else "无结果"
+        return "检索失败"
+    if span.startswith("最近"):
+        span += "内"
+    span += _joint(span)
+    return f"{span}找到 {len(hits)} 条新闻" if hits else f"{span}没有找到"
 
 
 def _checked(check: FollowCheck) -> ProcessItem:
-    meta = [] if check.query.lower() == check.follow.query.lower() else [check.query]
-    meta += [f"最近 {check.days} 天", _outcome(check.result.hits if check.result else [], check.error is not None)]
-    return ProcessItem(CHECK, check.follow.query, " ".join(meta))
+    # The English search terms are a translation of the follow and stay in the trace.
+    name = check.follow.query
+    outcome = _outcome(f"最近 {check.days} 天", check.result.hits if check.result else [], check.error is not None)
+    return ProcessItem(CHECK, f"{name}{_joint(name)}的新动态", outcome)
+
+
+def _joint(text: str) -> str:
+    """The space that separates a date ending text from the Chinese that follows."""
+    return " " if text and text[-1].isascii() else ""
 
 
 def _title(article: Article) -> str:

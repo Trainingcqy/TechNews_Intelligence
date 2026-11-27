@@ -398,7 +398,7 @@ if (session.token) {
             <ul v-if="item.process && item.processOpen" class="msg-sources msg-process">
               <li v-for="(entry, index) in item.process.items" :key="index">
                 <span>{{ entry.action }}</span>
-                <span>{{ entry.subject }}<span v-if="entry.meta" class="msg-sources-meta"> {{ entry.meta }}</span></span>
+                <span>{{ entry.subject }} <span v-if="entry.meta" class="msg-sources-meta">{{ entry.meta }}</span></span>
               </li>
             </ul>
             <div class="msg-content" v-html="item.html"></div>
@@ -420,9 +420,13 @@ if (session.token) {
             <ol v-if="item.sourcesOpen" class="msg-sources">
               <li v-for="source in item.sources" :key="source.n">
                 <span>[{{ source.n }}]</span>
+                <!-- The space between the link and the meta must share one line, or Vue drops it. -->
                 <span>
-                  <a :href="source.href" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
-                  <span v-if="source.meta" class="msg-sources-meta"> {{ source.meta }}</span>
+                  <a
+                    :href="source.href"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >{{ source.title }}</a> <span v-if="source.meta" class="msg-sources-meta">{{ source.meta }}</span>
                 </span>
               </li>
             </ol>

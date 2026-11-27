@@ -43,9 +43,6 @@ if (session.token) showChat();
     <a class="nav-item" href="https://trainingcqy.com/">
       首页
     </a>
-    <a class="nav-item" href="https://trainingcqy.com/projects.html">
-      项目
-    </a>
     <a class="nav-item" href="https://trainingcqy.com/gallery.html">
       摄影
     </a>
@@ -68,11 +65,6 @@ if (session.token) showChat();
       <div class="icon-container">
         <span class="material-symbols-outlined">home</span>
       </div>首页
-    </a>
-    <a class="bottom-nav-item" href="https://trainingcqy.com/projects.html">
-      <div class="icon-container">
-        <span class="material-symbols-outlined">folder_open</span>
-      </div>项目
     </a>
     <a class="bottom-nav-item" href="https://trainingcqy.com/gallery.html">
       <div class="icon-container">

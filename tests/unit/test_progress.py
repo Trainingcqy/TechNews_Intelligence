@@ -65,7 +65,7 @@ def test_step_merges_the_calls_of_a_step():
     read = PreparedCall(2, "c2", "read_articles", ReadArticlesArgs(ids=["E1", "E9"], urls=["https://www.cnbc.com/x"]))
 
     assert progress.step([*searches, read], registry, [], TODAY) == Progress(
-        "正在检索并阅读 3 篇报道", "Huawei verdict、China reaction，最近 7 天")
+        "正在检索并阅读 3 篇报道", "Huawei verdict、China reaction 最近 7 天")
     assert progress.step([read], registry, [], TODAY) == Progress("正在阅读 3 篇报道", "U.S. jury convicts Huawei、cnbc.com")
 
 
@@ -102,18 +102,18 @@ def test_record_lists_filters_failures_and_each_article_once():
     nothing = SearchResult(hits=[], weak_match=False)
 
     assert progress.record(_payload("search_news", args, nothing), TODAY, set()) == [
-        ProcessItem("检索", "OpenAI", "仅人工智能领域，仅研究类，仅官方渠道，2026-11-01 至今，无结果")]
+        ProcessItem("检索", "OpenAI", "仅人工智能领域 仅研究类 仅官方渠道 2026-11-01 至今 无结果")]
     # Without query the topic is part of the subject, not a filter.
     browse = SearchNewsArgs(topic="ai", days=7)
     assert progress.record(_payload("search_news", browse, SearchResult(hits=[_hit(1)], weak_match=False)), TODAY,
-                           set()) == [ProcessItem("检索", "人工智能要闻", "最近 7 天，1 条新闻")]
+                           set()) == [ProcessItem("检索", "人工智能要闻", "最近 7 天 1 条新闻")]
     assert progress.record(_payload("search_news", SearchNewsArgs(), None, ok=False), TODAY, set()) == [
-        ProcessItem("检索", "要闻", "最近 14 天，失败")]
+        ProcessItem("检索", "要闻", "最近 14 天 失败")]
 
     read_ids: set[int] = set()
     read = _payload("read_articles", ReadArticlesArgs(ids=["E1", "E2"]),
                     ReadResult([ReadItem("E1", ARTICLE, "正文", 2, None), UNREAD]))
-    assert progress.record(read, TODAY, read_ids) == [ProcessItem("阅读", "U.S. jury convicts Huawei", "CNBC，2026-11-25")]
+    assert progress.record(read, TODAY, read_ids) == [ProcessItem("阅读", "U.S. jury convicts Huawei", "CNBC 2026-11-25")]
     assert progress.record(read, TODAY, read_ids) == []
 
 
@@ -124,8 +124,8 @@ def test_record_of_a_follow_check_names_the_search_terms_only_when_they_differ()
     ])
 
     assert progress.record(_payload("check_follows", CheckFollowsArgs(), checks), TODAY, set()) == [
-        ProcessItem("检查", "谷歌", "Google，最近 3 天，1 条新闻"),
-        ProcessItem("检查", "OpenAI", "最近 14 天，失败"),
+        ProcessItem("检查", "谷歌", "Google 最近 3 天 1 条新闻"),
+        ProcessItem("检查", "OpenAI", "最近 14 天 失败"),
     ]
 
 

@@ -28,7 +28,7 @@ const evidence = computed(() =>
 
 function articleMeta(articleId) {
   const article = props.trace.articles[String(articleId)];
-  return article ? `${article.publisher} · ${formatDate(article.event_at)}` : "";
+  return article ? `${article.publisher} ${formatDate(article.event_at)}` : "";
 }
 
 const routeBasis = computed(() => {
@@ -140,7 +140,7 @@ function upgradeLabel(row) {
               <td>
                 <div>{{ row.title }}</div>
                 <div v-if="row.meta || row.seen" class="muted small">
-                  {{ row.meta }}<template v-if="row.seen"> · 此前提及 {{ row.seen }}</template>
+                  {{ row.meta }}<template v-if="row.seen"> 此前提及 {{ row.seen }}</template>
                 </div>
               </td>
               <td>{{ LEVEL[row.level] || row.level }}</td>

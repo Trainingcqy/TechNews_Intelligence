@@ -29,16 +29,16 @@ export const WARNING = {
 export const WARNING_DETAIL = {
   step_budget_exhausted: "取证模型在最后一步仍提出了调用，取证因达到步数上限而停止；这一步的结果没有再经取证模型判断，直接进入综合。",
   calls_rejected: "部分调用没有执行，原因见调用表；取证模型收到的是拒绝说明。",
-  seen_dates_unavailable: "查询这些故事此前是否在回答中提及过时出错，检索结果和证据块里没有“此前已提及”的标注。",
+  seen_dates_unavailable: "查询这些故事此前是否在回答中提及过时出错，检索结果和证据块里没有此前已提及的标注。",
   history_sources_unavailable: "查询历史回答所引文章时出错，这些文章没有登记为证据。",
   follows_unavailable: "查询用户的关注项时出错，本轮没有带入关注项。",
-  corpus_unavailable: "查询新闻库概况时出错，取证模型的系统提示里这一段只写了“暂时无法获取”。",
-  low_relevance: "最相关结果的匹配度低于阈值，返回给取证模型的文本附有“可能不切题”的提示。",
+  corpus_unavailable: "查询新闻库概况时出错，取证模型的系统提示里这一段只说明暂时无法获取。",
+  low_relevance: "最相关结果的匹配度低于阈值，返回给取证模型的文本附有可能不切题的提示。",
   read_targets_dropped: "请求的目标超出本次请求的读取上限，超出部分作为读取失败返回给取证模型。",
   semantic_skipped: "没有取得查询向量，这次检索跳过了语义召回。",
   rerank_fallback: "重排调用失败，候选保留融合后的顺序。",
   usage_inconsistent: "服务商返回的 token 总数既不等于输入加输出，也不等于输入、输出、推理三项之和。",
-  evidence_truncated: "证据块超出字数预算：先不放入历史来源，仍超出时去掉部分已读全文证据的正文，见证据表的“证据块”一列。",
+  evidence_truncated: "证据块超出字数预算：先不放入历史来源，仍超出时去掉部分已读全文证据的正文，见证据表的证据块一列。",
   citations_removed: "引用校验删掉了回答中不可引用的编号、原始地址或数字引用，见引用校验。"
 };
 

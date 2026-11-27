@@ -67,11 +67,24 @@ function sourceView(source) {
     title: source.title_zh || source.title,
     // Vue binds href verbatim and source URLs come from external feeds.
     href: /^https?:\/\//i.test(source.url) ? source.url : null,
-    meta: [source.source, source.published_at].filter(Boolean).join(" · ")
+    meta: [source.source, source.published_at].filter(Boolean).join(" ")
   };
 }
 
-function appendMessage(role, text, sources = []) {
+function processView(process) {
+  const entries = Array.isArray(process?.items) ? process.items : [];
+  if (!entries.length) return null;
+  return {
+    summary: String(process.summary || ""),
+    items: entries.map((entry) => ({
+      action: String(entry?.action || ""),
+      subject: String(entry?.subject || ""),
+      meta: String(entry?.meta || "")
+    }))
+  };
+}
+
+function appendMessage(role, text, sources = [], process = null) {
   if (role === "agent") {
     items.value.push({
       id: nextItemId++,
@@ -80,6 +93,8 @@ function appendMessage(role, text, sources = []) {
       html: renderAnswerHtml(text, sources),
       sources: sources.map(sourceView),
       sourcesOpen: false,
+      process: processView(process),
+      processOpen: false,
       copied: false
     });
   } else {
@@ -189,7 +204,7 @@ async function handleChatHttpError(res) {
 function applyChatPayload(data) {
   const threadId = String(data.thread_id || "").trim();
   if (threadId) setThreadId(threadId);
-  appendMessage("agent", String(data.reply || "").trim(), Array.isArray(data.sources) ? data.sources : []);
+  appendMessage("agent", String(data.reply || "").trim(), Array.isArray(data.sources) ? data.sources : [], data.process);
   updateQuota(data.remaining, data.quota, data.status, Boolean(data.unlimited));
 }
 
@@ -283,7 +298,7 @@ async function loadHistory() {
       if (role === "user") {
         appendMessage("user", historyText(item));
       } else if (role === "model") {
-        appendMessage("agent", historyText(item), Array.isArray(item.sources) ? item.sources : []);
+        appendMessage("agent", historyText(item), Array.isArray(item.sources) ? item.sources : [], item.process);
       }
     }
   } catch {}
@@ -370,6 +385,22 @@ if (session.token) {
             </div>
           </div>
           <div v-else-if="item.role === 'agent'" class="msg agent">
+            <button
+              v-if="item.process"
+              type="button"
+              class="sources-toggle process-toggle"
+              :aria-expanded="String(item.processOpen)"
+              @click="item.processOpen = !item.processOpen"
+            >
+              {{ item.process.summary }}
+              <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+            </button>
+            <ul v-if="item.process && item.processOpen" class="msg-sources msg-process">
+              <li v-for="(entry, index) in item.process.items" :key="index">
+                <span>{{ entry.action }}</span>
+                <span>{{ entry.subject }}<span v-if="entry.meta" class="msg-sources-meta"> {{ entry.meta }}</span></span>
+              </li>
+            </ul>
             <div class="msg-content" v-html="item.html"></div>
             <div class="msg-actions">
               <button v-tip="item.copied ? '已复制' : '复制'" type="button" class="icon-btn" @click="copyAnswer(item)">
@@ -391,7 +422,7 @@ if (session.token) {
                 <span>[{{ source.n }}]</span>
                 <span>
                   <a :href="source.href" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
-                  <span v-if="source.meta" class="msg-sources-meta"> · {{ source.meta }}</span>
+                  <span v-if="source.meta" class="msg-sources-meta"> {{ source.meta }}</span>
                 </span>
               </li>
             </ol>

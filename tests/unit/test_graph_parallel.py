@@ -79,7 +79,7 @@ def test_parallel_calls_keep_call_order_and_trace(monkeypatch):
     ]
     assert events == [
         Progress("正在理解问题"),
-        Progress("正在检索", "Alpha、Beta、Gamma，最近 14 天"),
+        Progress("正在检索", "Alpha、Beta、Gamma 最近 14 天"),
         Progress("正在分析结果", "找到 3 条新闻"),
         Progress("正在撰写回答", "依据 3 篇报道"),
     ]

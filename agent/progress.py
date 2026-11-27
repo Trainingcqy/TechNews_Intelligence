@@ -96,7 +96,7 @@ def record(payload: ToolPayload, today: date, read_ids: set[int]) -> list[Proces
     if payload.name == "search_news":
         args = payload.args
         meta = [*_filters(args), window(args, today), _outcome(payload.data.hits if payload.ok else [], not payload.ok)]
-        return [ProcessItem(SEARCH, subject(args), "，".join(meta))]
+        return [ProcessItem(SEARCH, subject(args), " ".join(meta))]
     if not payload.ok:
         return []
     if payload.name == "check_follows":
@@ -134,7 +134,7 @@ def _searches(searches: list[SearchNewsArgs], today: date) -> str:
     subjects = [subject(args) for args in searches]
     windows = [window(args, today) for args in searches]
     if len(set(windows)) == 1:
-        return "、".join(subjects) + "，" + windows[0]
+        return "、".join(subjects) + " " + windows[0]
     return "、".join(f"{name} {span}" for name, span in zip(subjects, windows))
 
 
@@ -163,7 +163,7 @@ def _outcome(hits: list, failed: bool) -> str:
 def _checked(check: FollowCheck) -> ProcessItem:
     meta = [] if check.query.lower() == check.follow.query.lower() else [check.query]
     meta += [f"最近 {check.days} 天", _outcome(check.result.hits if check.result else [], check.error is not None)]
-    return ProcessItem(CHECK, check.follow.query, "，".join(meta))
+    return ProcessItem(CHECK, check.follow.query, " ".join(meta))
 
 
 def _title(article: Article) -> str:
@@ -171,4 +171,4 @@ def _title(article: Article) -> str:
 
 
 def _published(article: Article) -> str:
-    return f"{article.publisher}，{article.published_at.astimezone(user_zone()):%Y-%m-%d}"
+    return f"{article.publisher} {article.published_at.astimezone(user_zone()):%Y-%m-%d}"

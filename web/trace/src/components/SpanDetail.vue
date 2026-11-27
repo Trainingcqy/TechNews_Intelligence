@@ -53,7 +53,7 @@ const retrieval = computed(() => searchTool.value?.children.find((child) => chil
 
 function articleMeta(articleId) {
   const article = props.trace.articles[String(articleId)];
-  return article ? `${article.publisher} · ${formatDate(article.event_at)}` : "";
+  return article ? `${article.publisher} ${formatDate(article.event_at)}` : "";
 }
 
 function itemLabel(item) {
@@ -164,7 +164,7 @@ function filterText(input) {
                   <div>{{ story.title }}</div>
                   <div class="muted small">{{ story.meta }}</div>
                 </td>
-                <td>{{ story.reports }} 篇 · {{ story.publishers }} 家</td>
+                <td>{{ story.reports }} 篇 {{ story.publishers }} 家</td>
                 <td class="mono">{{ formatScore(story.match_score) }}</td>
                 <td class="mono">{{ formatScore(story.rerank) }}</td>
               </tr>

@@ -18,6 +18,7 @@ ARTICLE = Article(
     publisher_kind="media",
     lang="en",
     published_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc),  # 2026-11-12 00:30 in Beijing
+    first_seen_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc),
     body_level="full",
     story_id=5,
 )

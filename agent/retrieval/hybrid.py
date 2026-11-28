@@ -8,6 +8,7 @@ This module implements the shared SQL pipeline used by query-oriented retrieval:
 from __future__ import annotations
 
 import os
+from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
@@ -28,7 +29,9 @@ _FILTERS = """
               AND a.status = 'ready'
               AND (%(topic)s::text IS NULL OR a.topics @> ARRAY[%(topic)s::text])
               AND (%(kinds)s::text[] IS NULL OR a.kind = ANY(%(kinds)s::text[]))
-              AND (%(publisher_kind)s::text IS NULL OR p.kind = %(publisher_kind)s)"""
+              AND (%(publisher_kind)s::text IS NULL OR p.kind = %(publisher_kind)s)
+              AND (%(seen_after)s::timestamptz IS NULL OR a.first_seen_at > %(seen_after)s)
+              AND (%(exclude_url_keys)s::text[] IS NULL OR a.url_key <> ALL(%(exclude_url_keys)s::text[]))"""
 
 _TRGM_HIT = """(similarity(LOWER(COALESCE(a.title, '')), LOWER(q.raw_query)) >= %(trgm_threshold)s
                      OR similarity(LOWER(COALESCE(a.title_zh, '')), LOWER(q.raw_query)) >= %(trgm_threshold)s)"""
@@ -76,6 +79,8 @@ def fetch_hybrid_rows(
     topic: str | None = None,
     kinds: tuple[str, ...] | None = None,
     publisher_kind: str | None = None,
+    seen_after: datetime | None = None,
+    exclude_url_keys: Collection[str] = (),
 ) -> list[tuple]:
     """Execute the hybrid RRF SQL; each row is ARTICLE_COLUMNS followed by the five score columns."""
     query_clean = (query or "").strip()
@@ -251,6 +256,8 @@ def fetch_hybrid_rows(
             # psycopg2 adapts a tuple to a row literal, not an array.
             "kinds": list(kinds) if kinds is not None else None,
             "publisher_kind": publisher_kind,
+            "seen_after": seen_after,
+            "exclude_url_keys": list(exclude_url_keys) or None,
             "query_vec": query_vec_literal,
             "lexical_limit": lexical_limit,
             "semantic_limit": semantic_limit,

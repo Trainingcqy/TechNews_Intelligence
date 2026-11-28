@@ -15,7 +15,8 @@ from common.urls import url_key
 ARTICLE = Article(
     article_id=30, url="https://www.techcrunch.com/genie-4/", title="Genie 4 adds audio", title_zh="",
     summary="谷歌发布 Genie 4。", topics=("ai",), kind="release", publisher="TechCrunch", publisher_kind="media",
-    lang="en", published_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc), body_level="full", story_id=5,
+    lang="en", published_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc),
+    first_seen_at=datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc), body_level="full", story_id=5,
 )
 
 

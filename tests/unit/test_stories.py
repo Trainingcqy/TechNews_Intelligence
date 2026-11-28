@@ -19,7 +19,7 @@ def _at(day: int) -> datetime:
 BASE = Article(
     article_id=1, url="https://example.com/1", title="t", title_zh="", summary="", topics=("ai",),
     kind="news", publisher="TechCrunch", publisher_kind="media", lang="en", published_at=_at(10),
-    body_level="excerpt", story_id=7,
+    first_seen_at=_at(10), body_level="excerpt", story_id=7,
 )
 
 
@@ -76,6 +76,21 @@ def test_browse_without_about_keeps_every_story():
     assert "~*" not in sql and "ILIKE" not in sql
     assert "WHERE publisher_count >= %(min_publishers)s" in sql
     assert params["min_publishers"] == 1
+
+
+SEEN_AFTER = "AND (%(seen_after)s::timestamptz IS NULL OR a.first_seen_at > %(seen_after)s)"
+EXCLUDED = "AND (%(exclude_url_keys)s::text[] IS NULL OR a.url_key <> ALL(%(exclude_url_keys)s::text[]))"
+
+
+def test_browse_selects_stories_by_a_member_passing_every_condition_and_counts_all_members():
+    sql, params = _browse(about="Nvidia", seen_after=_at(5), exclude_url_keys=["a.com/1"])
+    win, stats = sql.split("WITH win AS (")[1].split("stats AS (")
+    assert SEEN_AFTER in win and EXCLUDED in win and "a.title ~* %(exact_pattern)s" in win
+    assert "seen_after" not in stats and "exclude_url_keys" not in stats
+    assert (params["seen_after"], params["exclude_url_keys"]) == (_at(5), ["a.com/1"])
+
+    _, params = _browse()
+    assert (params["seen_after"], params["exclude_url_keys"]) == (None, None)
 
 
 def test_browse_about_matches_titles_and_the_official_publisher_of_that_name():

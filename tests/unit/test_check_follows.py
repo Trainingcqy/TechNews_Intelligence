@@ -21,7 +21,8 @@ TODAY = date(2026, 11, 25)
 PUBLISHED = datetime(2026, 11, 24, 8, 0, tzinfo=timezone.utc)
 ARTICLE = Article(article_id=30, url="https://example.com/a", title="Nvidia unveils Rubin", title_zh="",
                   summary="Nvidia announced Rubin.", topics=("chips",), kind="release", publisher="TechCrunch",
-                  publisher_kind="media", lang="en", published_at=PUBLISHED, body_level="full", story_id=5)
+                  publisher_kind="media", lang="en", published_at=PUBLISHED, first_seen_at=PUBLISHED,
+                  body_level="full", story_id=5)
 HIT = StoryHit(lead=ARTICLE, stats=StoryStats(5, 1, 1, ("media",), PUBLISHED, PUBLISHED), related=(), match_score=None)
 
 

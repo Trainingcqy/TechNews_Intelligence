@@ -15,7 +15,8 @@ from common.urls import url_key
 BASE = Article(
     article_id=0, url="", title="t", title_zh="", summary="", topics=(), kind=None,
     publisher="TechCrunch", publisher_kind="media", lang="en",
-    published_at=datetime(2026, 11, 12, tzinfo=timezone.utc), body_level="full", story_id=1,
+    published_at=datetime(2026, 11, 12, tzinfo=timezone.utc), first_seen_at=datetime(2026, 11, 12, tzinfo=timezone.utc),
+    body_level="full", story_id=1,
 )
 
 

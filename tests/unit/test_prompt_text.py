@@ -106,7 +106,7 @@ def test_the_synthesis_prompt_and_the_evidence_block_use_the_same_wording():
     published = datetime(2026, 11, 12, tzinfo=timezone.utc)
     article = Article(article_id=1, url="https://example.com/a", title="t", title_zh="", summary="s", topics=(),
                       kind=None, publisher="OpenAI", publisher_kind="official", lang="en", published_at=published,
-                      body_level="excerpt", story_id=1)
+                      first_seen_at=published, body_level="excerpt", story_id=1)
     registry = EvidenceRegistry()
     registry.add_article(article, "summary", StoryStats(1, 1, 1, ("official",), published, published))
     registry.seen_dates[1] = date(2026, 11, 10)

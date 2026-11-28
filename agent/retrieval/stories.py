@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import datetime
 
 from agent.types import Article, StoryStats
@@ -20,6 +21,7 @@ ARTICLE_COLUMNS = """
             p.kind AS publisher_kind,
             a.lang,
             a.event_at,
+            a.first_seen_at,
             a.body_level,
             m.story_id"""
 
@@ -32,7 +34,7 @@ RELATED_LIMIT = 6
 
 def article_from_row(row: tuple) -> Article:
     (article_id, url, title, title_zh, summary, topics, kind, publisher, publisher_kind,
-     lang, event_at, body_level, story_id) = row[:13]
+     lang, event_at, first_seen_at, body_level, story_id) = row[:14]
     return Article(
         article_id=article_id,
         url=url,
@@ -45,6 +47,7 @@ def article_from_row(row: tuple) -> Article:
         publisher_kind=publisher_kind,
         lang=lang,
         published_at=event_at,
+        first_seen_at=first_seen_at,
         body_level=body_level,
         story_id=story_id,
     )
@@ -110,7 +113,8 @@ def pick_lead(members: list[Article]) -> Article:
 
 def browse_story_ids(cur, *, start_at: datetime, end_at: datetime, topic: str | None,
                      kinds: tuple[str, ...] | None, publisher_kind: str | None,
-                     sort: str, limit: int, about: str | None = None, min_publishers: int = 1) -> list[int]:
+                     sort: str, limit: int, about: str | None = None, min_publishers: int = 1,
+                     seen_after: datetime | None = None, exclude_url_keys: Collection[str] = ()) -> list[int]:
     """With about, only stories with an article that names it in the title or comes from the official publisher of
     that name."""
     pattern = exact_pattern(about) if about else None
@@ -130,6 +134,8 @@ def browse_story_ids(cur, *, start_at: datetime, end_at: datetime, topic: str | 
               AND (%(topic)s::text IS NULL OR a.topics @> ARRAY[%(topic)s::text])
               AND (%(kinds)s::text[] IS NULL OR a.kind = ANY(%(kinds)s::text[]))
               AND (%(publisher_kind)s::text IS NULL OR p.kind = %(publisher_kind)s)
+              AND (%(seen_after)s::timestamptz IS NULL OR a.first_seen_at > %(seen_after)s)
+              AND (%(exclude_url_keys)s::text[] IS NULL OR a.url_key <> ALL(%(exclude_url_keys)s::text[]))
               {about_hit}
         ),
         stats AS (
@@ -156,6 +162,8 @@ def browse_story_ids(cur, *, start_at: datetime, end_at: datetime, topic: str | 
             # psycopg2 adapts a tuple to a row literal, not an array.
             "kinds": list(kinds) if kinds is not None else None,
             "publisher_kind": publisher_kind,
+            "seen_after": seen_after,
+            "exclude_url_keys": list(exclude_url_keys) or None,
             "sort": sort,
             "limit": limit,
             "about": about,

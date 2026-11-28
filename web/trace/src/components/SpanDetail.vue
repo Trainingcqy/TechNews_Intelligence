@@ -215,6 +215,14 @@ function filterText(input) {
         <dd>{{ formatTime(retrieval.input.start_at) }} 至 {{ formatTime(retrieval.input.end_at) }}</dd>
         <dt>过滤</dt>
         <dd>{{ filterText(retrieval.input) }}</dd>
+        <template v-if="retrieval.input.seen_after">
+          <dt>入库时间</dt>
+          <dd>晚于 {{ formatTime(retrieval.input.seen_after) }}</dd>
+        </template>
+        <template v-if="retrieval.input.excluded > 0">
+          <dt>排除</dt>
+          <dd>讲过的 {{ retrieval.input.excluded }} 篇</dd>
+        </template>
         <dt>召回</dt>
         <dd>
           {{ (retrieval.attributes.channels || []).join("、") }}，候选上限 {{ retrieval.attributes.pool_limit }}，

@@ -47,6 +47,7 @@ def _synthetic_registry() -> EvidenceRegistry:
         publisher_kind="media",
         lang="en",
         published_at=datetime(2026, 11, 12, 8, 0, tzinfo=timezone.utc).astimezone(DEFAULT_ZONE),
+        first_seen_at=datetime(2026, 11, 12, 8, 0, tzinfo=timezone.utc).astimezone(DEFAULT_ZONE),
         body_level="full",
         story_id=1,
     )

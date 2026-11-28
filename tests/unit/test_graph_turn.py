@@ -28,7 +28,7 @@ PUBLISHED = datetime(2026, 11, 11, 16, 30, tzinfo=timezone.utc)
 ARTICLE = Article(
     article_id=30, url="https://techcrunch.com/genie-4", title="Genie 4 adds audio", title_zh="",
     summary="谷歌发布 Genie 4。", topics=("ai",), kind="release", publisher="TechCrunch", publisher_kind="media",
-    lang="en", published_at=PUBLISHED, body_level="full", story_id=5,
+    lang="en", published_at=PUBLISHED, first_seen_at=PUBLISHED, body_level="full", story_id=5,
 )
 STATS = StoryStats(story_id=5, report_count=1, publisher_count=1, publisher_kinds=("media",),
                    first_at=PUBLISHED, last_at=PUBLISHED)

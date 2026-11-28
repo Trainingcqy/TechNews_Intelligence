@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -11,6 +12,7 @@ from agent.trace import trace_span
 from agent.types import Article, StoryHit
 from common.db import get_conn, put_conn
 from common.taxonomy import EVENT_KINDS
+from common.urls import url_key
 
 from .embeddings import get_query_embedding as _get_query_embedding
 from .hybrid import _clamp_int, candidate_from_row, fetch_hybrid_rows
@@ -58,6 +60,7 @@ def lookup_candidates_by_query(
     limit: int = 5, rerank_mode: str | None = None,
     topic: str | None = None, kinds: tuple[str, ...] | None = None,
     publisher_kind: str | None = None,
+    seen_after: datetime | None = None, exclude_url_keys: Collection[str] = (),
 ) -> list[dict[str, Any]]:
     """Return ranked article candidates in the shape of hybrid.candidate_from_row."""
     query_clean = (query or "").strip()
@@ -82,7 +85,9 @@ def lookup_candidates_by_query(
     try:
         cur = conn.cursor()
         span_input = {"query": query_clean, "start_at": start_at.isoformat(), "end_at": end_at.isoformat(),
-                      "topic": topic, "kinds": list(kinds) if kinds else None, "publisher_kind": publisher_kind}
+                      "topic": topic, "kinds": list(kinds) if kinds else None, "publisher_kind": publisher_kind,
+                      "seen_after": seen_after.isoformat() if seen_after else None,
+                      "excluded": len(exclude_url_keys)}
         span_attributes = {"pool_limit": candidate_pool_limit, "sim_floor": recall_profile.sim_floor,
                            "channels": ["lexical", "semantic", "exact"] if query_vec else ["lexical", "exact"]}
         with trace_span("retrieval", input=span_input, attributes=span_attributes) as span:
@@ -96,6 +101,8 @@ def lookup_candidates_by_query(
                 topic=topic,
                 kinds=kinds,
                 publisher_kind=publisher_kind,
+                seen_after=seen_after,
+                exclude_url_keys=exclude_url_keys,
             )
             span.output = {"candidates": [_trace_candidate(row) for row in rows]}
         cur.close()
@@ -124,6 +131,7 @@ def search_stories(
     *, query: str | None, days: int, start_date: date | None, end_date: date | None,
     topic: str | None, kinds: tuple[str, ...] | None,
     publisher_kind: str | None, sort: str, limit: int,
+    seen_after: datetime | None = None, exclude_url_keys: Collection[str] = (),
 ) -> SearchResult:
     candidates: list[dict[str, Any]] = []
     leads: dict[int, dict[str, Any]] = {}
@@ -131,6 +139,7 @@ def search_stories(
         candidates = lookup_candidates_by_query(
             query, days=days, start_date=start_date, end_date=end_date, limit=MAX_ARTICLE_LIMIT,
             topic=topic, kinds=kinds, publisher_kind=publisher_kind,
+            seen_after=seen_after, exclude_url_keys=exclude_url_keys,
         )
         for candidate in candidates:
             leads.setdefault(candidate["article"].story_id, candidate)
@@ -148,6 +157,7 @@ def search_stories(
                 kinds=kinds if kinds is not None else EVENT_KINDS,
                 publisher_kind=publisher_kind, sort=sort, limit=limit,
                 about=query, min_publishers=PROMOTED_MIN_PUBLISHERS if query else 1,
+                seen_after=seen_after, exclude_url_keys=exclude_url_keys,
             )
         story_ids = (browsed + [story_id for story_id in leads if story_id not in browsed])[:limit]
         members = fetch_story_members(cur, story_ids)
@@ -163,7 +173,14 @@ def search_stories(
     hits: list[StoryHit] = []
     for story_id, group, stats in stories:
         candidate = leads.get(story_id)
-        lead = candidate["article"] if candidate else pick_lead(group)
+        if candidate:
+            lead = candidate["article"]
+        else:
+            eligible = [m for m in group if (seen_after is None or m.first_seen_at > seen_after)
+                        and url_key(m.url) not in exclude_url_keys]
+            if not eligible:
+                continue
+            lead = pick_lead(eligible)
         hits.append(StoryHit(
             lead=lead,
             stats=stats,

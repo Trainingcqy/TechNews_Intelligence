@@ -26,7 +26,7 @@ PUBLISHED = datetime(2026, 11, 25, 2, 0, tzinfo=timezone.utc)
 ARTICLE = Article(
     article_id=1, url="https://www.cnbc.com/huawei", title="U.S. jury convicts Huawei", title_zh="", summary="",
     topics=(), kind="news", publisher="CNBC", publisher_kind="media", lang="en", published_at=PUBLISHED,
-    body_level="full", story_id=10,
+    first_seen_at=PUBLISHED, body_level="full", story_id=10,
 )
 UNREAD = ReadItem("E2", replace(ARTICLE, article_id=2), None, 0, "no full text stored")
 

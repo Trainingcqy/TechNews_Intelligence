@@ -18,6 +18,7 @@ class Article:
     publisher_kind: str  # official | media | community | ... | unknown
     lang: str | None
     published_at: datetime  # news.article.event_at
+    first_seen_at: datetime
     body_level: str  # full | excerpt | none
     story_id: int
 

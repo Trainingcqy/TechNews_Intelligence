@@ -22,7 +22,7 @@ def _hit(story_id: int, name: str) -> StoryHit:
     article = Article(
         article_id=story_id, url=f"https://example.com/{name}", title=f"{name} launches", title_zh="", summary="",
         topics=(), kind=None, publisher="TechCrunch", publisher_kind="media", lang="en", published_at=PUBLISHED,
-        body_level="full", story_id=story_id,
+        first_seen_at=PUBLISHED, body_level="full", story_id=story_id,
     )
     stats = StoryStats(story_id=story_id, report_count=1, publisher_count=1, publisher_kinds=("media",),
                        first_at=PUBLISHED, last_at=PUBLISHED)

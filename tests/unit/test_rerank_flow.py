@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -54,7 +54,8 @@ class _FakeResponse:
 def _row(article_id: int, title: str, title_zh: str, publisher: str, *, score: float, match_score: float = 0.5) -> tuple:
     return (
         article_id, f"https://{article_id}.com", title, title_zh, f"Summary {article_id}", ["ai"], "news",
-        publisher, "media", "en", datetime(2026, 4, 10, 10, 0, 0), "full", 100 + article_id,
+        publisher, "media", "en", datetime(2026, 4, 10, 10, 0, 0), datetime(2026, 4, 10, 11, 0, 0), "full",
+        100 + article_id,
         score, 0.1, 0.2, 0.0, match_score,
     )
 
@@ -118,8 +119,33 @@ def test_lookup_candidates_by_query_rerank_off_keeps_recall_order(traced) -> Non
     retrieval = spans["retrieval"]
     assert (retrieval.input["query"], retrieval.attributes["channels"], retrieval.attributes["pool_limit"]) == (
         "OpenAI", ["lexical", "exact"], 2)
+    assert (retrieval.input["seen_after"], retrieval.input["excluded"]) == (None, 0)
     assert retrieval.output["candidates"][0] == {"article_id": 1, "score": 1.11, "text_score": 0.1,
                                                  "semantic_score": 0.2, "exact_score": 0.0, "match_score": 0.5}
+
+
+def test_lookup_candidates_by_query_passes_filters_and_records_them(traced) -> None:
+    seen_after = datetime(2026, 4, 1, 8, 0, tzinfo=timezone.utc)
+    received = {}
+
+    def fetch(cur, **kwargs):
+        received.update(kwargs)
+        return ROWS
+
+    with (
+        patch.object(retrieval_mod, "get_conn", lambda: _FakeConn(ROWS)),
+        patch.object(retrieval_mod, "put_conn", lambda _conn: None),
+        patch.object(retrieval_mod, "_get_query_embedding", lambda _q: None),
+        patch.object(retrieval_mod, "fetch_hybrid_rows", fetch),
+    ):
+        _, spans = traced(lambda: retrieval_mod.lookup_candidates_by_query(
+            query="OpenAI", limit=2, rerank_mode="none", seen_after=seen_after,
+            exclude_url_keys={"a.com/1", "b.com/2"},
+        ))
+
+    assert (received["seen_after"], received["exclude_url_keys"]) == (seen_after, {"a.com/1", "b.com/2"})
+    assert (spans["retrieval"].input["seen_after"], spans["retrieval"].input["excluded"]) == (
+        "2026-04-01T08:00:00+00:00", 2)
 
 
 def test_lookup_candidates_by_query_keeps_sql_order_and_maps_columns() -> None:
@@ -147,6 +173,8 @@ def test_lookup_candidates_by_query_keeps_sql_order_and_maps_columns() -> None:
     assert [item["title"] for item in candidates] == ["标题A", "Headline B"]
     assert [item["source_type"] for item in candidates] == ["TechCrunch", "The Verge"]
     assert candidates[0]["article"].story_id == 101
+    assert (candidates[0]["article"].published_at, candidates[0]["article"].first_seen_at) == (
+        datetime(2026, 4, 10, 10, 0, 0), datetime(2026, 4, 10, 11, 0, 0))
 
 
 def test_lookup_candidates_by_query_empty_query_returns_nothing(traced) -> None:

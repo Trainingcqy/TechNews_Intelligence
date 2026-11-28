@@ -20,8 +20,8 @@ def _at(day: int) -> datetime:
 
 BASE = Article(
     article_id=0, url="", title="t", title_zh="", summary="", topics=("ai",), kind="news",
-    publisher="TechCrunch", publisher_kind="media", lang="en", published_at=_at(10), body_level="full",
-    story_id=0,
+    publisher="TechCrunch", publisher_kind="media", lang="en", published_at=_at(10), first_seen_at=_at(10),
+    body_level="full", story_id=0,
 )
 
 
@@ -65,9 +65,9 @@ def _patch(monkeypatch, *, candidates=(), members=None, browse=()):
     return calls
 
 
-def _search(query, *, sort="relevance", limit=3, kinds=None):
+def _search(query, *, sort="relevance", limit=3, kinds=None, **filters):
     return search.search_stories(query=query, days=14, start_date=None, end_date=None, topic=None,
-                                 kinds=kinds, publisher_kind=None, sort=sort, limit=limit)
+                                 kinds=kinds, publisher_kind=None, sort=sort, limit=limit, **filters)
 
 
 def test_query_groups_by_story_in_first_seen_order_and_stops_at_limit(monkeypatch):
@@ -153,6 +153,65 @@ def test_no_query_browses_event_kinds_by_default_and_picks_lead(monkeypatch):
 
     _search(None, sort="importance", kinds=("opinion",))
     assert calls["browse"]["kinds"] == ("opinion",)
+
+
+@pytest.mark.parametrize("query", ["Nvidia", None])
+def test_filters_reach_lookup_and_browse(monkeypatch, query):
+    calls = _patch(monkeypatch)
+
+    _search(query, sort="importance", seen_after=_at(5), exclude_url_keys={"x.com/1"})
+
+    assert (calls["browse"]["seen_after"], calls["browse"]["exclude_url_keys"]) == (_at(5), {"x.com/1"})
+    if query:
+        assert (calls["lookup"]["seen_after"], calls["lookup"]["exclude_url_keys"]) == (_at(5), {"x.com/1"})
+
+    _search(query, sort="importance")
+    assert (calls["browse"]["seen_after"], calls["browse"]["exclude_url_keys"]) == (None, ())
+    if query:
+        assert (calls["lookup"]["seen_after"], calls["lookup"]["exclude_url_keys"]) == (None, ())
+
+
+def test_with_filters_the_browsed_lead_comes_from_passing_members_and_the_rest_uses_all(monkeypatch):
+    excluded = _article(1, 4, day=1, publisher_kind="official")
+    seen_at_cutoff = _article(2, 4, day=2, publisher_kind="official", first_seen_at=_at(5))
+    passing = _article(3, 4, day=3, first_seen_at=_at(6))
+    _patch(monkeypatch, members={4: [excluded, seen_at_cutoff, passing]}, browse=[4])
+
+    hit = _search(None, sort="importance", seen_after=_at(5), exclude_url_keys={"x.com/1"}).hits[0]
+
+    assert hit.lead.article_id == 3
+    assert [a.article_id for a in hit.related] == [1, 2]
+    assert (hit.stats.report_count, hit.stats.first_at) == (3, _at(1))
+
+
+@pytest.mark.parametrize("filters", [{"seen_after": _at(5)}, {"exclude_url_keys": {"x.com/2"}}],
+                         ids=["seen_after", "excluded"])
+def test_each_filter_alone_restricts_the_browsed_lead(monkeypatch, filters):
+    media = _article(1, 4, day=1, first_seen_at=_at(6))
+    official = _article(2, 4, day=2, publisher_kind="official", first_seen_at=_at(5))
+    _patch(monkeypatch, members={4: [media, official]}, browse=[4])
+
+    assert _search(None, sort="importance").hits[0].lead.article_id == 2
+    assert _search(None, sort="importance", **filters).hits[0].lead.article_id == 1
+
+
+def test_with_filters_a_story_without_passing_members_is_dropped(monkeypatch):
+    gone, kept = _article(1, 4), _article(2, 5)
+    _patch(monkeypatch, members={4: [gone], 5: [kept]}, browse=[4, 5])
+
+    result = _search(None, sort="importance", exclude_url_keys={"x.com/1"})
+
+    assert [hit.stats.story_id for hit in result.hits] == [5]
+
+
+def test_with_filters_a_found_story_keeps_its_first_candidate_as_lead(monkeypatch):
+    official, candidate = _article(1, 4, publisher_kind="official"), _article(2, 4, first_seen_at=_at(6))
+    _patch(monkeypatch, candidates=[_candidate(candidate)], members={4: [official, candidate]})
+
+    hit = _search("x", seen_after=_at(5)).hits[0]
+
+    assert hit.lead.article_id == 2
+    assert [a.article_id for a in hit.related] == [1]
 
 
 NOW = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)

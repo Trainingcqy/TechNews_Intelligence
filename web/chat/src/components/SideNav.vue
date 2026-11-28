@@ -36,8 +36,10 @@ defineEmits(["toggle", "new-chat", "follow", "open", "delete", "theme", "logout"
       v-tip="collapsed ? '关注列表' : ''"
       type="button"
       class="nav-row"
+      aria-controls="follow-panel"
+      aria-haspopup="dialog"
       :aria-expanded="String(followOpen)"
-      @click="$emit('follow')"
+      @click="$emit('follow', $event.currentTarget)"
     >
       <span class="material-symbols-outlined">bookmark</span>
       <span class="nav-label">关注列表</span>

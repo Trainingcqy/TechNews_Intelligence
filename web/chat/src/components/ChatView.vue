@@ -34,6 +34,7 @@ const quotaLow = ref(false);
 const inputLocked = ref(false);
 const placeholder = ref("");
 const followOpen = ref(false);
+const followAnchor = ref(null);
 const threads = ref([]);
 const navCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === "1");
 const drawerOpen = ref(false);
@@ -520,8 +521,9 @@ function toggleNav() {
   localStorage.setItem(NAV_COLLAPSED_KEY, navCollapsed.value ? "1" : "0");
 }
 
-function toggleFollow() {
+function toggleFollow(trigger) {
   drawerOpen.value = false;
+  followAnchor.value = trigger;
   followOpen.value = !followOpen.value;
 }
 
@@ -637,7 +639,7 @@ if (session.token) {
   <main
     id="chat-view"
     class="view"
-    :class="{ active, 'nav-collapsed': rail, 'follow-open': followOpen }"
+    :class="{ active, 'nav-collapsed': rail }"
   >
     <SideNav
       :class="{ 'drawer-open': drawerOpen }"
@@ -660,7 +662,7 @@ if (session.token) {
       @theme="$emit('toggle-theme')"
       @logout="signOut"
     />
-    <FollowPanel :open="followOpen" @close="followOpen = false" />
+    <FollowPanel :open="followOpen" :anchor="followAnchor" @close="followOpen = false" />
     <Transition name="scrim">
       <div v-if="isMobile && (drawerOpen || followOpen)" class="scrim" @click="closeOverlays"></div>
     </Transition>

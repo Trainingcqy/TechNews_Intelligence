@@ -1,11 +1,15 @@
 <script setup>
-import { ref, watch } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import { apiFetch } from "../api";
 import { invalidateToken, session } from "../session";
 
-const props = defineProps({ open: Boolean });
-defineEmits(["close"]);
+// anchor: the sidebar button that opens the card. The card lines up with its top, and a click on it is left to the
+// button, which toggles the card.
+const props = defineProps({ open: Boolean, anchor: { type: Object, default: null } });
+const emit = defineEmits(["close"]);
 
+const root = ref(null);
+const top = ref(0);
 const query = ref("");
 const follows = ref([]);
 const status = ref({ text: "", type: "" });
@@ -75,10 +79,34 @@ async function removeFollow(followId) {
   loadFollows();
 }
 
+function close() {
+  emit("close");
+  props.anchor?.focus();
+}
+
+// A click closes the card rather than a press: on a phone the click then lands on the scrim, which is still there,
+// instead of on whatever the scrim uncovers.
+function onDocumentClick(event) {
+  if (!root.value?.contains(event.target) && !props.anchor?.contains(event.target)) emit("close");
+}
+
+function onDocumentKeydown(event) {
+  if (event.key === "Escape") close();
+}
+
+function listen(on) {
+  const method = on ? "addEventListener" : "removeEventListener";
+  document[method]("click", onDocumentClick);
+  document[method]("keydown", onDocumentKeydown);
+}
+
 watch(
   () => props.open,
   (open) => {
-    if (open) loadFollows();
+    listen(open);
+    if (!open) return;
+    top.value = props.anchor ? props.anchor.getBoundingClientRect().top : 0;
+    loadFollows();
   }
 );
 
@@ -88,14 +116,24 @@ watch(
     if (!token) follows.value = [];
   }
 );
+
+onBeforeUnmount(() => listen(false));
 </script>
 
 <template>
-  <Transition name="follow-slide">
-    <aside v-show="open" id="follow-panel" class="follow-panel">
+  <Transition name="menu">
+    <section
+      v-if="open"
+      id="follow-panel"
+      ref="root"
+      class="follow-panel"
+      role="dialog"
+      aria-labelledby="follow-panel-title"
+      :style="{ '--follow-top': `${top}px` }"
+    >
       <div class="follow-panel-head">
-        <h2 class="follow-panel-title">关注列表</h2>
-        <button id="follow-close-btn" v-tip="'关闭'" class="icon-btn" type="button" @click="$emit('close')">
+        <h2 id="follow-panel-title" class="follow-panel-title">关注列表</h2>
+        <button id="follow-close-btn" v-tip="'关闭'" class="icon-btn" type="button" @click="close">
           <span class="material-symbols-outlined">close</span>
         </button>
       </div>
@@ -108,7 +146,7 @@ watch(
         </button>
       </form>
       <p id="follow-status" class="status-msg" :class="status.type">{{ status.text }}</p>
-      <ul id="follow-list" class="follow-list">
+      <ul id="follow-list" class="follow-list scroll-fade">
         <li v-for="follow in follows" :key="follow.follow_id" class="follow-item">
           <span class="follow-query">{{ follow.query }}</span>
           <button v-tip="'删除'" type="button" class="icon-btn" @click="removeFollow(follow.follow_id)">
@@ -116,6 +154,6 @@ watch(
           </button>
         </li>
       </ul>
-    </aside>
+    </section>
   </Transition>
 </template>

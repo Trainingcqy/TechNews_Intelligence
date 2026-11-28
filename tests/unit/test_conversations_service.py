@@ -168,6 +168,32 @@ def test_list_threads_for_token_lists_owned_threads_with_messages(monkeypatch: p
     assert params == ("7", 100)
 
 
+def test_load_messages_for_token_reads_the_latest_messages_of_every_web_thread_of_the_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first, second = (datetime(2026, 11, 25, 6, minute, tzinfo=timezone.utc) for minute in (0, 1))
+    model = {"role": "model", "parts": [{"text": "回答 [1]"}], "sources": [{"n": 1, "url": "https://a.com/1"}]}
+    # Newest first, as the query returns them; a row without a payload falls back to its role and parts.
+    cursor = _FakeCursor(fetchall_value=[
+        (31, "thread-002", second, model, "model", [{"text": "回答 [1]"}]),
+        (30, "thread-001", first, None, "user", [{"text": "问题"}]),
+    ])
+    monkeypatch.setattr(conv_mod, "db_cursor", _cursor_context(cursor))
+
+    messages = conv_mod.load_messages_for_token(7, limit=400)
+
+    assert messages == [
+        {"role": "user", "parts": [{"text": "问题"}], "id": 30, "thread_id": "thread-001", "created_at": first},
+        {**model, "id": 31, "thread_id": "thread-002", "created_at": second},
+    ]
+    ((sql, params),) = cursor.calls
+    sql = " ".join(sql.split())
+    assert "JOIN public.conversation_threads t ON t.thread_id = m.thread_id" in sql
+    assert "WHERE t.channel = 'web' AND t.metadata->>'token_id' = %s" in sql
+    assert sql.endswith("ORDER BY m.id DESC LIMIT %s")
+    assert params == ("7", 400)
+
+
 @pytest.mark.parametrize(
     ("rows", "expected"),
     [

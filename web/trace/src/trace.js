@@ -125,6 +125,7 @@ export function nodeSubtitle(trace, node) {
     case "tool":
       if (node.name === "read_articles") return [...(node.input?.ids || []), ...(node.input?.urls || [])].join("、");
       if (node.name === "check_follows") return (output.follows || []).map((check) => check.follow).join("、");
+      if (node.name === "read_history") return (node.input?.keywords || []).join("、") || "最近的回答";
       if (node.name === "search_news") return node.input?.query;
       return node.input?.topic || `${SORT[node.input?.sort] || ""}浏览`;
     case "retrieval":

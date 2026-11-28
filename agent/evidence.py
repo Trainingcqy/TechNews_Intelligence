@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from agent.config import user_zone
 from agent.types import Article, Evidence, StoryStats
 from common.urls import url_key
@@ -25,6 +27,8 @@ class EvidenceRegistry:
     def __init__(self) -> None:
         self._items: dict[str, Evidence] = {}
         self._eid_by_key: dict[str, str] = {}
+        # url_key to the day of the latest past answer that cites it; empty unless a tool read the past answers.
+        self.told: dict[str, date] = {}
 
     def add_article(self, article: Article, level: str, stats: StoryStats | None = None, *,
                     history: bool = False) -> Evidence:
@@ -83,7 +87,8 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[st
     kept = list(history)
     while True:
         shown = set(with_body)
-        text = "\n\n".join(_render(e, e.eid in shown) for e in current + kept)
+        text = "\n\n".join(_render(e, e.eid in shown, registry.told.get(url_key(e.article.url)))
+                           for e in current + kept)
         if len(text) <= max_chars or not (kept or with_body):
             left_out = [e.eid for e in history[len(kept):]]
             return text, left_out + [eid for eid in fulltext if eid not in shown]
@@ -93,8 +98,8 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[st
             with_body.pop()
 
 
-def _render(evidence: Evidence, with_body: bool) -> str:
-    lines = _render_article(evidence)
+def _render(evidence: Evidence, with_body: bool, told_on: date | None) -> str:
+    lines = _render_article(evidence, told_on)
     if with_body:
         text = evidence.fulltext or ""
         if evidence.truncated:
@@ -105,7 +110,7 @@ def _render(evidence: Evidence, with_body: bool) -> str:
     return "\n".join(lines)
 
 
-def _render_article(evidence: Evidence) -> list[str]:
+def _render_article(evidence: Evidence, told_on: date | None) -> list[str]:
     article = evidence.article
     lines = [f"[{evidence.eid}] Title: {article.title}"]
     if article.title_zh:
@@ -121,6 +126,8 @@ def _render_article(evidence: Evidence) -> list[str]:
     lines.append(" | ".join(meta))
     if evidence.stats is not None:
         lines.append(_render_stats(evidence.stats))
+    if told_on is not None:
+        lines.append(f"Cited in the answer on {told_on}")
     lines.append(f"Summary: {article.summary}")
     if article.body_level != "full":
         lines.append("No full text stored: the summary is based only on the title and an excerpt.")

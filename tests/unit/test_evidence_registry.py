@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from agent.evidence import EvidenceRegistry, render_for_synthesis
 from agent.types import Article, StoryStats
@@ -152,6 +152,37 @@ def test_finding_or_reading_a_history_item_in_this_turn_makes_it_current() -> No
     registry.set_fulltext("E2", "body", 4, False)
     registry.add_article(_article(3, "https://h.com/3"), "summary", history=True)
     assert [evidence.history for evidence in registry.items()] == [False, False, False]
+
+
+def test_brief_marks_entries_cited_in_a_past_answer_once_told_is_written() -> None:
+    registry = EvidenceRegistry()
+    registry.add_article(ARTICLE, "summary", STATS)
+    registry.add_article(OTHER, "summary")
+    registry.add_article(replace(OTHER, article_id=9, url="https://h.com/9"), "summary", history=True)
+    plain, _ = render_for_synthesis(registry, 100_000)
+    assert "Cited in the answer" not in plain
+
+    registry.told.update({"techcrunch.com/genie-4": date(2026, 11, 25), "h.com/9": date(2026, 11, 20)})
+    marked, _ = render_for_synthesis(registry, 100_000)
+
+    # After the coverage line, or the line before Summary when there is none; history items are marked too.
+    assert marked == (
+        "[E1] Title: Google’s Genie 4 world model adds audio, more realistic worlds\n"
+        "Chinese title: 谷歌 Genie 4 世界模型新增音频与更真实的场景\n"
+        "Publisher: TechCrunch, media | Date: 2026-11-12 | Topics: ai | Type: release\n"
+        "Coverage: 5 reports, 3 publishers, including an official publisher, first 2026-11-11, latest 2026-11-13\n"
+        "Cited in the answer on 2026-11-25\n"
+        "Summary: 谷歌发布 Genie 4。\n"
+        "\n"
+        "[E2] Title: Genie 4 arrives\n"
+        "Publisher: The Verge, media | Date: 2026-11-12 | Topics: ai | Type: news\n"
+        "Summary: 谷歌发布 Genie 4。\n"
+        "\n"
+        "[E3] Title: Genie 4 arrives\n"
+        "Publisher: The Verge, media | Date: 2026-11-12 | Topics: ai | Type: news\n"
+        "Cited in the answer on 2026-11-20\n"
+        "Summary: 谷歌发布 Genie 4。"
+    )
 
 
 def test_render_drops_bodies_from_the_last_registered_until_within_limit() -> None:

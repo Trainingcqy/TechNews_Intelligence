@@ -5,6 +5,7 @@ Transport-agnostic DB primitives for:
 - appending conversation messages
 - loading history in current `history` shape
 - listing a token's threads
+- loading a token's latest messages across its threads
 - replacing a thread's last turn
 - deleting a thread with its messages
 """
@@ -175,6 +176,34 @@ def list_threads_for_token(token_id: int | str, *, limit: int) -> list[dict[str,
         rows = cur.fetchall()
 
     return [{"thread_id": str(thread_id), "subject": str(subject or "")} for thread_id, subject in rows]
+
+
+def load_messages_for_token(token_id: int | str, *, limit: int) -> list[dict[str, Any]]:
+    """The latest messages across all web threads of the given token, oldest first, each with its id, thread_id and
+    created_at."""
+    token_key = _normalize_token_id(token_id)
+
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT m.id, m.thread_id, m.created_at, m.payload, m.role, m.parts
+            FROM public.conversation_messages m
+            JOIN public.conversation_threads t ON t.thread_id = m.thread_id
+            WHERE t.channel = 'web'
+              AND t.metadata->>'token_id' = %s
+            ORDER BY m.id DESC
+            LIMIT %s
+            """,
+            (token_key, limit),
+        )
+        rows = cur.fetchall()
+
+    rows.reverse()
+    return [
+        {**_history_item_from_row((payload, role, parts)), "id": int(message_id), "thread_id": str(thread_id),
+         "created_at": created_at}
+        for message_id, thread_id, created_at, payload, role, parts in rows
+    ]
 
 
 def last_turn_for_token(thread_id: str, token_id: int | str) -> tuple[int, int] | None:

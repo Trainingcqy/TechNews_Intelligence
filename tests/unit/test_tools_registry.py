@@ -131,7 +131,7 @@ def test_read_args_defaults_and_bounds():
 
 
 UNKNOWN_TOOL_TEXT = ("Unknown tool: query_news. "
-                     "Available tools: search_news, browse_news, read_articles, check_follows.")
+                     "Available tools: search_news, browse_news, read_articles, read_history, check_follows.")
 
 
 def test_prepare_unknown_tool():
@@ -308,6 +308,27 @@ def test_hit_line_shows_the_story_coverage():
 
     assert ("     TechCrunch · media · 2026-11-12 · ai · release | "
             "Coverage: 3 reports, 2 publishers, including an official publisher\n") in text
+
+
+@pytest.mark.parametrize("name, args", [("search_news", SearchNewsArgs(query="Genie 4")),
+                                        ("browse_news", BrowseNewsArgs())])
+def test_hit_line_marks_a_lead_cited_in_a_past_answer_once_told_is_written(name, args):
+    related = replace(ARTICLE, article_id=31, url="https://a.com/a", title="Other report")
+    hits = [StoryHit(lead=ARTICLE, stats=STATS, related=(related,), match_score=None)]
+    registry = EvidenceRegistry()
+
+    def text() -> str:
+        payload = ToolPayload(index=0, call_id="c0", name=name, args=args, ok=True,
+                              data=SearchResult(hits=hits, weak_match=False))
+        state = TurnState(user_urls=set())
+        return commit_call(payload, registry=registry, state=state, config=AgentConfig()).gather_text
+
+    assert " | Coverage: 1 report, 1 publisher\n" in text()
+    # Only the lead carries the mark; the date is that of the latest answer citing it.
+    registry.told.update({"techcrunch.com/genie-4": date(2026, 11, 25), "a.com/a": date(2026, 11, 26)})
+    marked = text()
+    assert " | Coverage: 1 report, 1 publisher; cited in the answer on 2026-11-25\n" in marked
+    assert "2026-11-26" not in marked
 
 
 def test_search_and_browse_each_have_their_no_result_text():

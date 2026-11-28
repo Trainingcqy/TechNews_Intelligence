@@ -153,7 +153,8 @@ def collect(state, config) -> dict:
                 outcome = commit_call(item, registry=runtime.registry, state=runtime.tool_state,
                                       config=runtime.config)
                 _note_registration(runtime, before, step + 1, item.index)
-                runtime.process.extend(progress.record(item, runtime.now.date(), runtime.read_ids))
+                runtime.process.extend((item.name, entry)
+                                       for entry in progress.record(item, runtime.now.date(), runtime.read_ids))
                 span = item.span
                 if span is not None:
                     span.output["text"] = outcome.gather_text

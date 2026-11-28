@@ -3,16 +3,19 @@ answer."""
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date
 from urllib.parse import urlsplit
 
 from agent.config import user_zone
 from agent.evidence import EvidenceRegistry
 from agent.tools.follows import FollowCheck
+from agent.tools.history import HistoryResult
 from agent.tools.registry import (
     BrowseNewsArgs,
     PreparedCall,
     ReadArticlesArgs,
+    ReadHistoryArgs,
     SearchNewsArgs,
     ToolPayload,
     story_hits,
@@ -50,10 +53,14 @@ def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[st
     """The status line of a step's calls while they run."""
     searches = [call.args for call in calls if call.name in SEARCH_TOOLS]
     reads = [call.args for call in calls if call.name == "read_articles"]
+    histories = [call.args for call in calls if call.name == "read_history"]
     checking = any(call.name == "check_follows" for call in calls)
+    keywords = [keyword for args in histories for keyword in args.keywords]
     actions = []
     if checking:
-        actions.append(f"查看 {len(follows)} 个关注项" if follows else "查看关注项")
+        actions.append((f"查看 {len(follows)} 个关注项" if follows else "查看关注项") + ("、之前的回答" if histories else ""))
+    elif histories:
+        actions.append("查看之前的回答")
     if searches:
         actions.append("检索")
     if reads:
@@ -61,6 +68,8 @@ def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[st
     if searches:
         # A query's window is left to the process list, where it reads with the result.
         detail = "、".join(subject(args, today) for args in searches)
+    elif keywords:
+        detail = "、".join(keywords)
     elif checking:
         detail = "、".join(follows)
     else:
@@ -116,6 +125,8 @@ def record(payload: ToolPayload, today: date, read_ids: set[int]) -> list[Proces
         return []
     if payload.name == "check_follows":
         return [_checked(check) for check in payload.data.checks]
+    if payload.name == "read_history":
+        return [_recalled(payload.args, payload.data)]
     items = []
     if payload.name == "read_articles":
         for item in payload.data.items:
@@ -125,18 +136,24 @@ def record(payload: ToolPayload, today: date, read_ids: set[int]) -> list[Proces
     return items
 
 
-def process(items: list[ProcessItem]) -> Process | None:
+def process(items: list[tuple[str, ProcessItem]]) -> Process | None:
+    """The process of a turn from its items, each with the tool that produced it: the summary counts by tool, since a
+    follow check and a listing of past answers share an action."""
     if not items:
         return None
-    counts = {action: sum(item.action == action for item in items) for action in (CHECK, SEARCH, READ)}
+    counts = Counter(name for name, _ in items)
+    follows, histories = counts["check_follows"], counts["read_history"]
+    searches = sum(counts[name] for name in SEARCH_TOOLS)
     parts = []
-    if counts[CHECK]:
-        parts.append(f"查看 {counts[CHECK]} 个关注项")
-    if counts[SEARCH]:
-        parts.append(f"检索 {counts[SEARCH]} 次")
-    if counts[READ]:
-        parts.append(f"阅读 {counts[READ]} 篇报道")
-    return Process("，".join(parts), tuple(items))
+    if follows:
+        parts.append(f"查看 {follows} 个关注项" + (f"、之前的回答 {histories} 次" if histories else ""))
+    elif histories:
+        parts.append(f"查看之前的回答 {histories} 次")
+    if searches:
+        parts.append(f"检索 {searches} 次")
+    if counts["read_articles"]:
+        parts.append(f"阅读 {counts['read_articles']} 篇报道")
+    return Process("，".join(parts), tuple(item for _, item in items))
 
 
 def _joined(actions: list[str]) -> str:
@@ -176,6 +193,14 @@ def _checked(check: FollowCheck) -> ProcessItem:
     name = check.follow.query
     outcome = _outcome(f"最近 {check.days} 天", check.result.hits if check.result else [], check.error is not None)
     return ProcessItem(CHECK, f"{name}{_joint(name)}的新动态", outcome)
+
+
+def _recalled(args: ReadHistoryArgs, result: HistoryResult) -> ProcessItem:
+    count = len(result.items)
+    if args.keywords:
+        keywords = "、".join(args.keywords)
+        return ProcessItem("回顾", keywords, f"找到 {count} 次相关回答") if count else ProcessItem("未找到", keywords, "相关内容")
+    return ProcessItem(CHECK, f"最近 {count} 次回答", "") if count else ProcessItem(CHECK, "之前的回答", "没有记录")
 
 
 def _joint(text: str) -> str:

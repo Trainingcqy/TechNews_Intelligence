@@ -53,7 +53,7 @@ class TurnRuntime:
     tool_names: list[str]  # 已执行的工具名，按调用顺序
     followed_queries: list[str]
     now: datetime  # 本轮开始的时刻，在用户时区；两个模型拿到的当前时间都取它
-    process: list[ProcessItem] = field(default_factory=list)
+    process: list[tuple[str, ProcessItem]] = field(default_factory=list)  # each with the tool that produced it
     read_ids: set[int] = field(default_factory=set)  # articles already in process
     found: str = ""  # what the last step found, shown while the gather model weighs it
     # 以下供请求记录使用。step 跨 gather、run_tool、collect 三个节点，节点之间不能经 ContextVar 传递，由这里持有。

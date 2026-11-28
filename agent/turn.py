@@ -17,6 +17,7 @@ from agent.llm import ModelCallError, ModelHandle, build_models
 from agent.tools.registry import TurnState
 from agent.trace import request_trace
 from agent.types import Answer, Progress
+from common.urls import url_key
 
 
 def run_turn(
@@ -32,16 +33,18 @@ def run_turn(
     stop: threading.Event | None = None,
     config: AgentConfig | None = None,
     models: tuple[ModelHandle, ModelHandle] | None = None,
+    history_reader: Callable[[], list[dict]] | None = None,
 ) -> Answer:
     """channel is web, telegram, cli or eval and only labels the trace. zone is the user's clock zone, DEFAULT_ZONE when
     not given. stop, set from another thread, ends the turn with status stopped before its next model call; a call
-    already running finishes and its result is dropped."""
+    already running finishes and its result is dropped. history_reader returns the user's past messages for
+    read_history; without it there are none on record."""
     config = config or load_config()
     zone = zone or DEFAULT_ZONE
     emit = _safe_emit(on_event)
     runtime = TurnRuntime(
-        registry=EvidenceRegistry(), tool_state=TurnState(user_urls=set()), config=config,
-        models=models, emit=emit, user_key=user_key,
+        registry=EvidenceRegistry(), tool_state=TurnState(user_urls=set(), history_reader=history_reader),
+        config=config, models=models, emit=emit, user_key=user_key,
         follows=[], tool_names=[], followed_queries=[], now=datetime.now(zone), stop=stop,
     )
     with using_zone(zone), request_trace(question=question, channel=channel, thread_id=thread_id,
@@ -100,6 +103,9 @@ def _evidence_table(runtime: TurnRuntime) -> list[dict]:
     for evidence in runtime.registry.items():
         row = {"eid": evidence.eid, "level": evidence.level, **runtime.provenance.get(evidence.eid, {}),
                "article_id": evidence.article.article_id, "story_id": evidence.article.story_id}
+        told_on = runtime.registry.told.get(url_key(evidence.article.url))
+        if told_on is not None:
+            row["told_on"] = told_on.isoformat()
         if synthesized and evidence.level == "fulltext":
             row["body_in_block"] = evidence.eid not in runtime.left_out
         elif synthesized and evidence.eid in runtime.left_out:

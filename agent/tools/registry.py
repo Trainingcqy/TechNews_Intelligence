@@ -19,6 +19,7 @@ from common import prompt_text
 from common.taxonomy import KINDS, TOPICS
 
 from .follows import FollowsResult, commit_check_follows, follows_trace_output, run_check_follows
+from .history import HistoryResult, commit_read_history, history_trace_output, run_read_history
 from .read import OVER_QUOTA, ReadResult, commit_read_articles, read_trace_output, run_read_articles
 from .search import (
     commit_browse_news,
@@ -95,6 +96,20 @@ class ReadArticlesArgs(BaseModel):
         return self
 
 
+class ReadHistoryArgs(BaseModel):
+    model_config = _STRICT
+    keywords: list[str] = Field(default_factory=list, max_length=5, description=_field("read_history", "keywords"))
+    limit: int = Field(default=5, ge=1, le=10, description=_field("read_history", "limit"))
+
+    @field_validator("keywords")
+    @classmethod
+    def _keywords_not_blank(cls, value: list[str]) -> list[str]:
+        keywords = [keyword.strip() for keyword in value]
+        if not all(keywords):
+            raise ValueError("keywords must not be blank")
+        return keywords
+
+
 class FollowQuery(BaseModel):
     model_config = _STRICT
     follow: str = Field(description=_field("check_follows", "follow", "query_fields"))
@@ -115,6 +130,7 @@ class TurnState:
     allow_any_library_url: bool = False  # 只有 MCP 入口设为 True，见第 23.8 节
     follows: list[Follow] = field(default_factory=list)  # the user's follows, set in prepare
     today: date | None = None  # the user's date, for the check_follows windows
+    history_reader: Callable[[], list[dict]] | None = None  # the user's past messages; only the web channel has them
 
 
 @dataclass(frozen=True)
@@ -133,7 +149,7 @@ class ToolPayload:
     name: str
     args: BaseModel
     ok: bool
-    data: Any  # SearchResult, ReadResult or FollowsResult
+    data: Any  # SearchResult, ReadResult, HistoryResult or FollowsResult
     error: str | None = None
     span: Span | None = None  # collect 登记后把返回文本补进这个 span
 
@@ -154,7 +170,7 @@ class ToolSpec:
     name: str
     description: str
     args_model: type[BaseModel]
-    run: Callable[..., SearchResult | ReadResult | FollowsResult]  # reads only; takes a PreparedCall
+    run: Callable[..., SearchResult | ReadResult | HistoryResult | FollowsResult]  # reads only; takes a PreparedCall
     commit: Callable[..., ToolOutcome]  # 登记证据并生成文本
     trace_output: Callable[[Any], dict[str, Any]]  # tool span 的输出
 
@@ -194,6 +210,14 @@ TOOLS: tuple[ToolSpec, ...] = (
         run=run_read_articles,
         commit=commit_read_articles,
         trace_output=read_trace_output,
+    ),
+    ToolSpec(
+        name="read_history",
+        description=prompt_text.text("tools.read_history.description"),
+        args_model=ReadHistoryArgs,
+        run=run_read_history,
+        commit=commit_read_history,
+        trace_output=history_trace_output,
     ),
     ToolSpec(
         name="check_follows",

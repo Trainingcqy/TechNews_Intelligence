@@ -93,6 +93,18 @@ def test_commit_groups_by_follow_and_registers_each_evidence_once():
     assert 'Follow "OpenAI", query="OpenAI", last 14 days: no stories.' in lines
 
 
+def test_commit_marks_a_lead_cited_in_a_past_answer_once_told_is_written():
+    result = FollowsResult([FollowCheck(_follow("Nvidia"), "Nvidia", 7, SearchResult(hits=[HIT], weak_match=False),
+                                        None)])
+    registry = EvidenceRegistry()
+
+    assert " | Coverage: 1 report, 1 publisher\n" in commit_check_follows(CheckFollowsArgs(), result,
+                                                                        registry=registry).gather_text
+    registry.told["example.com/a"] = date(2026, 11, 24)
+    assert " | Coverage: 1 report, 1 publisher; cited in the answer on 2026-11-24\n" in commit_check_follows(
+        CheckFollowsArgs(), result, registry=registry).gather_text
+
+
 def test_commit_without_follows_or_with_every_search_failed():
     empty = commit_check_follows(CheckFollowsArgs(), FollowsResult([]), registry=EvidenceRegistry())
     assert (empty.ok, empty.gather_text) == (True, "check_follows: the user has no follows.")

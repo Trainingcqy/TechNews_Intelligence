@@ -143,6 +143,7 @@ function upgradeLabel(row) {
               <td>
                 <div>{{ row.title }}</div>
                 <div v-if="row.meta" class="muted small">{{ row.meta }}</div>
+                <div v-if="row.told_on" class="muted small">{{ row.told_on }} 的回答中引用过</div>
               </td>
               <td>{{ LEVEL[row.level] || row.level }}</td>
               <td>{{ location(row.registered) }}</td>

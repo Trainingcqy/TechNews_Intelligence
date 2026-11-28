@@ -37,6 +37,15 @@ ids = 'Evidence ids from search results, such as E3.'
 urls = "Links that appear in the user's messages. No other links are accepted."
 max_chars = 'Maximum number of characters to read from each report.'
 
+[read_history]
+description = '''
+Read the answers this user received before, both earlier in this conversation and in earlier conversations. Use it ONLY when the user asks how something an earlier answer covered has developed since. With keywords, returns the lines of the answers that mention them and the reports those lines cite, which are added to the evidence. Without keywords, lists the most recent answers.'''
+no_result_hint = 'You can try other wording, call read_history without keywords to list the most recent answers, or search for the matter as an ordinary question.'
+
+[read_history.fields]
+keywords = 'The name of the matter the user asks about, in both its Chinese and English forms. An answer matches when its question or text contains any keyword, ignoring case. When empty, the most recent answers are listed.'
+limit = 'Number of answers to return.'
+
 [check_follows]
 description = '''
 Check the user's follows: search each follow for stories since it was last checked, ranked by the number of publishers, and return the stories grouped by follow. Use it ONLY when the user asks about the follows themselves.'''

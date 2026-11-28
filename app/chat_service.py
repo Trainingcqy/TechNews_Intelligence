@@ -24,12 +24,14 @@ from app.conversations import (
     last_turn_for_token,
     list_threads_for_token,
     load_history_for_token,
+    load_messages_for_token,
     replace_last_turn_for_token,
 )
 
 logger = logging.getLogger(__name__)
 
 HISTORY_LOAD_LIMIT = 40
+HISTORY_READER_LIMIT = 400
 WEB_HISTORY_DISPLAY_LIMIT = 200
 WEB_THREAD_LIST_LIMIT = 100
 
@@ -204,6 +206,9 @@ def prepare_chat_turn(body: ChatRequest, token_info: dict, request_id: str, *, s
 
 
 def run_agent_turn(turn: ChatTurn, *, on_event: Callable[[Progress], None] | None = None) -> Answer:
+    token_id = int(turn.token_info["id"])
+    # The turn being replaced is left out, as it is from the history the model sees.
+    replaced = set(turn.replace_ids or ())
     answer = run_turn(
         turn.body.message,
         turn.history,
@@ -214,13 +219,15 @@ def run_agent_turn(turn: ChatTurn, *, on_event: Callable[[Progress], None] | Non
         zone=zone_named(turn.body.timezone),
         on_event=on_event,
         stop=turn.stop,
+        history_reader=lambda: [message for message in load_messages_for_token(token_id, limit=HISTORY_READER_LIMIT)
+                                if message["id"] not in replaced],
     )
     # An error turn is not kept: its text would reach later turns as a model message. Telegram and the CLI
     # leave it out of their history too. A stopped turn has no answer to keep.
     if answer.status not in ("error", "stopped"):
         persist_conversation_turn(
             thread_id=turn.thread_id,
-            token_id=int(turn.token_info["id"]),
+            token_id=token_id,
             user_message=turn.body.message,
             answer=answer,
             request_id=turn.request_id,

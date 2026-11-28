@@ -1,16 +1,18 @@
-"""User memory: follows and their cap, render_follows, record_turn, and failures treated as no memory."""
+"""User memory: follows and their cap, render_follows, record_turn, failures treated as no memory, and past answers."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from langchain_core.messages import AIMessage
 
 from agent import memory
+from agent.config import using_zone
 from agent.llm import ModelHandle
-from agent.memory import Follow, FollowLimitError, FollowQueryError
+from agent.memory import Follow, FollowLimitError, FollowQueryError, PastAnswer
 from agent.types import Answer
 from common import model_settings, prompt_text
 
@@ -222,6 +224,61 @@ def test_record_turn_failure_is_swallowed_but_list_follows_raises(broken_db):
     # The follows page must show the failure; the turn catches it in prepare.
     with pytest.raises(RuntimeError):
         memory.list_follows(USER, 10)
+
+
+def _message(message_id, thread_id, role, parts, day=25, hour=2, sources=None):
+    message = {"role": role, "parts": [{"text": text} for text in parts], "id": message_id, "thread_id": thread_id,
+               "created_at": datetime(2026, 11, day, hour, 0, tzinfo=timezone.utc)}
+    if sources is not None:
+        message["sources"] = sources
+    return message
+
+
+A1 = {"n": 1, "url": "https://www.a.com/1/", "title": "A1"}
+B2 = {"n": 1, "url": "https://b.com/2", "title": "B2"}
+
+
+def test_past_answers_pair_each_model_message_with_sources_with_the_last_user_message_of_its_thread():
+    messages = [
+        _message(1, "A", "user", ["q1"]),
+        _message(2, "B", "user", ["qB"]),
+        _message(3, "A", "model", ["a1 ", "[1]"], sources=[A1]),
+        _message(4, "B", "model", ["aB"], sources=[B2]),
+        _message(5, "A", "user", ["q2"]),
+        _message(6, "A", "model", ["不客气"], sources=[]),
+        _message(7, "A", "model", ["旧格式"]),
+        _message(8, "C", "model", ["aC"], sources=[A1]),
+        _message(9, "A", "model", ["a2"], sources=[B2]),
+    ]
+
+    assert memory.past_answers(messages) == [
+        PastAnswer(date(2026, 11, 25), "q1", "a1 [1]", [A1]),
+        PastAnswer(date(2026, 11, 25), "qB", "aB", [B2]),
+        PastAnswer(date(2026, 11, 25), "", "aC", [A1]),
+        PastAnswer(date(2026, 11, 25), "q2", "a2", [B2]),
+    ]
+
+
+def test_the_day_of_a_past_answer_is_in_the_user_zone():
+    # 02:00 UTC on 11-25 is 11-25 in Beijing and 11-24 in New York.
+    messages = [_message(1, "A", "user", ["q"]), _message(2, "A", "model", ["a"], sources=[A1])]
+
+    assert memory.past_answers(messages)[0].day == date(2026, 11, 25)
+    with using_zone(ZoneInfo("America/New_York")):
+        assert memory.past_answers(messages)[0].day == date(2026, 11, 24)
+
+
+def test_told_dates_give_each_source_the_day_of_the_latest_answer_citing_it():
+    messages = [
+        _message(1, "A", "user", ["q1"], day=20), _message(2, "A", "model", ["a1"], day=20, sources=[A1, B2]),
+        _message(3, "B", "user", ["q2"], day=23),
+        _message(4, "B", "model", ["a2"], day=23, sources=[{"n": 1, "url": "https://a.com/1"}]),
+        _message(5, "B", "model", ["a3"], day=24, sources=[]),
+    ]
+
+    assert memory.told_dates(memory.past_answers(messages)) == {
+        "a.com/1": date(2026, 11, 23), "b.com/2": date(2026, 11, 20)}
+    assert memory.told_dates([]) == {}
 
 
 def test_render_follows():

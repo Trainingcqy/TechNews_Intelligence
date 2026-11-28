@@ -30,6 +30,8 @@ PROCESS_JSON = {"summary": "检索 1 次",
                 "items": [{"action": "检索", "subject": "Genie 4", "meta": "最近 14 天内找到 1 条新闻"}]}
 TOKEN = {"id": 7, "email": "user@example.com"}
 HISTORY = [{"role": "user", "parts": [{"text": "上一问"}]}]
+# Past messages across the token's threads; 11 and 12 are the last turn of thread-9.
+MESSAGES = [{"id": i, "thread_id": "thread-9", "role": "user" if i % 2 else "model"} for i in (9, 10, 11, 12)]
 STATUSES = ["answered", "insufficient", "direct", "not_found", "blocked", "error", "stopped"]
 
 
@@ -41,7 +43,8 @@ def _parse(chunk: str) -> tuple[str, dict]:
 @pytest.fixture()
 def env(monkeypatch: pytest.MonkeyPatch):
     state = types.SimpleNamespace(
-        answer=None, events=[], refunds=0, notices=0, appended=[], loads=[], run_turn_calls=[], recorded=[]
+        answer=None, events=[], refunds=0, notices=0, appended=[], loads=[], run_turn_calls=[], recorded=[],
+        message_loads=[]
     )
 
     def _run_turn(question, history=None, *, on_event=None, **kwargs):
@@ -54,6 +57,10 @@ def env(monkeypatch: pytest.MonkeyPatch):
     def _load_history(thread_id, token_id, limit=None):
         state.loads.append((thread_id, token_id, limit))
         return list(HISTORY)
+
+    def _load_messages(token_id, *, limit):
+        state.message_loads.append((token_id, limit))
+        return [dict(message) for message in MESSAGES]
 
     def _append(thread_id, token_id, message, metadata=None):
         state.appended.append((thread_id, token_id, message, metadata))
@@ -71,6 +78,7 @@ def env(monkeypatch: pytest.MonkeyPatch):
     quota = chat_service.quota_service
     monkeypatch.setattr(chat_service, "run_turn", _run_turn)
     monkeypatch.setattr(chat_service, "load_history_for_token", _load_history)
+    monkeypatch.setattr(chat_service, "load_messages_for_token", _load_messages)
     monkeypatch.setattr(chat_service, "append_message_for_token", _append)
     monkeypatch.setattr(chat_service, "create_thread", lambda **_k: {"thread_id": "thread-new"})
     monkeypatch.setattr(chat_service.memory, "record_turn", _record_turn)
@@ -152,6 +160,11 @@ def test_persisted_turn_uses_history_message_format(env) -> None:  # noqa: ANN00
     question, history, kwargs = env.run_turn_calls[0]
     stop = kwargs.pop("stop")
     assert isinstance(stop, threading.Event) and not stop.is_set()
+    # The past messages are read only when the turn calls the reader.
+    reader = kwargs.pop("history_reader")
+    assert env.message_loads == []
+    assert reader() == MESSAGES
+    assert env.message_loads == [(7, 400)]
     assert (question, history, kwargs) == (
         "问题", HISTORY, {"channel": "web", "thread_id": "thread-9", "request_id": "req-1",
                         "user_key": "email:user@example.com", "zone": DEFAULT_ZONE}
@@ -268,6 +281,7 @@ def test_replace_last_runs_without_the_last_turn_and_replaces_it(env, monkeypatc
 
     assert env.loads == [42]
     assert env.run_turn_calls[0][1] == turns[:2]
+    assert [message["id"] for message in env.run_turn_calls[0][2]["history_reader"]()] == [9, 10]
     assert env.appended == []
     (thread_id, token_id, turn_ids, messages), kwargs = replaced[0]
     assert (thread_id, token_id, turn_ids) == ("thread-9", 7, (11, 12))

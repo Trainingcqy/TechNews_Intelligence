@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import TYPE_CHECKING
 
 from agent.config import user_zone
@@ -9,6 +10,7 @@ from agent.evidence import PUBLISHER_KIND_LABELS, counted
 from agent.retrieval.search import SearchResult, search_stories
 from agent.types import StoryHit, StoryStats
 from common import prompt_text
+from common.urls import url_key
 
 if TYPE_CHECKING:
     from .registry import BrowseNewsArgs, SearchNewsArgs, ToolOutcome
@@ -70,7 +72,7 @@ def _commit(name: str, scope: str, args: SearchNewsArgs | BrowseNewsArgs, result
     for hit in result.hits:
         lead = registry.add_article(hit.lead, "summary", hit.stats)
         related = [registry.add_article(article, "listed") for article in hit.related]
-        lines.extend(render_hit(hit, lead.eid, [e.eid for e in related]))
+        lines.extend(render_hit(hit, lead.eid, [e.eid for e in related], registry.told.get(url_key(hit.lead.url))))
     if result.weak_match:
         lines.append("Note: the top result is a weak match and may be off topic.")
     return ToolOutcome(index=0, call_id="", name=name, ok=True, gather_text="\n".join(lines))
@@ -91,7 +93,7 @@ def _scope(args: SearchNewsArgs | BrowseNewsArgs) -> str:
     return ", ".join(parts)
 
 
-def render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str]) -> list[str]:
+def render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], told_on: date | None) -> list[str]:
     lead = hit.lead
     lines = [f"[{lead_eid}] {lead.title}"]
     if lead.title_zh:
@@ -104,7 +106,10 @@ def render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str]) -> list[st
         meta.append(lead.kind)
     if lead.body_level != "full":
         meta.append(NO_FULL_TEXT)
-    lines.append(INDENT + " · ".join(meta) + " | " + _render_stats(hit.stats))
+    stats = _render_stats(hit.stats)
+    if told_on is not None:
+        stats += f"; cited in the answer on {told_on}"
+    lines.append(INDENT + " · ".join(meta) + " | " + stats)
     lines.append(f"{INDENT}Summary: {lead.summary}")
     if hit.related:
         others = []

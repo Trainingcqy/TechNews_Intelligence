@@ -7,15 +7,17 @@ import pytest
 
 from agent import progress
 from agent.evidence import EvidenceRegistry
-from agent.memory import Follow
+from agent.memory import Follow, PastAnswer
 from agent.retrieval.search import SearchResult
 from agent.tools.follows import FollowCheck, FollowsResult
+from agent.tools.history import HistoryItem, HistoryResult
 from agent.tools.read import ReadItem, ReadResult
 from agent.tools.registry import (
     BrowseNewsArgs,
     CheckFollowsArgs,
     PreparedCall,
     ReadArticlesArgs,
+    ReadHistoryArgs,
     SearchNewsArgs,
     ToolPayload,
 )
@@ -93,6 +95,51 @@ def test_step_names_the_follows_and_what_it_searches():
     assert progress.step([browse], EvidenceRegistry(), [], TODAY) == Progress("正在检索", "今天的要闻")
 
 
+def test_step_of_read_history_names_its_keywords_after_search_subjects_and_before_follows():
+    recall = PreparedCall(0, "c0", "read_history", ReadHistoryArgs(keywords=["Megaspeed", "兆速"]))
+    recent = PreparedCall(1, "c1", "read_history", ReadHistoryArgs())
+    check = PreparedCall(2, "c2", "check_follows", CheckFollowsArgs())
+    search = PreparedCall(3, "c3", "search_news", SearchNewsArgs(query="Nvidia"))
+    read = PreparedCall(4, "c4", "read_articles", ReadArticlesArgs(ids=["E1"]))
+    registry = EvidenceRegistry()
+    registry.add_article(ARTICLE, "summary")
+
+    assert progress.step([recall], registry, [], TODAY) == Progress("正在查看之前的回答", "Megaspeed、兆速")
+    assert progress.step([recent], registry, [], TODAY) == Progress("正在查看之前的回答")
+    assert progress.step([recall, search], registry, [], TODAY) == Progress("正在查看之前的回答并检索", "Nvidia")
+    assert progress.step([recent, read], registry, [], TODAY) == Progress(
+        "正在查看之前的回答并阅读 1 篇报道", "U.S. jury convicts Huawei")
+    assert progress.step([check, recall], registry, ["谷歌", "OpenAI"], TODAY) == Progress(
+        "正在查看 2 个关注项、之前的回答", "Megaspeed、兆速")
+    assert progress.step([check, recent], registry, ["谷歌"], TODAY) == Progress("正在查看 1 个关注项、之前的回答", "谷歌")
+    assert progress.step([check, recent], registry, [], TODAY) == Progress("正在查看关注项、之前的回答")
+
+
+def _history(count: int) -> HistoryResult:
+    answer = PastAnswer(TODAY, "q", "a", [{"url": "https://a.com/1"}])
+    return HistoryResult([HistoryItem(answer, ["a"], [])] * count, {}, {"a.com/1": TODAY})
+
+
+@pytest.mark.parametrize("args, result, expected", [
+    (ReadHistoryArgs(keywords=["Megaspeed"]), _history(2), ProcessItem("回顾", "Megaspeed", "找到 2 次相关回答")),
+    (ReadHistoryArgs(keywords=["Megaspeed", "兆速"]), _history(1), ProcessItem("回顾", "Megaspeed、兆速", "找到 1 次相关回答")),
+    (ReadHistoryArgs(keywords=["Megaspeed"]), _history(0), ProcessItem("未找到", "Megaspeed", "相关内容")),
+    (ReadHistoryArgs(keywords=["Megaspeed", "兆速"]), HistoryResult([], {}, {}),
+     ProcessItem("未找到", "Megaspeed、兆速", "相关内容")),
+    (ReadHistoryArgs(), _history(5), ProcessItem("查看", "最近 5 次回答", "")),
+    (ReadHistoryArgs(limit=3), _history(2), ProcessItem("查看", "最近 2 次回答", "")),
+    (ReadHistoryArgs(), HistoryResult([], {}, {}), ProcessItem("查看", "之前的回答", "没有记录")),
+])
+def test_record_of_read_history(args, result, expected):
+    assert progress.record(_payload("read_history", args, result), TODAY, set()) == [expected]
+
+
+def test_record_of_a_failed_read_history_lists_nothing_and_found_says_nothing():
+    failed = _payload("read_history", ReadHistoryArgs(keywords=["Megaspeed"]), None, ok=False)
+    assert progress.record(failed, TODAY, set()) == []
+    assert progress.found([_payload("read_history", ReadHistoryArgs(), _history(2))]) == ""
+
+
 def test_found_counts_distinct_stories_and_read_bodies():
     searches = [
         _payload("search_news", SearchNewsArgs(query="a"), SearchResult(hits=[_hit(1), _hit(2)], weak_match=False)),
@@ -165,9 +212,24 @@ def test_record_of_a_follow_check_names_the_follow_and_what_it_found():
     ]
 
 
-def test_process_summary_counts_each_action():
-    items = [ProcessItem("检索", "a", ""), ProcessItem("阅读", "b", ""), ProcessItem("查看", "c", ""),
-             ProcessItem("检索", "d", "")]
+def test_process_summary_counts_each_tool():
+    items = [("search_news", ProcessItem("检索", "a", "")), ("read_articles", ProcessItem("阅读", "b", "")),
+             ("check_follows", ProcessItem("查看", "c", "")), ("browse_news", ProcessItem("检索", "d", ""))]
 
-    assert progress.process(items) == Process("查看 1 个关注项，检索 2 次，阅读 1 篇报道", tuple(items))
+    assert progress.process(items) == Process("查看 1 个关注项，检索 2 次，阅读 1 篇报道",
+                                              tuple(item for _, item in items))
     assert progress.process([]) is None
+
+
+def test_process_summary_counts_past_answers_apart_from_follows_that_share_their_action():
+    listed = ("read_history", ProcessItem("查看", "最近 5 次回答", ""))
+    recalled = ("read_history", ProcessItem("回顾", "Megaspeed", "找到 2 次相关回答"))
+    follow = ("check_follows", ProcessItem("查看", "谷歌的新动态", "最近 3 天内找到 1 条新闻"))
+    search = ("search_news", ProcessItem("检索", "Megaspeed", "最近 14 天内找到 1 条新闻"))
+    read = ("read_articles", ProcessItem("阅读", "t", "CNBC 2026-11-25"))
+
+    assert progress.process([listed, recalled]).summary == "查看之前的回答 2 次"
+    assert progress.process([recalled, search, read]).summary == "查看之前的回答 1 次，检索 1 次，阅读 1 篇报道"
+    assert progress.process([follow, listed, follow, recalled, follow, search]).summary == (
+        "查看 3 个关注项、之前的回答 2 次，检索 1 次")
+    assert progress.process([follow, search]).summary == "查看 1 个关注项，检索 1 次"

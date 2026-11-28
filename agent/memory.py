@@ -1,4 +1,4 @@
-"""User memory: the followed queries of a user."""
+"""User memory: the followed queries of a user, and the answers given to the user before."""
 
 from __future__ import annotations
 
@@ -9,11 +9,13 @@ from datetime import date, datetime
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.config import user_zone
+from agent.context import _text
 from agent.evidence import counted
 from agent.llm import ModelCallError, build_role_model, call_text
 from agent.types import Answer
 from common import prompt_text
 from common.db import db_cursor, db_transaction
+from common.urls import url_key
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,32 @@ class Follow:
     follow_id: int
     query: str
     last_checked_at: datetime | None
+
+
+@dataclass(frozen=True)
+class PastAnswer:
+    day: date  # the day of the answer in the user's zone
+    question: str
+    text: str
+    sources: list[dict]
+
+
+def past_answers(messages: list[dict]) -> list[PastAnswer]:
+    """The model messages with sources, each with the latest user message before it in its thread, oldest first."""
+    questions: dict[str, str] = {}
+    answers = []
+    for message in messages:
+        if message.get("role") == "user":
+            questions[message["thread_id"]] = _text(message)
+        elif message.get("role") == "model" and message.get("sources"):
+            day = message["created_at"].astimezone(user_zone()).date()
+            answers.append(PastAnswer(day, questions.get(message["thread_id"], ""), _text(message), message["sources"]))
+    return answers
+
+
+def told_dates(answers: list[PastAnswer]) -> dict[str, date]:
+    """The url_key of each source of the past answers, oldest first, and the day of the latest answer that cites it."""
+    return {url_key(source["url"]): answer.day for answer in answers for source in answer.sources}
 
 
 def list_follows(user_key: str, limit: int) -> list[Follow]:

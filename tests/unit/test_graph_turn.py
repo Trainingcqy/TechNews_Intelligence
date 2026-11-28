@@ -17,7 +17,7 @@ from agent.graph import nodes
 from agent.llm import ModelHandle
 from agent.memory import Follow
 from agent.retrieval.search import SearchResult
-from agent.tools import follows, read, registry
+from agent.tools import follows, history, read, registry
 from agent.types import Article, Process, ProcessItem, Source, StoryHit, StoryStats
 from common import prompt_text
 
@@ -102,13 +102,15 @@ def turn(monkeypatch):
     monkeypatch.setattr(read, "fetch_articles_by_url_keys", lambda cur, keys: [])
     monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {30: BODY} if 30 in ids else {})
 
-    def run(gather_replies, final_replies=(), *, config=None, history=None, user_key=None, zone=None):
+    def run(gather_replies, final_replies=(), *, config=None, history=None, user_key=None, zone=None,
+            history_reader=None):
         gather, final = FakeChat(gather_replies), FakeChat(final_replies)
         events: list = []
         answer = run_turn(
             QUESTION, history, channel="web", request_id="r1", user_key=user_key, zone=zone, on_event=events.append,
             config=config or AgentConfig(),
             models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)),
+            history_reader=history_reader,
         )
         return SimpleNamespace(answer=answer, events=events, gather=gather, final=final, trace=persisted[-1])
 
@@ -186,6 +188,58 @@ def test_browse_turn(turn, monkeypatch):
     assert result.content.startswith("browse_news results, topic=ai, last 7 days, by importance: 1 story\n")
     (tool,) = _spans(r.trace, "tool")
     assert (tool.name, tool.output["stories"][0]["lead"]) == ("browse_news", 30)
+
+
+def test_read_history_then_search_marks_the_reports_told_before(turn, monkeypatch):
+    monkeypatch.setattr(history, "get_conn", FakeConn)
+    monkeypatch.setattr(history, "put_conn", lambda conn: None)
+    monkeypatch.setattr(history, "fetch_articles_by_url_keys", lambda cur, keys: [ARTICLE])
+    messages = [
+        {"role": "user", "parts": [{"text": "今天发生了什么"}], "id": 1, "thread_id": "t0",
+         "created_at": datetime(2026, 11, 25, 2, 0, tzinfo=timezone.utc)},
+        {"role": "model", "parts": [{"text": "## 世界模型\n- Genie 4 新增音频[1]"}], "sources": [{"n": 1, "url": ARTICLE.url}],
+         "id": 2, "thread_id": "t0", "created_at": datetime(2026, 11, 25, 2, 1, tzinfo=timezone.utc)},
+    ]
+
+    r = turn([_calls(("c1", "read_history", {"keywords": ["Genie 4"]})), _search("Genie 4"), DONE], [ANSWERED],
+             history_reader=lambda: messages)
+
+    recalled = ProcessItem("回顾", "Genie 4", "找到 1 次相关回答")
+    assert r.answer == _answered(tool_calls=("read_history", "search_news"),
+                                 process=Process("查看之前的回答 1 次，检索 1 次", (recalled, SEARCHED)))
+    assert r.events == [UNDERSTANDING, Progress("正在查看之前的回答", "Genie 4"), Progress("正在分析结果"), SEARCHING, FOUND,
+                        WRITING]
+    history_text = r.gather.calls[1][-1].content
+    assert history_text.startswith(
+        'read_history results, keywords="Genie 4": 1 answer\n'
+        "Answer on 2026-11-25, question: 今天发生了什么\n"
+        "  ## 世界模型\n"
+        "  - Genie 4 新增音频[E1]\n"
+        '  Cited: [E1] "Genie 4 adds audio" TechCrunch · 2026-11-12\n'
+        "Newest report cited: 2026-11-12. To look for later reports, search from 2026-11-10.\n\n")
+    search_text = r.gather.calls[2][-1].content
+    assert ("[E1] Genie 4 adds audio\n     TechCrunch · media · 2026-11-12 · ai · release | "
+            "Coverage: 1 report, 1 publisher; cited in the answer on 2026-11-25\n") in search_text
+    assert ("Coverage: 1 report, 1 publisher, first 2026-11-12, latest 2026-11-12\n"
+            "Cited in the answer on 2026-11-25\n"
+            "Summary: 谷歌发布 Genie 4。") in r.final.calls[0][-1].content
+    assert r.trace.output["evidence"] == [{
+        "eid": "E1", "level": "summary", "article_id": 30, "story_id": 5,
+        "registered": {"step": 1, "call": 0}, "upgraded": [], "told_on": "2026-11-25", "cited": 1,
+    }]
+    tool = _spans(r.trace, "tool")[0]
+    assert (tool.name, tool.output["answers"], tool.output["articles"]) == ("read_history", 1, [30])
+
+
+def test_turn_without_a_history_reader_has_no_answers_on_record_and_marks_nothing(turn):
+    r = turn([_calls(("c1", "read_history", {})), _search("Genie 4"), DONE], [ANSWERED])
+
+    assert r.gather.calls[1][-1].content.startswith("read_history: no past answers on record.\n\n")
+    assert "cited in the answer" not in r.gather.calls[2][-1].content
+    assert "Cited in the answer" not in r.final.calls[0][-1].content
+    assert "told_on" not in r.trace.output["evidence"][0]
+    assert r.answer.process == Process("查看之前的回答 1 次，检索 1 次",
+                                       (ProcessItem("查看", "之前的回答", "没有记录"), SEARCHED))
 
 
 def test_tool_call_without_evidence_is_not_found(turn):

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from agent.evidence import counted
 from agent.memory import Follow, check_window
 from agent.retrieval.search import SearchResult, search_stories
+from common.urls import url_key
 
 from .search import render_hit
 
@@ -87,7 +88,7 @@ def commit_check_follows(args: CheckFollowsArgs, result: FollowsResult, *, regis
         for hit in check.result.hits:
             lead = registry.add_article(hit.lead, "summary", hit.stats)
             related = [registry.add_article(article, "listed") for article in hit.related]
-            lines.extend(render_hit(hit, lead.eid, [e.eid for e in related]))
+            lines.extend(render_hit(hit, lead.eid, [e.eid for e in related], registry.told.get(url_key(hit.lead.url))))
     text = "\n".join(lines)
     ok = any(check.error is None for check in result.checks)
     return ToolOutcome(index=0, call_id="", name="check_follows", ok=ok, gather_text=text,

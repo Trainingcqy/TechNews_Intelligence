@@ -707,7 +707,7 @@ def test_chat_allows_owner_thread_and_persists_turn(api_mod, monkeypatch: pytest
 
 
 def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
-    from agent.memory import Follow, FollowLimitError
+    from agent.memory import Follow, FollowLimitError, FollowQueryError
 
     memory = api_mod.memory
     calls: list[tuple] = []
@@ -717,6 +717,8 @@ def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.
         calls.append(("add", user_key, query))
         if query == "full":
             raise FollowLimitError("full")
+        if query == "no query":
+            raise FollowQueryError("model down")
         if not query.strip():
             raise ValueError("blank")
         return follow
@@ -732,6 +734,7 @@ def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.
         added = client.post("/follows", json={"query": "Anthropic 上市"})
         full = client.post("/follows", json={"query": "full"})
         blank = client.post("/follows", json={"query": "  "})
+        unavailable = client.post("/follows", json={"query": "no query"})
         removed = client.delete("/follows/5")
         missing = client.delete("/follows/6")
     finally:
@@ -743,6 +746,7 @@ def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.
     assert (added.status_code, added.json()) == (200, item)
     assert (full.status_code, full.json()) == (409, {"detail": "follow_limit_reached"})
     assert (blank.status_code, blank.json()) == (422, {"detail": "follow_query_blank"})
+    assert (unavailable.status_code, unavailable.json()) == (503, {"detail": "follow_query_unavailable"})
     assert (removed.status_code, removed.json()) == (200, {"status": "deleted", "follow_id": 5})
     assert (missing.status_code, missing.json()) == (404, {"detail": "follow_not_found"})
     assert calls == [
@@ -750,6 +754,7 @@ def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.
         ("add", "email:a@example.com", "Anthropic 上市"),
         ("add", "email:a@example.com", "full"),
         ("add", "email:a@example.com", "  "),
+        ("add", "email:a@example.com", "no query"),
         ("remove", "email:a@example.com", 5),
         ("remove", "email:a@example.com", 6),
     ]

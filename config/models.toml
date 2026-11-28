@@ -8,6 +8,11 @@ provider = "deepseek"
 model = "deepseek-flash"
 temperature = 0.1
 
+[follow]
+provider = "deepseek"
+model = "deepseek-flash"
+temperature = 0
+
 [analyze]
 provider = "deepseek"
 model = "deepseek-flash"

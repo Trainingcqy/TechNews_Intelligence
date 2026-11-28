@@ -28,7 +28,8 @@ class JinaModel:
     model: str
 
 
-USES = {"gather": ChatModel, "final": ChatModel, "analyze": AnalyzeModel, "embedding": JinaModel, "rerank": JinaModel}
+USES = {"gather": ChatModel, "final": ChatModel, "follow": ChatModel, "analyze": AnalyzeModel,
+        "embedding": JinaModel, "rerank": JinaModel}
 
 
 @cache

@@ -189,6 +189,8 @@ def add_follow(body: FollowRequest, token_info: dict = Depends(_verify_token)):
         follow = memory.add_follow(_user_key(token_info), body.query)
     except memory.FollowLimitError:
         raise HTTPException(status_code=409, detail="follow_limit_reached") from None
+    except memory.FollowQueryError:
+        raise HTTPException(status_code=503, detail="follow_query_unavailable") from None
     except ValueError:
         raise HTTPException(status_code=422, detail="follow_query_blank") from None
     return asdict(follow)

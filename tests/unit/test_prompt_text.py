@@ -42,6 +42,7 @@ PLACEHOLDERS = {
     "tools.check_follows.fields.queries": set(),
     "tools.check_follows.query_fields.follow": set(),
     "tools.check_follows.query_fields.query": set(),
+    "follow.system": set(),
     "analyze.system": set(),
     "analyze.user": {"body_note", "topic_table", "kind_table", "title", "publisher", "body"},
     "analyze.no_body_note": set(),

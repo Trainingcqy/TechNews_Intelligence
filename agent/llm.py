@@ -21,7 +21,7 @@ class ModelCallError(Exception):
 
 @dataclass(frozen=True)
 class ModelHandle:
-    role: str  # gather | final
+    role: str  # gather | final | follow
     provider: str
     model: str
     client: Any
@@ -30,10 +30,10 @@ class ModelHandle:
 
 @cache
 def build_models() -> tuple[ModelHandle, ModelHandle]:
-    return _build_role_model("gather"), _build_role_model("final")
+    return build_role_model("gather"), build_role_model("final")
 
 
-def _build_role_model(role: str) -> ModelHandle:
+def build_role_model(role: str) -> ModelHandle:
     try:
         spec = model_settings.get(role)
         config = resolve_model_config(provider=spec.provider, model_name=spec.model)

@@ -316,6 +316,12 @@ def test_follow_command_without_query_and_over_limit(bot_mod) -> None:  # noqa: 
         ]
 
 
+def test_follow_command_replies_with_a_failure_when_the_search_query_cannot_be_generated(bot_mod) -> None:  # noqa: ANN001
+    error = bot_mod.memory.FollowQueryError("model down")
+    with patch.object(bot_mod.memory, "add_follow", side_effect=error):
+        assert _command(bot_mod, bot_mod.follow_cmd, "/follow 谷歌的新动态") == ["添加关注项失败，请稍后重试。"]
+
+
 def test_follows_command_lists_with_ordinals(bot_mod) -> None:  # noqa: ANN001
     follows = [_follow(7, "Anthropic 上市"), _follow(9, "具身智能")]
     with patch.object(bot_mod.memory, "list_follows", return_value=follows) as list_follows:

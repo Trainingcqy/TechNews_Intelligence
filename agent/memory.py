@@ -6,8 +6,11 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from agent.config import user_zone
 from agent.evidence import counted
+from agent.llm import ModelCallError, build_role_model, call_text
 from agent.trace import warn
 from agent.types import Answer
 from common import prompt_text
@@ -20,6 +23,10 @@ MAX_FOLLOWS = 20
 
 class FollowLimitError(ValueError):
     pass
+
+
+class FollowQueryError(Exception):
+    """The English search query of a follow could not be generated. Not a ValueError: the API maps that to 422."""
 
 
 @dataclass(frozen=True)
@@ -44,10 +51,25 @@ def list_follows(user_key: str, limit: int) -> list[Follow]:
         return [Follow(*row) for row in cur.fetchall()]
 
 
+def _search_query(query: str) -> str:
+    """The English search query of a follow: the text itself when it is ASCII, else one model call."""
+    if query.isascii():
+        return query
+    messages = [SystemMessage(prompt_text.text("follow.system")), HumanMessage(query)]
+    try:
+        text = call_text(build_role_model("follow"), messages)
+    except ModelCallError as exc:
+        raise FollowQueryError(f"model call failed: {exc}") from exc
+    if not text or not text.isascii() or len(text.splitlines()) > 1:
+        raise FollowQueryError(f"invalid search query: {text!r}")
+    return text
+
+
 def add_follow(user_key: str, query: str) -> Follow:
     query = query.strip()
     if not query:
         raise ValueError("query must not be blank")
+    search_query = _search_query(query)
     with db_transaction() as (_, cur):
         cur.execute(
             "SELECT COUNT(*) FROM public.user_follow WHERE user_key = %s AND active AND LOWER(query) <> LOWER(%s)",
@@ -58,12 +80,12 @@ def add_follow(user_key: str, query: str) -> Follow:
         # A removed follow is only deactivated, so adding the same query again revives that row.
         cur.execute(
             """
-            INSERT INTO public.user_follow (user_key, query)
-            VALUES (%s, %s)
-            ON CONFLICT (user_key, LOWER(query)) DO UPDATE SET active = TRUE
+            INSERT INTO public.user_follow (user_key, query, search_query)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_key, LOWER(query)) DO UPDATE SET active = TRUE, search_query = EXCLUDED.search_query
             RETURNING follow_id, query, last_checked_at
             """,
-            (user_key, query),
+            (user_key, query, search_query),
         )
         return Follow(*cur.fetchone())
 

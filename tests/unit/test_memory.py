@@ -6,12 +6,14 @@ from contextlib import contextmanager
 from datetime import date, datetime, timezone
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from agent import memory, trace_store
-from agent.memory import Follow, FollowLimitError
+from agent.llm import ModelHandle
+from agent.memory import Follow, FollowLimitError, FollowQueryError
 from agent.trace import request_trace
 from agent.types import Answer
-from common import prompt_text
+from common import model_settings, prompt_text
 
 USER = "email:user@example.com"
 CHECKED = datetime(2026, 11, 9, 17, 0, tzinfo=timezone.utc)  # 2026-11-10 in Beijing
@@ -68,8 +70,29 @@ def test_list_follows_returns_active_follows_of_user(db):
     assert params == (USER, 10)
 
 
-def test_add_follow_inserts_or_revives_stripped_query(db):
+class FakeClient:
+    def __init__(self, reply=None, error=None):
+        self.reply, self.error, self.calls = reply, error, []
+
+    def invoke(self, messages):
+        self.calls.append(messages)
+        if self.error:
+            raise self.error
+        return AIMessage(content=self.reply)
+
+
+@pytest.fixture
+def follow_model(monkeypatch):
+    """Route the follow model to a fake client; the client records the calls it receives."""
+    client = FakeClient()
+    monkeypatch.setattr(memory, "build_role_model", lambda role: ModelHandle(
+        role=role, provider="deepseek", model="m", client=client, temperature=0))
+    return client
+
+
+def test_add_follow_inserts_or_revives_stripped_query(db, follow_model):
     db.results = [(19,), (4, "Anthropic 上市", None)]
+    follow_model.reply = "  Anthropic IPO \n"
 
     follow = memory.add_follow(USER, "  Anthropic 上市 ")
 
@@ -77,12 +100,85 @@ def test_add_follow_inserts_or_revives_stripped_query(db):
     (count_sql, count_params), (insert_sql, insert_params) = db.executed
     assert "active AND LOWER(query) <> LOWER(%s)" in count_sql
     assert count_params == (USER, "Anthropic 上市")
-    assert "ON CONFLICT (user_key, LOWER(query)) DO UPDATE SET active = TRUE" in insert_sql
-    assert insert_params == (USER, "Anthropic 上市")
+    assert "ON CONFLICT (user_key, LOWER(query)) DO UPDATE SET active = TRUE, search_query = EXCLUDED.search_query" in insert_sql
+    assert "INSERT INTO public.user_follow (user_key, query, search_query)" in insert_sql
+    assert insert_params == (USER, "Anthropic 上市", "Anthropic IPO")
+    (messages,) = follow_model.calls
+    assert [(type(message).__name__, message.content) for message in messages] == [
+        ("SystemMessage", prompt_text.text("follow.system")), ("HumanMessage", "Anthropic 上市")]
 
 
-def test_add_follow_rejects_the_21st_follow(db):
+def test_add_follow_uses_an_ascii_query_as_its_search_query_without_a_model_call(db, follow_model):
+    db.results = [(0,), (4, "OpenAI GPT-5", None)]
+
+    memory.add_follow(USER, " OpenAI GPT-5 ")
+
+    assert db.executed[1][1] == (USER, "OpenAI GPT-5", "OpenAI GPT-5")
+    assert follow_model.calls == []
+
+
+@pytest.mark.parametrize("reply", ["", "  \n ", "谷歌", "Google 谷歌", "Google\nAlphabet", "Google\rAlphabet"])
+def test_add_follow_fails_on_an_invalid_search_query_and_writes_nothing(db, follow_model, reply):
+    follow_model.reply = reply
+
+    with pytest.raises(FollowQueryError):
+        memory.add_follow(USER, "谷歌的新动态")
+
+    assert db.executed == []
+
+
+def test_add_follow_fails_when_the_model_call_fails(db, follow_model):
+    follow_model.error = TimeoutError("slow")
+
+    with pytest.raises(FollowQueryError):
+        memory.add_follow(USER, "谷歌的新动态")
+
+    assert db.executed == []
+
+
+def test_add_follow_fails_when_the_model_cannot_be_built(db, monkeypatch):
+    def _build(role):
+        raise memory.ModelCallError("model_build_keyerror", "no key")
+
+    monkeypatch.setattr(memory, "build_role_model", _build)
+
+    with pytest.raises(FollowQueryError):
+        memory.add_follow(USER, "谷歌的新动态")
+
+    assert db.executed == []
+
+
+def test_add_follow_calls_the_model_before_opening_the_transaction(monkeypatch, follow_model):
+    events = []
+
+    @contextmanager
+    def _transaction(**_kwargs):
+        events.append("transaction")
+        yield None, FakeCursor([(0,), (1, "谷歌", None)])
+
+    follow_model.reply = "Google"
+    monkeypatch.setattr(memory, "build_role_model", lambda role: events.append("model") or ModelHandle(
+        role=role, provider="deepseek", model="m", client=follow_model, temperature=0))
+    monkeypatch.setattr(memory, "db_transaction", _transaction)
+
+    memory.add_follow(USER, "谷歌")
+
+    assert events == ["model", "transaction"]
+
+
+def test_follow_query_error_is_not_a_value_error():
+    # The API maps ValueError to 422 for blank text; a failed generation must not reach that branch.
+    assert not issubclass(FollowQueryError, ValueError)
+
+
+def test_follow_model_settings():
+    spec = model_settings.get("follow")
+    assert (spec.provider, spec.model, spec.temperature) == ("deepseek", "deepseek-flash", 0)
+
+
+def test_add_follow_rejects_the_21st_follow(db, follow_model):
     db.results = [(20,)]
+    follow_model.reply = "Embodied AI"
 
     with pytest.raises(FollowLimitError):
         memory.add_follow(USER, "具身智能")

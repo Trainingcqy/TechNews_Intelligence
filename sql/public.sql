@@ -53,8 +53,12 @@ CREATE TABLE IF NOT EXISTS public.user_follow (
     query           TEXT NOT NULL,
     active          BOOLEAN NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_checked_at TIMESTAMPTZ
+    last_checked_at TIMESTAMPTZ,
+    search_query    TEXT
 );
+
+-- CREATE TABLE IF NOT EXISTS leaves an existing table as it is, so the column is added here.
+ALTER TABLE public.user_follow ADD COLUMN IF NOT EXISTS search_query TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_user_follow_query
     ON public.user_follow (user_key, LOWER(query));

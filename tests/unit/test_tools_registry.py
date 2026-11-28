@@ -108,6 +108,13 @@ def test_search_and_browse_args_accept_date_range_and_single_day(model):
     assert model(start_date="2026-10-01").end_date is None
 
 
+def test_search_news_schema_lists_query_first_and_keeps_the_order_of_the_shared_fields():
+    shared = ["days", "start_date", "end_date", "topic", "kind", "publisher_kind"]
+
+    assert list(SearchNewsArgs.model_json_schema()["properties"]) == ["query", *shared, "sort", "limit"]
+    assert list(BrowseNewsArgs.model_json_schema()["properties"]) == [*shared, "sort", "limit"]
+
+
 @pytest.mark.parametrize("model", [SearchNewsArgs, BrowseNewsArgs])
 def test_search_and_browse_args_literals_follow_taxonomy(model):
     schema = model.model_json_schema()["properties"]

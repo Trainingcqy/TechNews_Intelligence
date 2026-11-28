@@ -65,7 +65,7 @@ class Source:
 
 @dataclass(frozen=True)
 class ProcessItem:
-    action: str  # 检查, 检索 or 阅读
+    action: str  # 查看, 检索, 阅读, 回顾 or 未找到; empty when the subject is the whole line
     subject: str
     meta: str
 

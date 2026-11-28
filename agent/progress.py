@@ -135,8 +135,8 @@ def record(payload: ToolPayload, today: date, read_ids: set[int]) -> list[Proces
 
 
 def process(items: list[tuple[str, ProcessItem]]) -> Process | None:
-    """The process of a turn from its items, each with the tool that produced it: the summary counts by tool, since a
-    follow check and a listing of past answers share an action."""
+    """The process of a turn from its items, each with the tool that produced it: the summary counts by tool, since
+    the lines of read_history do not share one action."""
     if not items:
         return None
     counts = Counter(name for name, _ in items)
@@ -199,7 +199,8 @@ def _recalled(args: ReadHistoryArgs, result: HistoryResult) -> ProcessItem:
     if args.keywords:
         keywords = "、".join(args.keywords)
         return ProcessItem("回顾", keywords, f"找到 {count} 次相关回答") if count else ProcessItem("未找到", keywords, "相关内容")
-    return ProcessItem(CHECK, f"最近 {count} 次回答", "") if count else ProcessItem(CHECK, "之前的回答", "没有记录")
+    # Without keywords the line is one phrase: it has no action, and the page shows it across the row.
+    return ProcessItem("", f"查看最近 {count} 次回答" if count else "未找到之前的回答", "")
 
 
 def _joint(text: str) -> str:

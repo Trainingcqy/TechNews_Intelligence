@@ -41,6 +41,8 @@ def _describe(schema: dict[str, Any], model: type[_StoryArgs]) -> None:
     # The fields are shared but their descriptions are per tool, so they are filled in from the tool's table.
     for name, spec in schema["properties"].items():
         spec["description"] = _field(model.tool, name)
+    # query is declared after the shared fields; the schema lists it first, as what a search is about.
+    schema["properties"] = dict(sorted(schema["properties"].items(), key=lambda item: item[0] != "query"))
 
 
 class _StoryArgs(BaseModel):

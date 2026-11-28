@@ -236,7 +236,7 @@ def test_turn_without_a_history_reader_has_no_answers_on_record_and_marks_nothin
     assert "Cited in the answer" not in r.final.calls[0][-1].content
     assert "told_on" not in r.trace.output["evidence"][0]
     assert r.answer.process == Process("查看之前的回答 1 次，检索 1 次",
-                                       (ProcessItem("查看", "之前的回答", "没有记录"), SEARCHED))
+                                       (ProcessItem("", "未找到之前的回答", ""), SEARCHED))
 
 
 def test_tool_call_without_evidence_is_not_found(turn):

@@ -123,9 +123,9 @@ def _history(count: int) -> HistoryResult:
     (ReadHistoryArgs(keywords=["Megaspeed"]), _history(0), ProcessItem("未找到", "Megaspeed", "相关内容")),
     (ReadHistoryArgs(keywords=["Megaspeed", "兆速"]), HistoryResult([], {}, {}),
      ProcessItem("未找到", "Megaspeed、兆速", "相关内容")),
-    (ReadHistoryArgs(), _history(5), ProcessItem("查看", "最近 5 次回答", "")),
-    (ReadHistoryArgs(limit=3), _history(2), ProcessItem("查看", "最近 2 次回答", "")),
-    (ReadHistoryArgs(), HistoryResult([], {}, {}), ProcessItem("查看", "之前的回答", "没有记录")),
+    (ReadHistoryArgs(), _history(5), ProcessItem("", "查看最近 5 次回答", "")),
+    (ReadHistoryArgs(limit=3), _history(2), ProcessItem("", "查看最近 2 次回答", "")),
+    (ReadHistoryArgs(), HistoryResult([], {}, {}), ProcessItem("", "未找到之前的回答", "")),
 ])
 def test_record_of_read_history(args, result, expected):
     assert progress.record(_payload("read_history", args, result), TODAY, set()) == [expected]
@@ -225,8 +225,8 @@ def test_process_summary_counts_each_tool():
     assert progress.process([]) is None
 
 
-def test_process_summary_counts_past_answers_apart_from_follows_that_share_their_action():
-    listed = ("read_history", ProcessItem("查看", "最近 5 次回答", ""))
+def test_process_summary_counts_past_answers_by_tool_whatever_action_their_lines_show():
+    listed = ("read_history", ProcessItem("", "查看最近 5 次回答", ""))
     recalled = ("read_history", ProcessItem("回顾", "Megaspeed", "找到 2 次相关回答"))
     follow = ("check_follows", ProcessItem("查看", "谷歌的新动态", "最近 3 天内找到 1 条新闻"))
     search = ("search_news", ProcessItem("检索", "Megaspeed", "最近 14 天内找到 1 条新闻"))

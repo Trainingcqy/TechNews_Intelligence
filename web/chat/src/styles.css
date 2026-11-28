@@ -508,8 +508,9 @@ body {
 }
 
 /* The conversation spans the main area, so its scrollbar sits at the right edge of the window and its column stays
-   centered as the sidebar and the follow panel change the width. */
+   centered as the sidebar changes the width. --input-gap is the space below the input box. */
 .chat-container {
+    --input-gap: 40px;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -775,10 +776,15 @@ body {
     outline-offset: -2px;
 }
 
-.thread-delete {
+/* The delete button of a list row, in the conversation list and in the follow card. */
+.thread-delete,
+.follow-delete {
     flex: none;
     width: 32px;
     height: 32px;
+}
+
+.thread-delete {
     margin-right: 4px;
     visibility: hidden;
 }
@@ -794,7 +800,8 @@ body {
     }
 }
 
-.thread-delete .material-symbols-outlined {
+.thread-delete .material-symbols-outlined,
+.follow-delete .material-symbols-outlined {
     font-size: 18px;
 }
 
@@ -991,6 +998,42 @@ body {
     .scroll-fade {
         --fade-top: var(--scroll-edge);
         --fade-bottom: var(--scroll-edge);
+    }
+}
+
+/* The conversation fades before it reaches the input box: from --fade-size above the box down to half strength at its
+   top, half strength beside and below the box, out at the bottom of the page. The fade clears over the last
+   --fade-size of scrolling, so the end of a conversation shows in full; without scroll-driven animations the bottom
+   does not fade. The input bar has no top padding, so its height reaches from the bottom to the top of the box. */
+@property --input-fade {
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 0;
+}
+
+@keyframes input-fade {
+    from {
+        --input-fade: 1;
+    }
+}
+
+.messages.scroll-fade {
+    --fade-dim: calc(1 - 0.5 * var(--input-fade));
+    --fade-mask: linear-gradient(
+        transparent,
+        #000 var(--fade-top),
+        #000 calc(100% - var(--input-bar-height, 0px) - var(--fade-size)),
+        rgb(0 0 0 / var(--fade-dim)) calc(100% - var(--input-bar-height, 0px)),
+        rgb(0 0 0 / var(--fade-dim)) calc(100% - var(--input-gap)),
+        rgb(0 0 0 / calc(1 - var(--input-fade))) 100%
+    );
+    -webkit-mask-image: var(--fade-mask), linear-gradient(#000, #000);
+    mask-image: var(--fade-mask), linear-gradient(#000, #000);
+}
+
+@supports (animation-timeline: scroll(self)) {
+    .messages.scroll-fade {
+        animation-name: fade-top, input-fade;
     }
 }
 
@@ -1402,7 +1445,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    padding: 0 calc(44px + var(--scrollbar-size)) 40px;
+    padding: 0 calc(44px + var(--scrollbar-size)) var(--input-gap);
     pointer-events: none;
 }
 
@@ -1635,6 +1678,7 @@ body {
     .agent-page .chat-container.chat-empty {
         display: flex;
         flex-direction: column;
+        --input-gap: calc(12px + env(safe-area-inset-bottom));
         height: 100%;
         min-height: 0;
         padding-top: calc(56px + env(safe-area-inset-top));
@@ -1670,7 +1714,7 @@ body {
         flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
-        padding: var(--scroll-edge) 16px calc(var(--input-bar-height, 0px) + env(safe-area-inset-bottom) + var(--scroll-edge));
+        padding: var(--scroll-edge) 16px calc(var(--input-bar-height, 0px) + var(--scroll-edge));
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
     }
@@ -1688,9 +1732,9 @@ body {
         position: fixed;
         left: 0;
         right: 0;
-        bottom: env(safe-area-inset-bottom);
+        bottom: 0;
         z-index: 1002;
-        padding: 10px 16px 12px;
+        padding: 0 16px var(--input-gap);
     }
 }
 
@@ -1747,6 +1791,12 @@ body {
 
 .follow-form .input-group {
     flex: 1;
+}
+
+/* Unlike the sign-in field, this one keeps its gray line while typed in; the caret shows the focus. */
+.follow-form .input-group input:focus {
+    border-color: var(--swiss-line);
+    box-shadow: none;
 }
 
 .follow-list {

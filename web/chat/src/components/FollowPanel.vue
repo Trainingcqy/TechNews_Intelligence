@@ -139,7 +139,14 @@ onBeforeUnmount(() => listen(false));
       </div>
       <form id="follow-form" class="follow-form" @submit.prevent="addFollow">
         <div class="input-group">
-          <input id="follow-input" v-model="query" type="text" placeholder="添加关注的公司、产品或话题" required />
+          <input
+            id="follow-input"
+            v-model="query"
+            type="text"
+            placeholder="添加关注的公司、产品或话题"
+            autocomplete="off"
+            required
+          />
         </div>
         <button v-tip="'添加'" type="submit" class="icon-btn">
           <span class="material-symbols-outlined">add</span>
@@ -149,8 +156,8 @@ onBeforeUnmount(() => listen(false));
       <ul id="follow-list" class="follow-list scroll-fade">
         <li v-for="follow in follows" :key="follow.follow_id" class="follow-item">
           <span class="follow-query">{{ follow.query }}</span>
-          <button v-tip="'删除'" type="button" class="icon-btn" @click="removeFollow(follow.follow_id)">
-            <span class="material-symbols-outlined">close</span>
+          <button v-tip="'删除'" type="button" class="icon-btn follow-delete" @click="removeFollow(follow.follow_id)">
+            <span class="material-symbols-outlined">delete</span>
           </button>
         </li>
       </ul>

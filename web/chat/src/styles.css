@@ -514,6 +514,7 @@ body {
 }
 
 .chat-container {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -569,6 +570,26 @@ body {
     font-variation-settings: "FILL" 0, "wght" 540, "GRAD" 0, "opsz" 22;
 }
 
+/* A sidebar toggle shows a plain panel icon, and while hovered or focused the arrow of what a click does. */
+.icon-btn .toggle-action,
+.icon-btn:focus-visible .toggle-idle {
+    display: none;
+}
+
+.icon-btn:focus-visible .toggle-action {
+    display: inline-block;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .icon-btn:hover .toggle-idle {
+        display: none;
+    }
+
+    .icon-btn:hover .toggle-action {
+        display: inline-block;
+    }
+}
+
 /* ===== Side Navigation ===== */
 /* A row keeps its icon in a 40px box 16px from the edge, so the icons stay put while the width changes. */
 .side-nav {
@@ -584,7 +605,13 @@ body {
     overflow: hidden;
     background: var(--surface-color);
     box-shadow: inset -1px 0 0 var(--border-color);
-    transition: width var(--transition-smooth);
+    transition: width var(--transition-smooth), background-color var(--transition-smooth), box-shadow var(--transition-smooth);
+}
+
+/* Collapsed, the rail takes the page background, so only its buttons show. */
+.side-nav.collapsed {
+    background-color: transparent;
+    box-shadow: none;
 }
 
 .side-nav-toggle {
@@ -882,16 +909,27 @@ body {
 }
 
 /* ===== Messages Area ===== */
+/* The input bar floats over the conversation, which scrolls on beneath and below it; the bottom padding keeps the
+   last message clear of the bar. */
 .messages {
     --scroll-edge: 24px;
     flex: 1;
     overflow-y: auto;
-    padding: var(--scroll-edge) 20px;
+    padding: var(--scroll-edge) 20px calc(var(--input-bar-height, 0px) + var(--scroll-edge));
     display: flex;
     flex-direction: column;
     gap: 16px;
     scroll-behavior: smooth;
     position: relative;
+}
+
+/* The first question starts 64px below the top of the page. Gutters on both sides keep answers centered on the
+   input box, with or without a scrollbar. */
+@media (min-width: 769px) {
+    .messages {
+        padding-top: 64px;
+        scrollbar-gutter: stable both-edges;
+    }
 }
 
 .chat-container.chat-empty .messages {
@@ -1361,15 +1399,23 @@ body {
 }
 
 /* ===== Input Bar ===== */
+/* The bar spans the conversation and lets clicks and scrolling through to what shows around the box. Its side
+   padding adds 24px to the padding and scrollbar gutter of the messages, so the box sits 24px inside an answer on
+   each side. */
 .input-bar {
-    padding: 12px 20px 40px;
-    flex-shrink: 0;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 0 calc(44px + var(--scrollbar-size)) 40px;
+    pointer-events: none;
 }
 
 .chat-container.chat-empty .input-bar {
+    position: static;
     grid-row: 3;
     align-self: start;
-    padding: 0 20px;
+    padding-bottom: 0;
 }
 
 .agent-page #chat-view .input-bar-inner {
@@ -1377,20 +1423,22 @@ body {
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
 }
 
+/* Opaque, locked or not, so the conversation beneath never shows through the box. */
 .input-bar-inner {
     display: flex;
     align-items: flex-end;
     gap: 8px;
+    max-width: 712px;
+    margin: 0 auto;
     background: var(--input-bg);
     border: 1.5px solid var(--border-color);
     border-radius: 28px;
     padding: 6px 6px 6px 18px;
+    pointer-events: auto;
 }
 
 .input-bar-inner.quota-locked {
     background: color-mix(in srgb, var(--input-bg) 68%, #80868b 32%);
-    opacity: 0.9;
-    pointer-events: none;
     cursor: not-allowed;
 }
 
@@ -1428,12 +1476,6 @@ body {
 }
 
 @media (min-width: 769px) {
-    .input-bar {
-        align-self: center;
-        justify-self: center;
-        width: min(100%, 800px);
-    }
-
     #chat-input {
         font-size: 16px;
     }
@@ -1608,6 +1650,10 @@ body {
         min-height: 0;
         max-width: 100%;
         padding-top: calc(56px + env(safe-area-inset-top));
+    }
+
+    /* The fixed input bar has this space to itself until the conversation starts, which then scrolls on beneath it. */
+    .agent-page .chat-container.chat-empty {
         padding-bottom: calc(88px + env(safe-area-inset-bottom));
     }
 
@@ -1636,7 +1682,7 @@ body {
         flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
-        padding: var(--scroll-edge) 16px;
+        padding: var(--scroll-edge) 16px calc(var(--input-bar-height, 0px) + env(safe-area-inset-bottom) + var(--scroll-edge));
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
     }
@@ -1661,7 +1707,8 @@ body {
 }
 
 /* ===== Follow Panel ===== */
-/* Below the sidebar in stacking order, so it slides out from under the sidebar's edge. */
+/* It slides out from the sidebar's edge. The clip at its left edge keeps it out of the rail, which is see-through
+   when collapsed, and the negative right inset keeps its shadow. */
 .follow-panel {
     position: fixed;
     top: 0;
@@ -1677,17 +1724,19 @@ body {
     background: var(--surface-color);
     border-right: 1px solid var(--border-color);
     box-shadow: var(--shadow-md);
+    clip-path: inset(0 -32px 0 0);
     transition: left var(--transition-smooth);
 }
 
 .follow-slide-enter-active,
 .follow-slide-leave-active {
-    transition: transform var(--transition-smooth);
+    transition: transform var(--transition-smooth), clip-path var(--transition-smooth);
 }
 
 .follow-slide-enter-from,
 .follow-slide-leave-to {
     transform: translateX(-100%);
+    clip-path: inset(0 -32px 0 100%);
 }
 
 .follow-panel-head,

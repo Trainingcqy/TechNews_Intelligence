@@ -18,7 +18,8 @@ defineEmits(["toggle", "new-chat", "follow", "open", "delete", "theme", "logout"
 <template>
   <nav class="side-nav" :class="{ collapsed }" aria-label="侧边栏">
     <button v-tip="toggleLabel" type="button" class="icon-btn side-nav-toggle" @click="$emit('toggle')">
-      <span class="material-symbols-outlined">menu</span>
+      <span class="material-symbols-outlined toggle-idle">dock_to_right</span>
+      <span class="material-symbols-outlined toggle-action">{{ collapsed ? "left_panel_open" : "left_panel_close" }}</span>
     </button>
 
     <button

@@ -41,7 +41,9 @@ const isMobile = ref(mobileQuery.matches);
 const pendingDelete = ref(null);
 const deleting = ref(false);
 const deleteError = ref("");
+const containerEl = ref(null);
 const messagesEl = ref(null);
+const inputBarEl = ref(null);
 const inputEl = ref(null);
 const dialogEl = ref(null);
 let editorEl = null;
@@ -55,7 +57,7 @@ let activeRequest = null;
 const sendDisabled = computed(() => inputLocked.value || !input.value.trim() || historyLoading.value);
 // The phone layout always shows the full sidebar inside the drawer.
 const rail = computed(() => navCollapsed.value && !isMobile.value);
-const navToggleLabel = computed(() => (rail.value ? "展开菜单" : "收起菜单"));
+const navToggleLabel = computed(() => (rail.value ? "打开边栏" : "关闭边栏"));
 const newChatDisabled = computed(() => loading.value || (!started.value && !session.threadId));
 // Only the last question can be edited, because editing replaces its turn.
 const lastQuestionId = computed(() => {
@@ -609,8 +611,20 @@ watch(
   { flush: "post" }
 );
 
-onMounted(() => mobileQuery.addEventListener("change", onMobileChange));
-onBeforeUnmount(() => mobileQuery.removeEventListener("change", onMobileChange));
+// The input bar floats over the conversation, which keeps the bar's height clear below its last message.
+const inputBarObserver = new ResizeObserver(([entry]) => {
+  containerEl.value.style.setProperty("--input-bar-height", `${entry.borderBoxSize[0].blockSize}px`);
+});
+
+onMounted(() => {
+  mobileQuery.addEventListener("change", onMobileChange);
+  inputBarObserver.observe(inputBarEl.value, { box: "border-box" });
+});
+
+onBeforeUnmount(() => {
+  mobileQuery.removeEventListener("change", onMobileChange);
+  inputBarObserver.disconnect();
+});
 
 if (session.token) {
   fetchQuota();
@@ -653,15 +667,16 @@ if (session.token) {
 
     <div class="chat-main">
       <header class="mobile-bar">
-        <button v-tip="'展开菜单'" type="button" class="icon-btn" @click="drawerOpen = true">
-          <span class="material-symbols-outlined">menu</span>
+        <button v-tip="'打开边栏'" type="button" class="icon-btn" @click="drawerOpen = true">
+          <span class="material-symbols-outlined toggle-idle">dock_to_right</span>
+          <span class="material-symbols-outlined toggle-action">left_panel_open</span>
         </button>
         <button v-tip="'新对话'" type="button" class="icon-btn" :disabled="newChatDisabled" @click="newChat">
           <span class="material-symbols-outlined">edit_square</span>
         </button>
       </header>
 
-      <div class="chat-container" :class="{ 'chat-empty': !started }">
+      <div ref="containerEl" class="chat-container" :class="{ 'chat-empty': !started }">
         <div id="messages" ref="messagesEl" class="messages" :class="{ 'scroll-fade': started }">
           <div v-if="!started" class="welcome-msg">
             <h1 class="welcome-title">TechNews Intelligence</h1>
@@ -772,7 +787,7 @@ if (session.token) {
           </template>
         </div>
 
-        <div class="input-bar">
+        <div ref="inputBarEl" class="input-bar">
           <div class="input-bar-inner" :class="{ 'quota-locked': inputLocked }">
             <textarea
               id="chat-input"

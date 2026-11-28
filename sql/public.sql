@@ -84,9 +84,15 @@ CREATE TABLE IF NOT EXISTS public.agent_runs (
     output JSONB NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT chk_agent_runs_channel CHECK (channel IN ('web', 'telegram', 'cli', 'eval')),
     CONSTRAINT chk_agent_runs_status CHECK (status IN (
-        'running', 'answered', 'insufficient', 'direct', 'not_found', 'blocked', 'error'
+        'running', 'answered', 'insufficient', 'direct', 'not_found', 'blocked', 'error', 'stopped'
     ))
 );
+
+-- CREATE TABLE IF NOT EXISTS leaves an existing table as it is, so the status check is (re)created here.
+ALTER TABLE public.agent_runs DROP CONSTRAINT IF EXISTS chk_agent_runs_status;
+ALTER TABLE public.agent_runs ADD CONSTRAINT chk_agent_runs_status CHECK (status IN (
+    'running', 'answered', 'insufficient', 'direct', 'not_found', 'blocked', 'error', 'stopped'
+));
 
 CREATE TABLE IF NOT EXISTS public.agent_trace_spans (
     request_id VARCHAR(64) NOT NULL REFERENCES public.agent_runs(request_id) ON DELETE CASCADE,

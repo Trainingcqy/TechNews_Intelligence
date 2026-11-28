@@ -13,6 +13,7 @@ class ChatRequest(BaseModel):
     message: str
     thread_id: str | None = None
     timezone: str | None = Field(default=None, max_length=64)  # the browser's IANA zone, e.g. Asia/Shanghai
+    replace_last: bool = False  # replace the thread's last turn instead of adding one
 
 
 class FollowRequest(BaseModel):
@@ -42,7 +43,7 @@ class ProcessRecord(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     thread_id: str
-    kind: str = "answered"             # Answer.status 的六个取值
+    kind: str = "answered"             # Answer.status 的七个取值
     sources: list[SourceItem] = Field(default_factory=list)
     process: ProcessRecord | None = None
     remaining: int

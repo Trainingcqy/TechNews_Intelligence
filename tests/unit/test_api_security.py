@@ -755,6 +755,49 @@ def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.
     ]
 
 
+def test_stop_route_stops_a_running_turn_of_the_token(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    calls: list[tuple] = []
+
+    def _stop(request_id, *, token_id):  # noqa: ANN001
+        calls.append((request_id, token_id))
+        return request_id == "req-1"
+
+    monkeypatch.setattr(api_mod.chat_service, "stop_turn", _stop)
+    api_mod.app.dependency_overrides[api_mod._verify_token] = lambda: {"id": 3, "email": "a@example.com"}  # pylint: disable=protected-access
+    client = TestClient(api_mod.app)
+    try:
+        stopped = client.post("/chat-stream/req-1/stop")
+        missing = client.post("/chat-stream/req-2/stop")
+    finally:
+        api_mod.app.dependency_overrides.clear()
+        client.close()
+
+    assert (stopped.status_code, stopped.json()) == (200, {"status": "stopping", "request_id": "req-1"})
+    assert (missing.status_code, missing.json()) == (404, {"detail": "chat_turn_not_running"})
+    assert calls == [("req-1", 3), ("req-2", 3)]
+
+
+def test_threads_route_lists_the_token_threads(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    calls: list[tuple] = []
+    threads = [{"thread_id": "thread-001", "subject": "hello"}]
+
+    def _list(token_id, limit):  # noqa: ANN001
+        calls.append((token_id, limit))
+        return threads
+
+    monkeypatch.setattr(api_mod.chat_service, "list_threads_for_token", _list)
+    api_mod.app.dependency_overrides[api_mod._verify_token] = lambda: {"id": 3, "email": "a@example.com"}  # pylint: disable=protected-access
+    client = TestClient(api_mod.app)
+    try:
+        response = client.get("/threads")
+    finally:
+        api_mod.app.dependency_overrides.clear()
+        client.close()
+
+    assert (response.status_code, response.json()) == (200, {"threads": threads})
+    assert calls == [(3, api_mod.chat_service.WEB_THREAD_LIST_LIMIT)]
+
+
 def test_follow_list_failure_is_an_error_not_an_empty_list(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     def _broken(user_key, limit):  # noqa: ANN001
         raise RuntimeError("database unavailable")

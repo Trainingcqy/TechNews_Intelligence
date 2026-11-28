@@ -148,3 +148,72 @@ def test_load_history_for_token_raises_when_thread_not_owned(monkeypatch: pytest
 
     with pytest.raises(conv_mod.ConversationThreadNotFoundError):
         conv_mod.load_history_for_token("thread-001", 8)
+
+
+def test_list_threads_for_token_lists_owned_threads_with_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    cursor = _FakeCursor(fetchall_value=[("thread-002", "Nvidia earnings"), ("thread-001", None)])
+    monkeypatch.setattr(conv_mod, "db_cursor", _cursor_context(cursor))
+
+    threads = conv_mod.list_threads_for_token(7, limit=100)
+
+    assert threads == [
+        {"thread_id": "thread-002", "subject": "Nvidia earnings"},
+        {"thread_id": "thread-001", "subject": ""},
+    ]
+    sql, params = cursor.calls[0]
+    assert "channel = 'web'" in sql
+    assert "metadata->>'token_id' = %s" in sql
+    assert "last_message_at IS NOT NULL" in sql
+    assert "ORDER BY last_message_at DESC" in sql
+    assert params == ("7", 100)
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        ([(12, "model"), (11, "user")], (11, 12)),
+        ([(12, "user"), (11, "model")], None),
+        ([(11, "user")], None),
+        ([], None),
+    ],
+)
+def test_last_turn_for_token_returns_the_closing_pair(monkeypatch: pytest.MonkeyPatch, rows, expected) -> None:  # noqa: ANN001
+    cursor = _FakeCursor(fetchone_values=[(1,)], fetchall_value=rows)
+    monkeypatch.setattr(conv_mod, "db_cursor", _cursor_context(cursor))
+
+    assert conv_mod.last_turn_for_token("thread-001", 7) == expected
+    assert "metadata->>'token_id' = %s" in cursor.calls[0][0]
+    assert cursor.calls[1][1] == ("thread-001",)
+
+
+def test_replace_last_turn_for_token_swaps_the_pair_in_one_transaction(monkeypatch: pytest.MonkeyPatch) -> None:
+    first, second = (datetime(2026, 11, 28, 12, 0, second, tzinfo=timezone.utc) for second in (1, 2))
+    cursor = _FakeCursor(fetchone_values=[(1,), (first,), (second,)], fetchall_value=[(12,), (11,)])
+    monkeypatch.setattr(conv_mod, "Json", lambda value: value)
+    monkeypatch.setattr(conv_mod, "db_transaction", _transaction_context(cursor))
+    messages = [{"role": "user", "parts": [{"text": "新问题"}]}, {"role": "model", "parts": [{"text": "新回答"}]}]
+
+    conv_mod.replace_last_turn_for_token(
+        "thread-001", 7, (11, 12), messages, subject="新问题", metadata={"request_id": "req-2"}
+    )
+
+    sql = [call[0] for call in cursor.calls]
+    assert "FOR UPDATE" in sql[0] and cursor.calls[0][1] == ("thread-001", "7")
+    assert "ORDER BY id DESC" in sql[1]
+    assert "SET subject = %s" in sql[2] and "NOT EXISTS" in sql[2] and "id < %s" in sql[2]
+    assert cursor.calls[2][1] == ("新问题", "thread-001", "thread-001", 11)
+    assert "DELETE FROM public.conversation_messages" in sql[3] and cursor.calls[3][1] == (11, 12)
+    assert [call[1][1] for call in cursor.calls[4:6]] == ["user", "model"]
+    assert cursor.calls[4][1][4] == {"request_id": "req-2"}
+    assert "SET last_message_at = %s" in sql[6] and cursor.calls[6][1] == (second, "thread-001")
+
+
+def test_replace_last_turn_for_token_refuses_a_turn_that_changed(monkeypatch: pytest.MonkeyPatch) -> None:
+    cursor = _FakeCursor(fetchone_values=[(1,)], fetchall_value=[(13,), (12,)])
+    monkeypatch.setattr(conv_mod, "Json", lambda value: value)
+    monkeypatch.setattr(conv_mod, "db_transaction", _transaction_context(cursor))
+
+    with pytest.raises(conv_mod.ConversationTurnChangedError):
+        conv_mod.replace_last_turn_for_token("thread-001", 7, (11, 12), [{"role": "user", "parts": []}])
+
+    assert len(cursor.calls) == 2

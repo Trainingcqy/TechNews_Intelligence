@@ -4,6 +4,9 @@ Transport-agnostic DB primitives for:
 - creating threads
 - appending conversation messages
 - loading history in current `history` shape
+- listing a token's threads
+- replacing a thread's last turn
+- deleting a thread with its messages
 """
 
 from __future__ import annotations
@@ -22,6 +25,10 @@ MAX_HISTORY_LOAD_LIMIT = 500
 
 class ConversationThreadNotFoundError(LookupError):
     """Raised when a thread_id cannot be found."""
+
+
+class ConversationTurnChangedError(RuntimeError):
+    """Raised when the turn to replace no longer ends its thread."""
 
 
 def create_thread(
@@ -144,11 +151,153 @@ def load_history_for_token(
     return [_history_item_from_row(row) for row in rows]
 
 
+def list_threads_for_token(token_id: int | str, *, limit: int) -> list[dict[str, Any]]:
+    """List the web threads of the given token that hold messages, most recently active first.
+
+    A thread is created before its first turn runs. When that turn fails nothing is appended and the page never
+    receives the thread_id, so a thread without messages is left out.
+    """
+    token_key = _normalize_token_id(token_id)
+
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT thread_id, subject
+            FROM public.conversation_threads
+            WHERE channel = 'web'
+              AND metadata->>'token_id' = %s
+              AND last_message_at IS NOT NULL
+            ORDER BY last_message_at DESC
+            LIMIT %s
+            """,
+            (token_key, limit),
+        )
+        rows = cur.fetchall()
+
+    return [{"thread_id": str(thread_id), "subject": str(subject or "")} for thread_id, subject in rows]
+
+
+def last_turn_for_token(thread_id: str, token_id: int | str) -> tuple[int, int] | None:
+    """Return the ids of the user and model messages that end a web thread owned by the given token.
+
+    None when the thread does not end with a user message followed by a model message.
+    """
+    thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
+    token_key = _normalize_token_id(token_id)
+
+    with db_cursor() as (_, cur):
+        _assert_web_thread_token_owned(cur, thread_key, token_key)
+        cur.execute(
+            """
+            SELECT id, role
+            FROM public.conversation_messages
+            WHERE thread_id = %s
+            ORDER BY id DESC
+            LIMIT 2
+            """,
+            (thread_key,),
+        )
+        rows = cur.fetchall()
+
+    if [role for _, role in rows] != ["model", "user"]:
+        return None
+    return int(rows[1][0]), int(rows[0][0])
+
+
+def replace_last_turn_for_token(
+    thread_id: str,
+    token_id: int | str,
+    turn_ids: tuple[int, int],
+    messages: list[dict[str, Any]],
+    *,
+    subject: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Replace the turn given by its user and model message ids with new messages, in one transaction.
+
+    The turn must still end the thread, or ConversationTurnChangedError is raised and nothing changes. When it is the
+    thread's first turn, the thread takes the new subject.
+    """
+    thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
+    token_key = _normalize_token_id(token_id)
+    normalized = [_normalize_message(message) for message in messages]
+    metadata_value = _normalize_metadata(metadata)
+    user_id, model_id = turn_ids
+
+    with db_transaction() as (_, cur):
+        # The row lock makes a second replacement of the same turn wait, then find the turn changed.
+        cur.execute(
+            """
+            SELECT 1
+            FROM public.conversation_threads
+            WHERE thread_id = %s
+              AND channel = 'web'
+              AND metadata->>'token_id' = %s
+            FOR UPDATE
+            """,
+            (thread_key, token_key),
+        )
+        if cur.fetchone() is None:
+            raise ConversationThreadNotFoundError(f"thread not found: {thread_id}")
+
+        cur.execute(
+            """
+            SELECT id
+            FROM public.conversation_messages
+            WHERE thread_id = %s
+            ORDER BY id DESC
+            LIMIT 2
+            """,
+            (thread_key,),
+        )
+        if [row[0] for row in cur.fetchall()] != [model_id, user_id]:
+            raise ConversationTurnChangedError(f"last turn changed: {thread_id}")
+
+        cur.execute(
+            """
+            UPDATE public.conversation_threads
+            SET subject = %s
+            WHERE thread_id = %s
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.conversation_messages WHERE thread_id = %s AND id < %s
+              )
+            """,
+            (_normalize_subject(subject), thread_key, thread_key, user_id),
+        )
+        cur.execute(
+            "DELETE FROM public.conversation_messages WHERE id IN (%s, %s)",
+            (user_id, model_id),
+        )
+        created_at = None
+        for role, parts, payload in normalized:
+            cur.execute(
+                """
+                INSERT INTO public.conversation_messages (
+                    thread_id, role, parts, payload, metadata
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING created_at
+                """,
+                (thread_key, role, Json(parts), Json(payload), Json(metadata_value)),
+            )
+            created_at = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            UPDATE public.conversation_threads
+            SET last_message_at = %s, updated_at = NOW()
+            WHERE thread_id = %s
+            """,
+            (created_at, thread_key),
+        )
+
+
 def delete_thread_for_token(thread_id: str, token_id: int | str) -> None:
     """Delete a web thread only when owned by the given token.
 
     The FK constraint on conversation_messages is ON DELETE CASCADE, so removing
-    the thread row purges its messages in one statement.
+    the thread row purges its messages in one statement. The thread's request traces
+    in agent_runs are kept: they serve debugging and are not part of the conversation.
     """
     thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
     token_key = _normalize_token_id(token_id)

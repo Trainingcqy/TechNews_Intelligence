@@ -149,6 +149,18 @@ async def chat_stream(
     )
 
 
+@app.post("/chat-stream/{request_id}/stop")
+def stop_chat_stream(request_id: str, token_info: dict = Depends(_verify_token)):
+    if not chat_service.stop_turn(request_id, token_id=int(token_info["id"])):
+        raise HTTPException(status_code=404, detail="chat_turn_not_running")
+    return {"status": "stopping", "request_id": request_id}
+
+
+@app.get("/threads")
+def get_threads(token_info: dict = Depends(_verify_token)):
+    return {"threads": chat_service.list_threads(token_id=int(token_info["id"]))}
+
+
 @app.get("/history/{thread_id}")
 def get_history(thread_id: str, token_info: dict = Depends(_verify_token)):
     messages = chat_service.load_thread_history_or_404(

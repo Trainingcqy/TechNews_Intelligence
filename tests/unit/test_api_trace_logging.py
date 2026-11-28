@@ -60,8 +60,8 @@ def test_chat_logs_and_forwards_trace_request_id(
     captured: dict[str, str] = {}
 
     def _fake_run_turn(_question, _history=None, *, channel, thread_id=None, request_id=None, user_key=None,
-                       zone=None, on_event=None):
-        del user_key, zone, on_event
+                       zone=None, on_event=None, stop=None):
+        del user_key, zone, on_event, stop
         captured["request_id"] = str(request_id)
         captured["thread_id"] = str(thread_id)
         captured["channel"] = channel
@@ -104,8 +104,8 @@ def test_chat_stream_logs_and_forwards_trace_request_id(
     captured: dict[str, str] = {}
 
     def _fake_run_turn(_question, _history=None, *, channel, thread_id=None, request_id=None, user_key=None,
-                       zone=None, on_event=None):
-        del user_key
+                       zone=None, on_event=None, stop=None):
+        del user_key, stop
         on_event(Progress("正在理解问题"))
         captured["request_id"] = str(request_id)
         captured["thread_id"] = str(thread_id)

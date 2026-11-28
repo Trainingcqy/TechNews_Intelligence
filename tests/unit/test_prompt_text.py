@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -12,6 +12,7 @@ from agent.prompts import FINAL_SYSTEM_PROMPT
 from agent.tools.registry import tool_schemas
 from agent.types import Article, StoryStats
 from common import prompt_text
+from common.urls import url_key
 
 # Every prompt and the placeholders the code fills in it.
 PLACEHOLDERS = {
@@ -106,12 +107,18 @@ def test_the_synthesis_prompt_and_the_evidence_block_use_the_same_wording():
                       kind=None, publisher="OpenAI", publisher_kind="official", lang="en", published_at=published,
                       first_seen_at=published, body_level="excerpt", story_id=1)
     registry = EvidenceRegistry()
-    registry.add_article(article, "summary", StoryStats(1, 1, 1, ("official",), published, published))
+    evidence = registry.add_article(article, "summary", StoryStats(1, 1, 1, ("official",), published, published))
+    registry.told[url_key(article.url)] = date(2026, 11, 10)
+    registry.follows[evidence.eid] = "OpenAI, since 2026-11-01"
+    registry.follows_without_news.append("Anthropic (last 14 days)")
     block, _ = render_for_synthesis(registry, 60000)
     # What the prompt quotes, and what the block shows for it.
     for quoted, shown in [
         ('"Coverage:"', "Coverage: "),
         ('"No full text stored"', "No full text stored"),
+        ('"Cited in the answer on YYYY-MM-DD"', "Cited in the answer on 2026-11-10"),
+        ('"Follow:"', "Follow: OpenAI, since 2026-11-01"),
+        ('"Follows without new reports:"', "Follows without new reports: Anthropic (last 14 days)"),
         ('publisher role is "official"', ", official |"),
     ]:
         assert quoted in FINAL_SYSTEM_PROMPT

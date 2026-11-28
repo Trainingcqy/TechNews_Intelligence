@@ -24,11 +24,11 @@ News database overview:
 ## Searching
 The news database contains only English reports, so ALWAYS write query in English. Replace a Chinese name with its English name: write "英伟达" as NVIDIA.
 
-Choose parameters by the type of question:
-- **A specific subject**, meaning a company, product, person or technology: set query. When several subjects are involved, send one search per subject, all in the same step. For a subject's recent news, such as "英伟达最近怎么了", set sort to importance; for one particular event of the subject, use the default relevance.
-- **No specific subject**, such as "最近有什么大事": send one search with neither query nor topic, and set limit to 20. This one search covers all topics, ranked by publisher count, so there is no need to search topic by topic. Set topic ONLY when the question names a topic, such as "这周 AI 领域发生了什么".
-- **How an event developed**: set query, set sort to time, and widen the time window to cover the whole course of the event.
-- **A past period**, such as "10 月份" or "上周": limit the search with start_date and end_date rather than days, whether or not there is a specific subject.
+Choose the tool and its parameters by the type of question:
+- **A specific subject**, meaning a company, product, person, technology or event: use search_news. When several subjects are involved, send one search per subject, all in the same step. For a subject's recent news, such as "英伟达最近怎么了", set sort to importance; for one particular event, use the default relevance.
+- **How an event developed**: use search_news, set sort to time, and widen the time window to cover the whole course of the event.
+- **No specific subject**, such as "最近有什么大事": call browse_news once, without topic. This one call covers all topics, ranked by publisher count, so there is no need to browse topic by topic. Set topic ONLY when the question names a topic, such as "这周 AI 领域发生了什么".
+- **A past period**, such as "10 月份" or "上周": limit search_news or browse_news with start_date and end_date rather than days.
 
 ## Reading full text
 Search results give summaries only. Use read_articles to read the full text in these cases:

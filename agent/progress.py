@@ -9,16 +9,24 @@ from urllib.parse import urlsplit
 from agent.config import user_zone
 from agent.evidence import EvidenceRegistry
 from agent.tools.follows import FollowCheck
-from agent.tools.registry import PreparedCall, ReadArticlesArgs, SearchNewsArgs, ToolPayload, story_hits
+from agent.tools.registry import (
+    BrowseNewsArgs,
+    PreparedCall,
+    ReadArticlesArgs,
+    SearchNewsArgs,
+    ToolPayload,
+    story_hits,
+)
 from agent.types import Article, Process, ProcessItem, Progress
 from common.taxonomy import KINDS, TOPICS
 
 UNDERSTANDING = Progress("正在理解问题")
 
 CHECK, SEARCH, READ = "查看", "检索", "阅读"
+SEARCH_TOOLS = ("search_news", "browse_news")
 
 
-def window(args: SearchNewsArgs, today: date) -> str:
+def window(args: SearchNewsArgs | BrowseNewsArgs, today: date) -> str:
     start, end = args.start_date, args.end_date
     if start is None:
         return f"最近 {args.days} 天"
@@ -29,9 +37,9 @@ def window(args: SearchNewsArgs, today: date) -> str:
     return f"{start} 至 {end}"
 
 
-def subject(args: SearchNewsArgs, today: date) -> str:
-    """What a search looked for: its query, or for a search without one, the window and topic it browsed."""
-    if args.query:
+def subject(args: SearchNewsArgs | BrowseNewsArgs, today: date) -> str:
+    """What a search looked for: its query, or for a browse, the window and topic it browsed."""
+    if isinstance(args, SearchNewsArgs):
         return args.query
     span = window(args, today)
     topic = TOPICS[args.topic] if args.topic else ""
@@ -40,7 +48,7 @@ def subject(args: SearchNewsArgs, today: date) -> str:
 
 def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[str], today: date) -> Progress:
     """The status line of a step's calls while they run."""
-    searches = [call.args for call in calls if call.name == "search_news"]
+    searches = [call.args for call in calls if call.name in SEARCH_TOOLS]
     reads = [call.args for call in calls if call.name == "read_articles"]
     checking = any(call.name == "check_follows" for call in calls)
     actions = []
@@ -63,8 +71,8 @@ def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[st
 def found(payloads: list[ToolPayload]) -> str:
     """What a step's calls found, shown while the gather model weighs it.
 
-    A read, or a search without query, finishes in about no time, so the status line of its step is replaced before it
-    is seen; its result shows here instead.
+    A read, or a browse, finishes in about no time, so the status line of its step is replaced before it is seen; its
+    result shows here instead.
     """
     stories: set[int] | None = None
     reads: set[int] | None = None
@@ -73,7 +81,7 @@ def found(payloads: list[ToolPayload]) -> str:
             reads = set() if reads is None else reads
             if payload.ok:
                 reads.update(item.article.article_id for item in payload.data.items if item.error is None)
-        elif payload.name in ("search_news", "check_follows"):
+        elif payload.name in (*SEARCH_TOOLS, "check_follows"):
             stories = set() if stories is None else stories
             if payload.ok:
                 stories.update(hit.stats.story_id for hit in story_hits(payload))
@@ -96,10 +104,10 @@ def writing(reports: int) -> Progress:
 def record(payload: ToolPayload, today: date, read_ids: set[int]) -> list[ProcessItem]:
     """The process items of an executed call. read_ids holds the articles listed so far, so a second read of one is
     left out."""
-    if payload.name == "search_news":
+    if payload.name in SEARCH_TOOLS:
         args = payload.args
-        # A search without query names its window in the subject.
-        span = window(args, today) if args.query else ""
+        # A browse names its window in the subject.
+        span = window(args, today) if isinstance(args, SearchNewsArgs) else ""
         outcome = _outcome(span, payload.data.hits if payload.ok else [], not payload.ok)
         filters = _filters(args)
         meta = f"仅{'、'.join(filters)}，{outcome}" if filters else outcome
@@ -142,9 +150,9 @@ def _read_titles(reads: list[ReadArticlesArgs], registry: EvidenceRegistry) -> l
     return titles + [(urlsplit(url).hostname or url).removeprefix("www.") for args in reads for url in args.urls]
 
 
-def _filters(args: SearchNewsArgs) -> list[str]:
+def _filters(args: SearchNewsArgs | BrowseNewsArgs) -> list[str]:
     names = []
-    if args.query and args.topic:
+    if isinstance(args, SearchNewsArgs) and args.topic:
         names.append(f"{TOPICS[args.topic]}领域")
     if args.kind:
         names.append(f"{KINDS[args.kind]}类")

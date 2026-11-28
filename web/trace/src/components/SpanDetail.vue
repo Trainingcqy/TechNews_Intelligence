@@ -11,7 +11,9 @@ const props = defineProps({
 });
 
 const output = computed(() => props.node.output || {});
-const isSearch = computed(() => props.node.kind === "tool" && props.node.name === "search_news");
+const isSearch = computed(
+  () => props.node.kind === "tool" && (props.node.name === "search_news" || props.node.name === "browse_news")
+);
 const isRead = computed(() => props.node.kind === "tool" && props.node.name === "read_articles");
 const isRetrievalStage = computed(() => props.node.kind === "retrieval" || props.node.kind === "rerank");
 

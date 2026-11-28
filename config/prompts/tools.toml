@@ -1,19 +1,32 @@
 [search_news]
 description = '''
-Search the news database for reports. Reports on the same event are grouped into a story. For each story, the result gives the evidence id, title, publisher, date and summary of its lead report, the number of reports and publishers in the story, and the ids and titles of its other reports.
-
-With query, the tool finds stories related to it; without query, it browses the stories in the time window, ranked by the number of publishers that reported them.'''
+Search the news database for stories about a specific subject: a company, product, person, technology or event. Reports on the same event are grouped into a story. For each story, the result gives the evidence id, title, publisher, date and summary of its lead report, the number of reports and publishers in the story, and the ids and titles of its other reports.'''
 no_result_hint = 'You can widen the time window, use different English wording, or remove filters, and try again.'
 
 [search_news.fields]
-query = 'Search terms, which MUST be in English. Leave empty to browse.'
+query = 'Search terms, which MUST be in English.'
 days = 'Time window: the number of most recent days. Ignored when start_date is set.'
 start_date = 'Start date of a past period, in YYYY-MM-DD format.'
 end_date = 'End date of the period, inclusive. MUST be set together with start_date. When empty, the period ends today.'
 topic = 'Topic. Set it ONLY when the question names a topic; when empty, all topics are covered.'
-kind = 'Article type. When empty, browsing covers only news, release and research, and a search with query covers all types.'
+kind = 'Article type. When empty, all types are covered.'
 publisher_kind = 'official for official releases only, media for media reports only. When empty, both are included.'
-sort = 'relevance ranks by relevance to query; it is the default when query is set and MUST be used with query. importance ranks by the number of publishers and is the default without query; with query, stories whose titles mention the query and that several publishers reported come first, and relevance fills the remaining places. time ranks by publication time, newest first.'
+sort = 'relevance ranks by relevance to query. importance puts first the stories whose titles mention query and that several publishers reported, and relevance fills the remaining places. time ranks by publication time, newest first.'
+limit = 'Number of stories to return.'
+
+[browse_news]
+description = '''
+Browse the stories in the news database within a time window, without a specific subject. By default, stories are ranked by the number of publishers that reported them. Reports on the same event are grouped into a story. For each story, the result gives the evidence id, title, publisher, date and summary of its lead report, the number of reports and publishers in the story, and the ids and titles of its other reports.'''
+no_result_hint = 'You can widen the time window or remove filters, and try again.'
+
+[browse_news.fields]
+days = 'Time window: the number of most recent days. Ignored when start_date is set.'
+start_date = 'Start date of a past period, in YYYY-MM-DD format.'
+end_date = 'End date of the period, inclusive. MUST be set together with start_date. When empty, the period ends today.'
+topic = 'Topic to browse. Set it ONLY when the question names a topic; when empty, all topics are covered.'
+kind = 'Article type. When empty, only news, release and research are covered.'
+publisher_kind = 'official for official releases only, media for media reports only. When empty, both are included.'
+sort = 'importance ranks by the number of publishers that reported the story. time ranks by the time of the latest report in the story, newest first.'
 limit = 'Number of stories to return.'
 
 [read_articles]

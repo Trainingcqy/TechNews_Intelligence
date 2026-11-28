@@ -1,4 +1,4 @@
-"""search_news: story-level search and its registration and text for the gather model."""
+"""search_news and browse_news: story-level search and browsing, their registration and text for the gather model."""
 
 from __future__ import annotations
 
@@ -12,15 +12,23 @@ from agent.types import StoryHit, StoryStats
 from common import prompt_text
 
 if TYPE_CHECKING:
-    from .registry import SearchNewsArgs, ToolOutcome
+    from .registry import BrowseNewsArgs, SearchNewsArgs, ToolOutcome
 
 INDENT = "     "
 SORT_LABELS = {"relevance": "by relevance", "importance": "by importance", "time": "by time"}
 
 
 def run_search_news(args: SearchNewsArgs) -> SearchResult:
+    return _search(args, args.query)
+
+
+def run_browse_news(args: BrowseNewsArgs) -> SearchResult:
+    return _search(args, None)
+
+
+def _search(args: SearchNewsArgs | BrowseNewsArgs, query: str | None) -> SearchResult:
     return search_stories(
-        query=args.query, days=args.days, start_date=args.start_date, end_date=args.end_date,
+        query=query, days=args.days, start_date=args.start_date, end_date=args.end_date,
         topic=args.topic, kinds=(args.kind,) if args.kind else None,
         publisher_kind=args.publisher_kind, sort=args.sort, limit=args.limit,
     )
@@ -41,29 +49,35 @@ def search_trace_output(result: SearchResult) -> dict:
 
 
 def commit_search_news(args: SearchNewsArgs, result: SearchResult, *, registry) -> ToolOutcome:
+    return _commit("search_news", f'query="{args.query}", ' + _scope(args), args, result, registry)
+
+
+def commit_browse_news(args: BrowseNewsArgs, result: SearchResult, *, registry) -> ToolOutcome:
+    return _commit("browse_news", _scope(args), args, result, registry)
+
+
+def _commit(name: str, scope: str, args: SearchNewsArgs | BrowseNewsArgs, result: SearchResult,
+            registry) -> ToolOutcome:
     # registry.py imports this module, so the import is deferred to call time.
     from .registry import ToolOutcome
 
-    scope = _scope(args)
     if not result.hits:
-        text = f"search_news found no results, {scope}. " + prompt_text.text("tools.search_news.no_result_hint")
-        return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text=text)
+        text = f"{name} found no results, {scope}. " + prompt_text.text(f"tools.{name}.no_result_hint")
+        return ToolOutcome(index=0, call_id="", name=name, ok=True, gather_text=text)
 
     stories = counted(len(result.hits), "story", "stories")
-    lines = [f"search_news results, {scope}, {SORT_LABELS[args.sort]}: {stories}"]
+    lines = [f"{name} results, {scope}, {SORT_LABELS[args.sort]}: {stories}"]
     for hit in result.hits:
         lead = registry.add_article(hit.lead, "summary", hit.stats)
         related = [registry.add_article(article, "listed") for article in hit.related]
         lines.extend(render_hit(hit, lead.eid, [e.eid for e in related], registry.seen_dates.get(hit.stats.story_id)))
     if result.weak_match:
         lines.append("Note: the top result is a weak match and may be off topic.")
-    return ToolOutcome(index=0, call_id="", name="search_news", ok=True, gather_text="\n".join(lines))
+    return ToolOutcome(index=0, call_id="", name=name, ok=True, gather_text="\n".join(lines))
 
 
-def _scope(args: SearchNewsArgs) -> str:
+def _scope(args: SearchNewsArgs | BrowseNewsArgs) -> str:
     parts = []
-    if args.query is not None:
-        parts.append(f'query="{args.query}"')
     for name in ("topic", "kind", "publisher_kind"):
         value = getattr(args, name)
         if value is not None:

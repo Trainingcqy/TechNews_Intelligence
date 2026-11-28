@@ -174,6 +174,21 @@ def test_turn_runs_in_the_user_zone(turn, monkeypatch):
     assert r.answer.sources[0].published_at == "2026-11-11"
 
 
+def test_browse_turn(turn, monkeypatch):
+    hit = StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=None)
+    monkeypatch.setattr(registry, "run_browse_news", lambda args: SearchResult(hits=[hit], weak_match=False))
+
+    r = turn([_calls(("c1", "browse_news", {"topic": "ai", "days": 7})), DONE], [ANSWERED])
+
+    browsed = ProcessItem("检索", "最近 7 天的人工智能要闻", "找到 1 条新闻")
+    assert r.answer == _answered(tool_calls=("browse_news",), process=Process("检索 1 次", (browsed,)))
+    assert r.events == [UNDERSTANDING, Progress("正在检索", "最近 7 天的人工智能要闻"), FOUND, WRITING]
+    result = next(m for m in r.gather.calls[1] if isinstance(m, ToolMessage))
+    assert result.content.startswith("browse_news results, topic=ai, last 7 days, by importance: 1 story\n")
+    (tool,) = _spans(r.trace, "tool")
+    assert (tool.name, tool.output["stories"][0]["lead"]) == ("browse_news", 30)
+
+
 def test_tool_call_without_evidence_is_not_found(turn):
     r = turn([_search("不存在的产品"), DONE])
 

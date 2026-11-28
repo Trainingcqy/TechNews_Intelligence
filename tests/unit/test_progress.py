@@ -11,7 +11,14 @@ from agent.memory import Follow
 from agent.retrieval.search import SearchResult
 from agent.tools.follows import FollowCheck, FollowsResult
 from agent.tools.read import ReadItem, ReadResult
-from agent.tools.registry import CheckFollowsArgs, PreparedCall, ReadArticlesArgs, SearchNewsArgs, ToolPayload
+from agent.tools.registry import (
+    BrowseNewsArgs,
+    CheckFollowsArgs,
+    PreparedCall,
+    ReadArticlesArgs,
+    SearchNewsArgs,
+    ToolPayload,
+)
 from agent.types import Article, Process, ProcessItem, Progress, StoryHit, StoryStats
 
 TODAY = date(2026, 11, 27)
@@ -43,18 +50,20 @@ def _payload(name, args, data, ok=True, index=0) -> ToolPayload:
     ({"start_date": "2026-11-01", "end_date": "2026-11-15"}, "2026-11-01 至 2026-11-15"),
 ])
 def test_window(fields, expected):
-    assert progress.window(SearchNewsArgs(**fields), TODAY) == expected
+    assert progress.window(BrowseNewsArgs(**fields), TODAY) == expected
+    assert progress.window(SearchNewsArgs(query="x", **fields), TODAY) == expected
 
 
-@pytest.mark.parametrize("fields, expected", [
-    ({"query": "Huawei verdict"}, "Huawei verdict"),
-    ({}, "最近 14 天的要闻"),
-    ({"topic": "ai", "start_date": "2026-11-27"}, "今天的人工智能要闻"),
-    ({"topic": "ai", "sort": "time", "start_date": "2026-11-01", "end_date": "2026-11-15"},
+@pytest.mark.parametrize("args, expected", [
+    (SearchNewsArgs(query="Huawei verdict"), "Huawei verdict"),
+    (SearchNewsArgs(query="Huawei verdict", topic="ai", sort="time", start_date="2026-11-27"), "Huawei verdict"),
+    (BrowseNewsArgs(), "最近 14 天的要闻"),
+    (BrowseNewsArgs(topic="ai", start_date="2026-11-27"), "今天的人工智能要闻"),
+    (BrowseNewsArgs(topic="ai", sort="time", start_date="2026-11-01", end_date="2026-11-15"),
      "2026-11-01 至 2026-11-15 的人工智能最新新闻"),
 ])
-def test_subject(fields, expected):
-    assert progress.subject(SearchNewsArgs(**fields), TODAY) == expected
+def test_subject(args, expected):
+    assert progress.subject(args, TODAY) == expected
 
 
 def test_step_merges_the_calls_of_a_step():
@@ -73,14 +82,15 @@ def test_step_merges_the_calls_of_a_step():
 def test_step_names_the_follows_and_what_it_searches():
     check = PreparedCall(0, "c0", "check_follows", CheckFollowsArgs())
     search = PreparedCall(1, "c1", "search_news", SearchNewsArgs(query="Nvidia"))
-    browse = PreparedCall(2, "c2", "search_news", SearchNewsArgs(start_date="2026-11-27"))
+    browse = PreparedCall(2, "c2", "browse_news", BrowseNewsArgs(start_date="2026-11-27"))
     read = PreparedCall(3, "c3", "read_articles", ReadArticlesArgs(ids=["E1"]))
 
     assert progress.step([check], EvidenceRegistry(), ["谷歌", "OpenAI"], TODAY) == Progress(
         "正在查看 2 个关注项", "谷歌、OpenAI")
-    # A search without query carries its window in its subject.
+    # A browse carries its window in its subject.
     assert progress.step([check, search, browse, read], EvidenceRegistry(), ["谷歌"], TODAY) == Progress(
         "正在查看 1 个关注项、检索并阅读 1 篇报道", "Nvidia、今天的要闻")
+    assert progress.step([browse], EvidenceRegistry(), [], TODAY) == Progress("正在检索", "今天的要闻")
 
 
 def test_found_counts_distinct_stories_and_read_bodies():
@@ -93,7 +103,10 @@ def test_found_counts_distinct_stories_and_read_bodies():
 
     assert progress.found(searches) == "找到 2 条新闻"
     assert progress.found([*searches, read]) == "找到 2 条新闻，读到 1 篇全文"
-    assert progress.found([_payload("search_news", SearchNewsArgs(), None, ok=False)]) == "没有找到新闻"
+    assert progress.found([_payload("search_news", SearchNewsArgs(query="a"), None, ok=False)]) == "没有找到新闻"
+    browse = _payload("browse_news", BrowseNewsArgs(), SearchResult(hits=[_hit(2), _hit(3)], weak_match=False))
+    assert progress.found([*searches, browse]) == "找到 3 条新闻"
+    assert progress.found([_payload("browse_news", BrowseNewsArgs(), None, ok=False)]) == "没有找到新闻"
     assert progress.found([_payload("read_articles", ReadArticlesArgs(ids=["E2"]), ReadResult([UNREAD]))]) == "没有读到全文"
     assert progress.found([_payload("read_articles", ReadArticlesArgs(ids=["E1"]), None, ok=False)]) == "没有读到全文"
     assert progress.found([]) == ""
@@ -117,12 +130,17 @@ def test_record_lists_filters_failures_and_each_article_once():
 
     assert progress.record(_payload("search_news", args, nothing), TODAY, set()) == [
         ProcessItem("检索", "OpenAI", "仅人工智能领域、研究类、官方渠道，2026-11-01 至今没有找到")]
-    # Without query the window and topic are part of the subject.
-    browse = SearchNewsArgs(topic="ai", days=7)
-    assert progress.record(_payload("search_news", browse, SearchResult(hits=[_hit(1)], weak_match=False)), TODAY,
+    # A browse names its window and topic in the subject, and lists its other filters.
+    browse = BrowseNewsArgs(topic="ai", days=7)
+    assert progress.record(_payload("browse_news", browse, SearchResult(hits=[_hit(1)], weak_match=False)), TODAY,
                            set()) == [ProcessItem("检索", "最近 7 天的人工智能要闻", "找到 1 条新闻")]
-    assert progress.record(_payload("search_news", SearchNewsArgs(), None, ok=False), TODAY, set()) == [
+    filtered = BrowseNewsArgs(topic="ai", kind="research", publisher_kind="media", days=7)
+    assert progress.record(_payload("browse_news", filtered, SearchResult(hits=[], weak_match=False)), TODAY,
+                           set()) == [ProcessItem("检索", "最近 7 天的人工智能要闻", "仅研究类、媒体报道，没有找到")]
+    assert progress.record(_payload("browse_news", BrowseNewsArgs(), None, ok=False), TODAY, set()) == [
         ProcessItem("检索", "最近 14 天的要闻", "检索失败")]
+    assert progress.record(_payload("search_news", SearchNewsArgs(query="OpenAI"), None, ok=False), TODAY,
+                           set()) == [ProcessItem("检索", "OpenAI", "检索失败")]
 
     read_ids: set[int] = set()
     read = _payload("read_articles", ReadArticlesArgs(ids=["E1", "E2"]),

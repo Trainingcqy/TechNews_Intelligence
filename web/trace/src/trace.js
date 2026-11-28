@@ -125,7 +125,8 @@ export function nodeSubtitle(trace, node) {
     case "tool":
       if (node.name === "read_articles") return [...(node.input?.ids || []), ...(node.input?.urls || [])].join("、");
       if (node.name === "check_follows") return (output.follows || []).map((check) => check.follow).join("、");
-      return node.input?.query || node.input?.topic || `${SORT[node.input?.sort] || ""}浏览`;
+      if (node.name === "search_news") return node.input?.query;
+      return node.input?.topic || `${SORT[node.input?.sort] || ""}浏览`;
     case "retrieval":
       return `${output.candidates?.length ?? 0} 个候选`;
     case "rerank":
@@ -145,7 +146,7 @@ export function location(where) {
   return where === "history" ? "历史" : `第 ${where.step} 步 #${where.call}`;
 }
 
-// Recall order, rerank order and the story leads of one search_news call, side by side.
+// Recall order, rerank order and the story leads of one search_news call, side by side; browse_news has no recall.
 export function candidateRows(trace, tool) {
   const retrieval = tool.children.find((child) => child.kind === "retrieval");
   const rerank = tool.children.find((child) => child.kind === "rerank");

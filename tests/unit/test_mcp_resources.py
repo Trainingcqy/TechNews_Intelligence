@@ -81,10 +81,10 @@ def test_corpus_roles_name_other_publishers_only_when_there_are_some(monkeypatch
     assert "Articles by publisher role: official 2, media 3, other 1." in corpus.corpus_info()
 
 
-def test_newsdb_server_exposes_two_tools_and_one_resource(monkeypatch):
+def test_newsdb_server_exposes_three_tools_and_one_resource(monkeypatch):
     server = _newsdb_server(monkeypatch)
     assert [row["qualified_name"] for row in server.list_tools()] == [
-        "mcp__newsdb__read_articles", "mcp__newsdb__search_news"]
+        "mcp__newsdb__browse_news", "mcp__newsdb__read_articles", "mcp__newsdb__search_news"]
     assert [row["uri"] for row in server.list_resources()] == ["news://corpus"]
     assert server.read_resource("news://corpus") == {
         "uri": "news://corpus", "mimeType": "text/plain", "text": "Range: 3 articles"}
@@ -106,19 +106,22 @@ def test_call_tool_reads_library_url_without_user_provided_check(monkeypatch, fa
     }
 
 
-def test_call_tool_search_news_lists_every_registered_evidence(monkeypatch):
+@pytest.mark.parametrize("tool, args, header", [
+    ("search_news", {"query": "Genie 4"}, 'search_news results, query="Genie 4", last 14 days, by relevance'),
+    ("browse_news", {"topic": "ai"}, "browse_news results, topic=ai, last 14 days, by importance"),
+])
+def test_call_tool_search_and_browse_list_every_registered_evidence(monkeypatch, tool, args, header):
     related = replace(ARTICLE, article_id=31, url="https://example.com/other", title="Other report",
                       publisher="Example", published_at=datetime(2026, 11, 10, 8, 0, tzinfo=timezone.utc))
     stats = StoryStats(story_id=5, report_count=2, publisher_count=2, publisher_kinds=("media",),
                        first_at=related.published_at, last_at=ARTICLE.published_at)
     hit = StoryHit(lead=ARTICLE, stats=stats, related=(related,), match_score=None)
-    monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False))
+    monkeypatch.setattr(registry, f"run_{tool}", lambda args: SearchResult(hits=[hit], weak_match=False))
 
-    result = _newsdb_server(monkeypatch).call_tool("search_news", {"topic": "ai"})
+    result = _newsdb_server(monkeypatch).call_tool(tool, args)
 
     assert result["status"] == "ok"
-    assert result["text"].startswith(
-        "search_news results, topic=ai, last 14 days, by importance: 1 story\n[E1] Genie 4 adds audio")
+    assert result["text"].startswith(header + ": 1 story\n[E1] Genie 4 adds audio")
     assert [(row["eid"], row["source"], row["published_at"]) for row in result["evidence"]] == [
         ("E1", "TechCrunch", "2026-11-12"), ("E2", "Example", "2026-11-10")]
 
@@ -133,7 +136,8 @@ def test_call_tool_errors_have_status_error(monkeypatch, fake_db):
     assert server.call_tool("read_articles", {})["status"] == "error"
     unknown = server.call_tool("compare_sources", {})
     assert (unknown["status"], unknown["text"], unknown["evidence"]) == (
-        "error", "Unknown tool: compare_sources. Available tools: search_news, read_articles, check_follows.", [])
+        "error",
+        "Unknown tool: compare_sources. Available tools: search_news, browse_news, read_articles, check_follows.", [])
 
 
 def test_each_call_starts_a_new_registry(monkeypatch, fake_db):

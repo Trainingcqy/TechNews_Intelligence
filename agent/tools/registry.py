@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Any, Callable, Literal
+from typing import Any, Callable, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
@@ -20,7 +20,13 @@ from common.taxonomy import KINDS, TOPICS
 
 from .follows import FollowsResult, commit_check_follows, follows_trace_output, run_check_follows
 from .read import ReadResult, commit_read_articles, read_trace_output, run_read_articles
-from .search import commit_search_news, run_search_news, search_trace_output
+from .search import (
+    commit_browse_news,
+    commit_search_news,
+    run_browse_news,
+    run_search_news,
+    search_trace_output,
+)
 
 
 def _field(tool: str, name: str, table: str = "fields") -> str:
@@ -31,36 +37,49 @@ def _field(tool: str, name: str, table: str = "fields") -> str:
 _STRICT = ConfigDict(extra="forbid")
 
 
-class SearchNewsArgs(BaseModel):
-    model_config = _STRICT
-    query: str | None = Field(default=None, description=_field("search_news", "query"))
-    days: int = Field(default=14, ge=1, le=365, description=_field("search_news", "days"))
-    start_date: date | None = Field(default=None, description=_field("search_news", "start_date"))
-    end_date: date | None = Field(default=None, description=_field("search_news", "end_date"))
-    topic: Literal[tuple(TOPICS)] | None = Field(default=None, description=_field("search_news", "topic"))
-    kind: Literal[tuple(KINDS)] | None = Field(default=None, description=_field("search_news", "kind"))
-    publisher_kind: Literal["official", "media"] | None = Field(
-        default=None, description=_field("search_news", "publisher_kind"))
-    sort: Literal["relevance", "importance", "time"] | None = Field(
-        default=None, description=_field("search_news", "sort"))
-    limit: int = Field(default=8, ge=1, le=20, description=_field("search_news", "limit"))
+def _describe(schema: dict[str, Any], model: type[_StoryArgs]) -> None:
+    # The fields are shared but their descriptions are per tool, so they are filled in from the tool's table.
+    for name, spec in schema["properties"].items():
+        spec["description"] = _field(model.tool, name)
 
-    @field_validator("query")
-    @classmethod
-    def _blank_query_is_none(cls, value: str | None) -> str | None:
-        return value if value and value.strip() else None
+
+class _StoryArgs(BaseModel):
+    model_config = ConfigDict(**_STRICT, json_schema_extra=_describe)
+    tool: ClassVar[str]
+    days: int = Field(default=14, ge=1, le=365)
+    start_date: date | None = None
+    end_date: date | None = None
+    topic: Literal[tuple(TOPICS)] | None = None
+    kind: Literal[tuple(KINDS)] | None = None
+    publisher_kind: Literal["official", "media"] | None = None
 
     @model_validator(mode="after")
-    def _check_combination(self) -> SearchNewsArgs:
-        if self.sort is None:
-            self.sort = "relevance" if self.query else "importance"
-        if self.sort == "relevance" and not self.query:
-            raise ValueError("sort=relevance requires query")
+    def _check_window(self) -> _StoryArgs:
         if self.end_date is not None and self.start_date is None:
             raise ValueError("end_date requires start_date")
         if self.start_date and self.end_date and self.start_date > self.end_date:
             raise ValueError("start_date must not be later than end_date")
         return self
+
+
+class SearchNewsArgs(_StoryArgs):
+    tool = "search_news"
+    query: str
+    sort: Literal["relevance", "importance", "time"] = "relevance"
+    limit: int = Field(default=8, ge=1, le=20)
+
+    @field_validator("query")
+    @classmethod
+    def _query_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("query must not be blank")
+        return value
+
+
+class BrowseNewsArgs(_StoryArgs):
+    tool = "browse_news"
+    sort: Literal["importance", "time"] = "importance"
+    limit: int = Field(default=20, ge=1, le=20)
 
 
 class ReadArticlesArgs(BaseModel):
@@ -147,6 +166,10 @@ def _run_search(prepared: PreparedCall, *, registry: EvidenceRegistry, state: Tu
     return result
 
 
+def _run_browse(prepared: PreparedCall, *, registry: EvidenceRegistry, state: TurnState) -> SearchResult:
+    return run_browse_news(prepared.args)
+
+
 TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="search_news",
@@ -154,6 +177,14 @@ TOOLS: tuple[ToolSpec, ...] = (
         args_model=SearchNewsArgs,
         run=_run_search,
         commit=commit_search_news,
+        trace_output=search_trace_output,
+    ),
+    ToolSpec(
+        name="browse_news",
+        description=prompt_text.text("tools.browse_news.description"),
+        args_model=BrowseNewsArgs,
+        run=_run_browse,
+        commit=commit_browse_news,
         trace_output=search_trace_output,
     ),
     ToolSpec(
@@ -258,8 +289,8 @@ def commit_call(payload: ToolPayload, *, registry: EvidenceRegistry, state: Turn
 
 
 def story_hits(payload: ToolPayload) -> list[StoryHit]:
-    """The stories a successful search or follow check returned."""
-    if payload.name == "search_news":
+    """The stories a successful search, browse or follow check returned."""
+    if payload.name in ("search_news", "browse_news"):
         return payload.data.hits
     if payload.name == "check_follows":
         return [hit for check in payload.data.checks if check.result for hit in check.result.hits]

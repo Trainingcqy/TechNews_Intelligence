@@ -1340,6 +1340,11 @@ body {
     margin-bottom: 8px;
 }
 
+/* A process line without an action is one phrase, so it also takes the action column. */
+.msg-process-phrase {
+    grid-column: 1 / -1;
+}
+
 /* Typing Indicator */
 .typing-indicator {
     display: inline-flex;

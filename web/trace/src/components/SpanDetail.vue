@@ -207,11 +207,11 @@ function filterText(input) {
         <dd>{{ filterText(retrieval.input) }}</dd>
         <template v-if="retrieval.input.seen_after">
           <dt>入库时间</dt>
-          <dd>晚于 {{ formatTime(retrieval.input.seen_after) }}</dd>
+          <dd>{{ formatTime(retrieval.input.seen_after) }} 之后</dd>
         </template>
         <template v-if="retrieval.input.excluded > 0">
           <dt>排除</dt>
-          <dd>讲过的 {{ retrieval.input.excluded }} 篇</dd>
+          <dd>回答中引用过的 {{ retrieval.input.excluded }} 篇</dd>
         </template>
         <dt>召回</dt>
         <dd>

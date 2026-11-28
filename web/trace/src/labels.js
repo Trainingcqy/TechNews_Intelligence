@@ -30,7 +30,7 @@ export const WARNING_DETAIL = {
   step_budget_exhausted: "取证模型在最后一步仍提出了调用，取证因达到步数上限而停止；这一步的结果没有再经取证模型判断，直接进入综合。",
   calls_rejected: "部分调用没有执行，原因见调用表；取证模型收到的是拒绝说明。",
   history_sources_unavailable: "查询历史回答所引文章时出错，这些文章没有登记为证据。",
-  history_unavailable: "读取这个用户的对话记录时出错，查看关注项时没有排除已经讲过的报道。",
+  history_unavailable: "读取这个用户的对话记录时出错，查看关注项时没有排除回答中引用过的报道。",
   corpus_unavailable: "查询新闻库概况时出错，取证模型的系统提示里这一段只说明暂时无法获取。",
   low_relevance: "最相关结果的匹配度低于阈值，返回给取证模型的文本附有可能不切题的提示。",
   read_targets_dropped: "请求的目标超出本次请求的读取上限，超出部分作为读取失败返回给取证模型。",

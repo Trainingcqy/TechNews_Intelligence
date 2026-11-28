@@ -709,8 +709,8 @@ if (session.token) {
               </button>
               <ul v-if="item.process && item.processOpen" class="msg-sources msg-process">
                 <li v-for="(entry, index) in item.process.items" :key="index">
-                  <span>{{ entry.action }}</span>
-                  <span>{{ entry.subject }} <span v-if="entry.meta" class="msg-sources-meta">{{ entry.meta }}</span></span>
+                  <span v-if="entry.action">{{ entry.action }}</span>
+                  <span :class="{ 'msg-process-phrase': !entry.action }">{{ entry.subject }} <span v-if="entry.meta" class="msg-sources-meta">{{ entry.meta }}</span></span>
                 </li>
               </ul>
               <div class="msg-content" v-html="item.html"></div>

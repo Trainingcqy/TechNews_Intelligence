@@ -30,9 +30,8 @@ def final_clock(now: datetime) -> str:
     return _clock("final.clock", now)
 
 
-def render_gather_system(now: datetime, corpus: str, follows: str) -> str:
-    """follows is the follows block of agent.memory, empty when the user has none."""
-    return prompt_text.render("gather.system", clock=gather_clock(now), corpus=corpus, follows=follows)
+def render_gather_system(now: datetime, corpus: str) -> str:
+    return prompt_text.render("gather.system", clock=gather_clock(now), corpus=corpus)
 
 
 def render_final_user(question: str, registry: EvidenceRegistry, max_chars: int,

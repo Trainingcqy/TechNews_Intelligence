@@ -49,7 +49,7 @@ def subject(args: SearchNewsArgs | BrowseNewsArgs, today: date) -> str:
     return f"{span}{_joint(span)}的{topic}{'最新新闻' if args.sort == 'time' else '要闻'}"
 
 
-def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[str], today: date) -> Progress:
+def step(calls: list[PreparedCall], registry: EvidenceRegistry, today: date) -> Progress:
     """The status line of a step's calls while they run."""
     searches = [call.args for call in calls if call.name in SEARCH_TOOLS]
     reads = [call.args for call in calls if call.name == "read_articles"]
@@ -58,7 +58,7 @@ def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[st
     keywords = [keyword for args in histories for keyword in args.keywords]
     actions = []
     if checking:
-        actions.append((f"查看 {len(follows)} 个关注项" if follows else "查看关注项") + ("、之前的回答" if histories else ""))
+        actions.append("查看关注项" + ("、之前的回答" if histories else ""))
     elif histories:
         actions.append("查看之前的回答")
     if searches:
@@ -70,8 +70,6 @@ def step(calls: list[PreparedCall], registry: EvidenceRegistry, follows: list[st
         detail = "、".join(subject(args, today) for args in searches)
     elif keywords:
         detail = "、".join(keywords)
-    elif checking:
-        detail = "、".join(follows)
     else:
         detail = "、".join(_read_titles(reads, registry))
     return Progress("正在" + _joined(actions), detail)
@@ -190,8 +188,9 @@ def _outcome(span: str, hits: list, failed: bool) -> str:
 
 def _checked(check: FollowCheck) -> ProcessItem:
     # The English search terms are a translation of the follow and stay in the trace.
-    name = check.follow.query
-    outcome = _outcome(f"最近 {check.days} 天", check.result.hits if check.result else [], check.error is not None)
+    name, checked = check.follow.query, check.follow.last_checked_at
+    span = f"{checked.astimezone(user_zone()):%Y-%m-%d} 以来" if checked else f"最近 {check.days} 天"
+    outcome = _outcome(span, check.result.hits if check.result else [], check.error is not None)
     return ProcessItem(CHECK, f"{name}{_joint(name)}的新动态", outcome)
 
 

@@ -6,7 +6,6 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 
 from common.script_env import load_env
 
@@ -180,7 +179,10 @@ def delete_history(thread_id: str, token_info: dict = Depends(_verify_token)):
 @app.get("/follows")
 def get_follows(token_info: dict = Depends(_verify_token)):
     follows = memory.list_follows(_user_key(token_info), memory.MAX_FOLLOWS)
-    return {"follows": [asdict(follow) for follow in follows]}
+    return {"follows": [
+        {"follow_id": follow.follow_id, "query": follow.query, "last_checked_at": follow.last_checked_at}
+        for follow in follows
+    ]}
 
 
 @app.post("/follows")
@@ -193,7 +195,7 @@ def add_follow(body: FollowRequest, token_info: dict = Depends(_verify_token)):
         raise HTTPException(status_code=503, detail="follow_query_unavailable") from None
     except ValueError:
         raise HTTPException(status_code=422, detail="follow_query_blank") from None
-    return asdict(follow)
+    return {"follow_id": follow.follow_id, "query": follow.query, "last_checked_at": follow.last_checked_at}
 
 
 @app.delete("/follows/{follow_id}")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Any, Callable, TypedDict
+from typing import Annotated, Callable, TypedDict
 
 from langchain_core.messages import BaseMessage
 
@@ -48,8 +48,6 @@ class TurnRuntime:
     config: AgentConfig
     models: tuple[ModelHandle, ModelHandle] | None  # run_turn 在 try 内构建
     emit: Callable[[Progress], None]
-    user_key: str | None
-    follows: list[Any]  # prepare 写入，元素为 agent.memory.Follow；没有 user_key 时为空
     tool_names: list[str]  # 已执行的工具名，按调用顺序
     followed_queries: list[str]
     now: datetime  # 本轮开始的时刻，在用户时区；两个模型拿到的当前时间都取它

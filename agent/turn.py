@@ -43,9 +43,9 @@ def run_turn(
     zone = zone or DEFAULT_ZONE
     emit = _safe_emit(on_event)
     runtime = TurnRuntime(
-        registry=EvidenceRegistry(), tool_state=TurnState(user_urls=set(), history_reader=history_reader),
-        config=config, models=models, emit=emit, user_key=user_key,
-        follows=[], tool_names=[], followed_queries=[], now=datetime.now(zone), stop=stop,
+        registry=EvidenceRegistry(),
+        tool_state=TurnState(user_urls=set(), user_key=user_key, history_reader=history_reader),
+        config=config, models=models, emit=emit, tool_names=[], followed_queries=[], now=datetime.now(zone), stop=stop,
     )
     with using_zone(zone), request_trace(question=question, channel=channel, thread_id=thread_id,
                                          request_id=request_id) as trace:

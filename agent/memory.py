@@ -10,7 +10,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.config import user_zone
 from agent.context import _text
-from agent.evidence import counted
 from agent.llm import ModelCallError, build_role_model, call_text
 from agent.types import Answer
 from common import prompt_text
@@ -35,6 +34,7 @@ class Follow:
     follow_id: int
     query: str
     last_checked_at: datetime | None
+    search_query: str | None
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ def list_follows(user_key: str, limit: int) -> list[Follow]:
     with db_cursor() as (_, cur):
         cur.execute(
             """
-            SELECT follow_id, query, last_checked_at
+            SELECT follow_id, query, last_checked_at, search_query
             FROM public.user_follow
             WHERE user_key = %s AND active
             ORDER BY created_at, follow_id
@@ -110,7 +110,7 @@ def add_follow(user_key: str, query: str) -> Follow:
             INSERT INTO public.user_follow (user_key, query, search_query)
             VALUES (%s, %s, %s)
             ON CONFLICT (user_key, LOWER(query)) DO UPDATE SET active = TRUE, search_query = EXCLUDED.search_query
-            RETURNING follow_id, query, last_checked_at
+            RETURNING follow_id, query, last_checked_at, search_query
             """,
             (user_key, query, search_query),
         )
@@ -143,25 +143,3 @@ def record_turn(user_key: str, answer: Answer) -> None:
             )
     except Exception:
         logger.exception("recording the turn in user memory failed")
-
-
-def check_window(follow: Follow, today: date) -> int:
-    """Days to search when checking a follow: since its last check, at least 1 and at most 30; 14 if never checked."""
-    if follow.last_checked_at is None:
-        return 14
-    days = (today - follow.last_checked_at.astimezone(user_zone()).date()).days
-    return min(max(days, 1), 30)
-
-
-def render_follows(follows: list[Follow], today: date) -> str:
-    if not follows:
-        return ""
-    items = []
-    for follow in follows:
-        if follow.last_checked_at is None:
-            items.append(f"- {follow.query}: never checked")
-        else:
-            checked = follow.last_checked_at.astimezone(user_zone()).date()
-            ago = counted((today - checked).days, "day", "days")
-            items.append(f"- {follow.query}: last checked {checked:%Y-%m-%d}, {ago} ago")
-    return prompt_text.render("gather.follows", items="\n".join(items))

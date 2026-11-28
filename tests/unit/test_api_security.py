@@ -711,7 +711,7 @@ def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.
 
     memory = api_mod.memory
     calls: list[tuple] = []
-    follow = Follow(follow_id=5, query="Anthropic 上市", last_checked_at=None)
+    follow = Follow(follow_id=5, query="Anthropic 上市", last_checked_at=None, search_query="Anthropic IPO")
 
     def _add(user_key, query):  # noqa: ANN001
         calls.append(("add", user_key, query))
@@ -741,6 +741,7 @@ def test_follow_routes_use_token_email_as_user_key(api_mod, monkeypatch: pytest.
         api_mod.app.dependency_overrides.clear()
         client.close()
 
+    # The search query is internal and stays out of the response.
     item = {"follow_id": 5, "query": "Anthropic 上市", "last_checked_at": None}
     assert (listed.status_code, listed.json()) == (200, {"follows": [item]})
     assert (added.status_code, added.json()) == (200, item)

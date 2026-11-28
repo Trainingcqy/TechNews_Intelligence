@@ -15,11 +15,10 @@ from common import prompt_text
 
 # Every prompt and the placeholders the code fills in it.
 PLACEHOLDERS = {
-    "gather.system": {"clock", "corpus", "follows"},
+    "gather.system": {"clock", "corpus"},
     "gather.clock": {"now", "zone"},
     "gather.budget": {"step", "max_steps", "steps_left", "max_calls", "reads_left"},
     "gather.last_step": set(),
-    "gather.follows": {"items"},
     "final.system": set(),
     "final.user": {"clock", "question", "brief"},
     "final.clock": {"now", "zone"},
@@ -53,9 +52,6 @@ PLACEHOLDERS = {
     "tools.read_history.fields.keywords": set(),
     "tools.read_history.fields.limit": set(),
     "tools.check_follows.description": set(),
-    "tools.check_follows.fields.queries": set(),
-    "tools.check_follows.query_fields.follow": set(),
-    "tools.check_follows.query_fields.query": set(),
     "follow.system": set(),
     "analyze.system": set(),
     "analyze.user": {"body_note", "topic_table", "kind_table", "title", "publisher", "body"},
@@ -86,13 +82,11 @@ def test_tool_schemas_carry_every_description_of_tools_toml():
     for schema in tool_schemas():
         name = schema["function"]["name"]
         assert schema["function"]["description"] == prompt_text.text(f"tools.{name}.description")
-        parameters = schema["function"]["parameters"]
-        for table, models in (("fields", [parameters]), ("query_fields", parameters.get("$defs", {}).values())):
-            described = {field: spec["description"] for model in models
-                         for field, spec in model["properties"].items() if "description" in spec}
-            prefix = f"tools.{name}.{table}."
-            assert described == {key.removeprefix(prefix): prompt_text.text(key)
-                                 for key in PLACEHOLDERS if key.startswith(prefix)}
+        properties = schema["function"]["parameters"]["properties"]
+        described = {field: spec["description"] for field, spec in properties.items()}
+        prefix = f"tools.{name}.fields."
+        assert described == {key.removeprefix(prefix): prompt_text.text(key)
+                             for key in PLACEHOLDERS if key.startswith(prefix)}
 
 
 def test_render_does_not_substitute_inside_values():

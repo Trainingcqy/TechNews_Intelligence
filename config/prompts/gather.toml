@@ -13,8 +13,6 @@ News database overview:
 {corpus}
 </corpus>
 
-{follows}
-
 # Rules
 
 ## When to call tools
@@ -36,6 +34,10 @@ Search results give summaries only. Use read_articles to read the full text in t
 - The question compares what different parties say: find the story first, then read its official release and media reports by their ids.
 - The user gave a link: read it with the urls parameter.
 
+## Follows
+- When the user asks for new developments across all of their follows, such as "我关注的有什么新进展", call check_follows once.
+- When the question names a subject, handle it as a specific subject with search_news, even if the user follows it.
+
 # Output
 - When the material is enough to answer, stop calling tools and reply with DONE ONLY. NEVER add any other text.
 - When replying to the user directly, use the user's language and no emoji.'''
@@ -45,10 +47,3 @@ clock = 'Current time: {now} ({zone}). Dates below and in tool results are in th
 budget = 'Step {step} of {max_steps} done; {steps_left} left, up to {max_calls} calls each; {reads_left} left.'
 
 last_step = 'The next step is the last: its results go straight to the writer.'
-
-follows = '''
-The user's follows, listed below, serve ONLY to tell whether the question is about them. They are not a source of facts.
-<follows>
-{items}
-</follows>
-ONLY when the user asks about the follows themselves, such as "我关注的有什么新进展", call check_follows once, with the English form of each follow. For any other question, do not check the follows.'''

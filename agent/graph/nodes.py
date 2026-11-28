@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
-import logging
-
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END
 from langgraph.types import Send
 
-from agent import memory, progress, prompts
-from agent.citations import NOT_FOUND_TEXT, clean_direct_reply, contains_cjk, finalize_answer
+from agent import progress, prompts
+from agent.citations import (
+    NO_FOLLOWS_TEXT,
+    NO_NEW_REPORTS_TEXT,
+    NOT_FOUND_TEXT,
+    clean_direct_reply,
+    contains_cjk,
+    finalize_answer,
+)
 from agent.context import build_context
 from agent.evidence import EvidenceRegistry, counted
 from agent.llm import call_text, call_with_tools, coerce_to_text
 from agent.retrieval.corpus import corpus_info
+from agent.tools.follows import FollowCheck
 from agent.tools.registry import (
     PreparedCall,
     ToolOutcome,
@@ -28,8 +34,6 @@ from agent.trace import start_span, trace_span, warn, within
 from agent.types import Answer
 from common import prompt_text
 from common.urls import extract_urls, url_key
-
-logger = logging.getLogger(__name__)
 
 from .state import TurnRuntime
 
@@ -46,19 +50,7 @@ def prepare(state, config) -> dict:
     with trace_span("context") as span:
         context = build_context(state["history"], runtime.registry, runtime.config)
         runtime.tool_state.user_urls = context.user_urls | {url_key(url) for url in extract_urls(question)}
-        follows = ""
-        if runtime.user_key:
-            try:
-                runtime.follows = memory.list_follows(runtime.user_key, memory.MAX_FOLLOWS)
-            except Exception:  # noqa: BLE001
-                # A memory failure must not fail the turn; it runs without follows.
-                logger.exception("follow lookup failed")
-                warn("follows_unavailable")
-                runtime.follows = []
-            follows = memory.render_follows(runtime.follows, runtime.now.date())
-            runtime.tool_state.follows = runtime.follows
-            runtime.tool_state.today = runtime.now.date()
-        system = prompts.render_gather_system(runtime.now, corpus_info(), follows)
+        system = prompts.render_gather_system(runtime.now, corpus_info())
         history_eids = [evidence.eid for evidence in runtime.registry.items()]
         for eid in history_eids:
             runtime.provenance[eid] = {"registered": "history", "upgraded": []}
@@ -69,9 +61,6 @@ def prepare(state, config) -> dict:
             "turns_used": context.turns_used,
             "history_evidence": history_eids,
             "user_urls": len(runtime.tool_state.user_urls),
-            "follows": [{"query": follow.query,
-                         "last_checked_at": follow.last_checked_at.isoformat() if follow.last_checked_at else None}
-                        for follow in runtime.follows],
         }
     runtime.emit(progress.UNDERSTANDING)
     return {
@@ -113,8 +102,7 @@ def gather(state, config) -> dict:
         else:
             rejected.append(prepared)
     if pending:
-        follows = [follow.query for follow in runtime.follows]
-        runtime.emit(progress.step(pending, runtime.registry, follows, runtime.now.date()))
+        runtime.emit(progress.step(pending, runtime.registry, runtime.now.date()))
     rejected_by_index = {outcome.index: outcome for outcome in rejected}
     step.output = {"calls": [_call_record(index, call, rejected_by_index.get(index))
                              for index, call in enumerate(reply.tool_calls)]}
@@ -179,13 +167,37 @@ def route(state, config) -> dict:
     question = state["question"]
     tools_called = bool(state.get("tools_called"))
     citable = len(runtime.registry.citable_ids())
-    decision = "synthesize" if tools_called and citable else "not_found" if tools_called else "direct"
+    checks = _follow_checks(state, runtime.registry)
+    reply = None
+    if checks == []:
+        reply = "no_follows"
+    elif checks and all(check.error is None for check in checks):
+        # A story found by a follow would be citable evidence of this turn, so each follow found none.
+        reply = "no_new_reports"
+    decision = "direct" if not tools_called else "synthesize" if citable and not reply else "not_found"
     runtime.route = {"decision": decision, "tools_called": tools_called, "citable": citable}
+    if reply:
+        runtime.route["reply"] = reply
     if decision == "direct":
         return {"answer": Answer(status="direct", text=clean_direct_reply(state.get("direct_text", ""), question))}
-    if decision == "not_found":
-        return {"answer": Answer(status="not_found", text=NOT_FOUND_TEXT["zh" if contains_cjk(question) else "en"])}
-    return {}
+    if decision == "synthesize":
+        return {}
+    language = "zh" if contains_cjk(question) else "en"
+    if reply == "no_follows":
+        text = NO_FOLLOWS_TEXT[language]
+    elif reply == "no_new_reports":
+        text = NO_NEW_REPORTS_TEXT[language].format(n=len(checks), follows=counted(len(checks), "follow", "follows"))
+    else:
+        text = NOT_FOUND_TEXT[language]
+    return {"answer": Answer(status="not_found", text=text)}
+
+
+def _follow_checks(state, registry: EvidenceRegistry) -> list[FollowCheck] | None:
+    """The checks of this turn's follow check when no citable evidence was registered this turn, else None."""
+    if any(not registry.get(eid).history for eid in registry.citable_ids()):
+        return None
+    return next((payload.data.checks for payload in state.get("payloads", {}).values()
+                 if payload.name == "check_follows" and payload.ok), None)
 
 
 def after_route(state) -> str:

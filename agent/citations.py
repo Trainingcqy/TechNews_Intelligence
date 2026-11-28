@@ -15,6 +15,15 @@ NOT_FOUND_TEXT = {
     "and official company channels, so this may be outside its coverage. "
     "You can also rephrase the question or widen the time range and ask again.",
 }
+NO_FOLLOWS_TEXT = {
+    "zh": "你还没有关注项，添加后可以问我它们的新进展。",
+    "en": "You have no follows yet. Once you add some, you can ask me about their new developments.",
+}
+# Filled with both n and follows; each language uses one of them.
+NO_NEW_REPORTS_TEXT = {
+    "zh": "你关注的 {n} 项自上次查看以来都没有新报道。",
+    "en": "There have been no new reports on your {follows} since you last checked.",
+}
 BLOCKED_TEXT = {
     "zh": "抱歉，我没能基于现有证据给出有把握的回答。可能数据库中暂无与此直接相关的信息，"
     "建议换一个更具体的实体、时间范围或来源再试。",

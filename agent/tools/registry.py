@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from agent.config import AgentConfig
 from agent.evidence import EvidenceRegistry
-from agent.memory import MAX_FOLLOWS, Follow
 from agent.retrieval.search import SearchResult
 from agent.trace import Span, trace_span, warn
 from agent.types import StoryHit
@@ -30,8 +29,8 @@ from .search import (
 )
 
 
-def _field(tool: str, name: str, table: str = "fields") -> str:
-    return prompt_text.text(f"tools.{tool}.{table}.{name}")
+def _field(tool: str, name: str) -> str:
+    return prompt_text.text(f"tools.{tool}.fields.{name}")
 
 
 # An argument the schema does not define is rejected, so the model learns of it instead of it being dropped.
@@ -110,16 +109,8 @@ class ReadHistoryArgs(BaseModel):
         return keywords
 
 
-class FollowQuery(BaseModel):
-    model_config = _STRICT
-    follow: str = Field(description=_field("check_follows", "follow", "query_fields"))
-    query: str = Field(description=_field("check_follows", "query", "query_fields"))
-
-
 class CheckFollowsArgs(BaseModel):
     model_config = _STRICT
-    queries: list[FollowQuery] = Field(default_factory=list, max_length=MAX_FOLLOWS,
-                                       description=_field("check_follows", "queries"))
 
 
 @dataclass
@@ -128,8 +119,7 @@ class TurnState:
     read_count: int = 0
     seen_calls: set[str] = field(default_factory=set)
     allow_any_library_url: bool = False  # 只有 MCP 入口设为 True，见第 23.8 节
-    follows: list[Follow] = field(default_factory=list)  # the user's follows, set in prepare
-    today: date | None = None  # the user's date, for the check_follows windows
+    user_key: str | None = None  # whose follows check_follows reads
     history_reader: Callable[[], list[dict]] | None = None  # the user's past messages; only the web channel has them
 
 

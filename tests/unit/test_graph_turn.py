@@ -10,7 +10,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent import Answer, Progress, run_turn
-from agent import context, memory, prompts, trace_store
+from agent import context, prompts, trace_store
 from agent.citations import BLOCKED_TEXT, ERROR_TEXT, NOT_FOUND_TEXT
 from agent.config import AgentConfig
 from agent.graph import nodes
@@ -103,11 +103,11 @@ def turn(monkeypatch):
     monkeypatch.setattr(read, "fetch_bodies", lambda cur, ids: {30: BODY} if 30 in ids else {})
 
     def run(gather_replies, final_replies=(), *, config=None, history=None, user_key=None, zone=None,
-            history_reader=None):
+            history_reader=None, question=QUESTION):
         gather, final = FakeChat(gather_replies), FakeChat(final_replies)
         events: list = []
         answer = run_turn(
-            QUESTION, history, channel="web", request_id="r1", user_key=user_key, zone=zone, on_event=events.append,
+            question, history, channel="web", request_id="r1", user_key=user_key, zone=zone, on_event=events.append,
             config=config or AgentConfig(),
             models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)),
             history_reader=history_reader,
@@ -133,8 +133,7 @@ def test_direct_reply(turn):
     expected = Answer(status="direct", text="你好！有什么想了解的科技新闻？", request_id="r1")
     assert r.answer == expected
     assert r.events == [UNDERSTANDING]
-    system = prompt_text.render("gather.system", clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS,
-                                follows="")
+    system = prompt_text.render("gather.system", clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS)
     assert r.gather.calls == [[SystemMessage(system), HumanMessage(QUESTION)]]
     assert r.final.calls == []
 
@@ -155,15 +154,13 @@ def test_turn_runs_in_the_user_zone(turn, monkeypatch):
                       publisher="The Verge")
     hit = StoryHit(lead=ARTICLE, stats=STATS, related=(related,), match_score=0.9)
     monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False))
-    monkeypatch.setattr(nodes.memory, "list_follows", lambda user_key, limit: FOLLOWS)
 
     r = turn([_search("Genie 4"), _calls(("c2", "read_articles", {"ids": ["E1"]})), DONE], [ANSWERED],
-             user_key="tg:1", zone=ZoneInfo("America/New_York"))
+             zone=ZoneInfo("America/New_York"))
 
     assert _spans(r.trace, "context")[0].output["timezone"] == "America/New_York"
     now = _turn_now(r.trace)
-    system = r.gather.calls[0][0].content
-    assert prompts.gather_clock(now) in system and "- Genie 4: last checked 2026-11-09, " in system
+    assert prompts.gather_clock(now) in r.gather.calls[0][0].content
     search_text, read_text = (m.content for m in r.gather.calls[2] if isinstance(m, ToolMessage))
     assert "TechCrunch · media · 2026-11-11" in search_text
     assert '[E2] The Verge · media · 11-11 "Genie 4 hands-on"' in search_text
@@ -491,90 +488,174 @@ def test_stop_during_synthesis_drops_its_answer(turn):
     assert trace.status == "stopped"
 
 
+# 17:00 UTC on 11-09 is 11-10 in Beijing.
 FOLLOWS = [
-    Follow(follow_id=1, query="Genie 4", last_checked_at=datetime(2026, 11, 9, 17, 0, tzinfo=timezone.utc)),
-    Follow(follow_id=2, query="具身智能", last_checked_at=None),
+    Follow(follow_id=1, query="Genie 4", last_checked_at=datetime(2026, 11, 9, 17, 0, tzinfo=timezone.utc),
+           search_query="Genie 4 world model"),
+    Follow(follow_id=2, query="具身智能", last_checked_at=None, search_query="embodied AI"),
 ]
+CHECK = _calls(("c1", "check_follows", {}))
+HIT = StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=0.9)
 
 
-def test_followed_turn_reads_memory(turn, monkeypatch):
+def _follows(monkeypatch, found=FOLLOWS, hits=(), failing=()):
+    """Serve the follows, and per follow query a search result: a story for those in hits, an error for those in
+    failing, nothing for the rest."""
     lookups: list[tuple] = []
-    monkeypatch.setattr(nodes.memory, "list_follows",
-                        lambda user_key, limit: lookups.append(("list", user_key, limit)) or FOLLOWS)
+    monkeypatch.setattr(follows.memory, "list_follows",
+                        lambda user_key, limit: lookups.append((user_key, limit)) or found)
 
-    searched: list[tuple] = []
-
-    def search_stories(*, query, days, sort, limit, **filters):
-        searched.append((query, days, sort, limit))
-        if query == "embodied AI":
+    def search_stories(*, query, **filters):
+        if query in failing:
             raise RuntimeError("search failed")
-        return SearchResult(hits=[StoryHit(lead=ARTICLE, stats=STATS, related=(), match_score=0.9)], weak_match=False)
+        return SearchResult(hits=[HIT] if query in hits else [], weak_match=False)
 
     monkeypatch.setattr(follows, "search_stories", search_stories)
+    return lookups
+
+
+def test_follow_check_turn(turn, monkeypatch):
+    lookups = _follows(monkeypatch, hits=("Genie 4 world model",), failing=("embodied AI",))
     monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[], weak_match=False))
-    gather = FakeChat([
-        _calls(("c1", "check_follows", {"queries": [{"follow": "genie 4", "query": "Genie 4 world model"},
-                                                    {"follow": "具身智能", "query": "embodied AI"}]}),
-               ("c2", "search_news", {"query": "具身智能"})),
-        _calls(("c3", "read_articles", {"ids": ["E1"]})),
-        DONE,
-    ])
-    final = FakeChat([ANSWERED])
 
-    answer = run_turn("我关注的有什么新进展", channel="telegram", user_key="tg:1", request_id="r1",
-                      config=AgentConfig(),
-                      models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
+    r = turn([_calls(("c1", "check_follows", {}), ("c2", "search_news", {"query": "具身智能"})),
+              _calls(("c3", "read_articles", {"ids": ["E1"]})), DONE], [ANSWERED], user_key="tg:1",
+             question="我关注的有什么新进展")
 
-    trace = turn.persisted[-1]
-    now = _turn_now(trace)
-    # Each follow is searched with its English terms over the days since its last check. Only the follow whose search
-    # succeeded counts as checked; c2, a search for a follow's own words, does not.
-    assert sorted(searched) == [
-        ("Genie 4 world model", memory.check_window(FOLLOWS[0], now.date()), "importance", follows.STORY_LIMIT),
-        ("embodied AI", 14, "importance", follows.STORY_LIMIT)]
-    assert answer.followed_queries == ("Genie 4",)
-    days = memory.check_window(FOLLOWS[0], now.date())
-    assert answer.process == Process("查看 2 个关注项，检索 1 次，阅读 1 篇报道", (
-        ProcessItem("查看", "Genie 4 的新动态", f"最近 {days} 天内找到 1 条新闻"),
+    assert lookups == [("tg:1", 20)]
+    # Only the follow whose search succeeded counts as checked; c2, a search for a follow's own words, does not.
+    assert r.answer.followed_queries == ("Genie 4",)
+    assert r.answer.process == Process("查看 2 个关注项，检索 1 次，阅读 1 篇报道", (
+        ProcessItem("查看", "Genie 4 的新动态", "2026-11-10 以来找到 1 条新闻"),
         ProcessItem("查看", "具身智能的新动态", "检索失败"),
         ProcessItem("检索", "具身智能", "最近 14 天内没有找到"),
         READ,
     ))
-    assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS)]
-    assert _spans(trace, "context")[0].output["follows"] == [
-        {"query": "Genie 4", "last_checked_at": "2026-11-09T17:00:00+00:00"},
-        {"query": "具身智能", "last_checked_at": None}]
-    check = next(span for span in _spans(trace, "tool") if span.name == "check_follows")
-    assert [(item["follow"], item["error"]) for item in check.output["follows"]] == [
-        ("Genie 4", None), ("具身智能", "RuntimeError")]
-    system = gather.calls[0][0]
-    assert system == SystemMessage(prompt_text.render(
-        "gather.system", clock=prompts.gather_clock(now), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, now.date())))
-    assert "- Genie 4: last checked 2026-11-10, " in system.content
-    first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
-    assert " | Coverage: 1 report, 1 publisher\n" in first_result.content
-    assert 'Follow "具身智能", query="embodied AI", last 14 days: search failed: RuntimeError.' in first_result.content
-    brief = final.calls[0][-1].content
-    assert "Coverage: 1 report, 1 publisher, first 2026-11-12, latest 2026-11-12\n" in brief
+    assert r.events[1] == Progress("正在查看关注项并检索", "具身智能")
+    assert "follows" not in _spans(r.trace, "context")[0].output
+    check = next(span for span in _spans(r.trace, "tool") if span.name == "check_follows")
+    assert [(item["follow"], item["since"], item["error"]) for item in check.output["follows"]] == [
+        ("Genie 4", "2026-11-09T17:00:00+00:00", None), ("具身智能", None, "RuntimeError")]
+    first_result = next(m for m in r.gather.calls[1] if isinstance(m, ToolMessage))
+    assert first_result.content.startswith("check_follows results: 2 follows\n"
+                                           'Follow "Genie 4", since 2026-11-10, by importance: 1 story\n')
+    assert 'Follow "具身智能", last 14 days: search failed: RuntimeError.' in first_result.content
+    assert "Follow: Genie 4, since 2026-11-10\n" in r.final.calls[0][-1].content
+    assert "reply" not in r.trace.output["route"]
 
 
-def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
+def test_follow_check_turn_leaves_out_the_reports_told_before(turn, monkeypatch):
+    _follows(monkeypatch)
+    excluded = []
+
+    def search_stories(**kwargs):
+        excluded.append(set(kwargs["exclude_url_keys"]))
+        return SearchResult(hits=[], weak_match=False)
+
+    monkeypatch.setattr(follows, "search_stories", search_stories)
+    messages = [
+        {"role": "user", "parts": [{"text": "q"}], "id": 1, "thread_id": "t0",
+         "created_at": datetime(2026, 11, 25, 2, 0, tzinfo=timezone.utc)},
+        {"role": "model", "parts": [{"text": "a[1]"}], "sources": [{"n": 1, "url": ARTICLE.url}], "id": 2,
+         "thread_id": "t0", "created_at": datetime(2026, 11, 25, 2, 1, tzinfo=timezone.utc)},
+    ]
+
+    r = turn([CHECK, DONE], user_key="tg:1", history_reader=lambda: messages)
+
+    assert excluded == [{"techcrunch.com/genie-4"}] * 2
+    check = next(span for span in _spans(r.trace, "tool") if span.name == "check_follows")
+    assert check.output["excluded"] == 1
+
+
+@pytest.mark.parametrize("user_key, found, question, text", [
+    ("tg:1", [], "我关注的有什么新进展", "你还没有关注项，添加后可以问我它们的新进展。"),
+    (None, FOLLOWS, "我关注的有什么新进展", "你还没有关注项，添加后可以问我它们的新进展。"),
+    ("tg:1", [], "What's new with my follows?",
+     "You have no follows yet. Once you add some, you can ask me about their new developments."),
+], ids=["no_follows", "no_user_key", "english"])
+def test_follow_check_without_follows_says_so(turn, monkeypatch, user_key, found, question, text):
+    _follows(monkeypatch, found=found)
+
+    r = turn([CHECK, DONE], user_key=user_key, question=question)
+
+    assert (r.answer.status, r.answer.text, r.answer.followed_queries) == ("not_found", text, ())
+    assert r.trace.output["route"] == {"decision": "not_found", "tools_called": True, "citable": 0,
+                                       "reply": "no_follows"}
+    assert r.final.calls == []
+
+
+@pytest.mark.parametrize("found, question, text", [
+    (FOLLOWS, "我关注的有什么新进展", "你关注的 2 项自上次查看以来都没有新报道。"),
+    (FOLLOWS, "Anything new?", "There have been no new reports on your 2 follows since you last checked."),
+    (FOLLOWS[:1], "Anything new?", "There have been no new reports on your 1 follow since you last checked."),
+], ids=["zh", "en", "en_one"])
+def test_follow_check_without_new_reports_says_so(turn, monkeypatch, found, question, text):
+    _follows(monkeypatch, found=found)
+
+    r = turn([CHECK, DONE], user_key="tg:1", question=question)
+
+    assert (r.answer.status, r.answer.text) == ("not_found", text)
+    assert r.answer.followed_queries == tuple(follow.query for follow in found)
+    assert r.trace.output["route"] == {"decision": "not_found", "tools_called": True, "citable": 0,
+                                       "reply": "no_new_reports"}
+    assert r.final.calls == []
+
+
+def test_follow_check_with_a_failed_search_and_no_new_reports_is_not_found(turn, monkeypatch):
+    _follows(monkeypatch, failing=("embodied AI",))
+
+    r = turn([CHECK, DONE], user_key="tg:1")
+
+    assert (r.answer.status, r.answer.text) == ("not_found", NOT_FOUND_TEXT["zh"])
+    assert r.answer.followed_queries == ("Genie 4",)
+    assert r.trace.output["route"] == {"decision": "not_found", "tools_called": True, "citable": 0}
+
+
+def test_a_failed_follow_check_is_not_found(turn, monkeypatch):
     def broken(user_key, limit):
         raise RuntimeError("database unavailable")
 
-    monkeypatch.setattr(nodes.memory, "list_follows", broken)
+    monkeypatch.setattr(follows.memory, "list_follows", broken)
+
+    r = turn([CHECK, DONE], user_key="tg:1")
+
+    assert (r.answer.status, r.answer.text) == ("not_found", NOT_FOUND_TEXT["zh"])
+    assert r.trace.output["route"] == {"decision": "not_found", "tools_called": True, "citable": 0}
+
+
+def test_follow_check_without_new_reports_says_so_over_history_evidence(turn, monkeypatch):
+    # The sources of the last answer, as when the follows are asked about twice in a row.
+    monkeypatch.setattr(context, "get_conn", FakeConn)
+    monkeypatch.setattr(context, "put_conn", lambda conn: None)
+    monkeypatch.setattr(context, "fetch_articles_by_url_keys", lambda cur, keys: [ARTICLE])
+    history = [{"role": "user", "parts": [{"text": "我关注的有什么新进展"}]},
+               {"role": "model", "parts": [{"text": "Genie 4 新增了音频 [1]"}], "citation_urls": [ARTICLE.url]}]
+    _follows(monkeypatch)
+
+    r = turn([CHECK, DONE], [ANSWERED], user_key="tg:1", history=history)
+
+    assert (r.answer.status, r.answer.text) == ("not_found", "你关注的 2 项自上次查看以来都没有新报道。")
+    assert r.trace.output["route"] == {"decision": "not_found", "tools_called": True, "citable": 1,
+                                       "reply": "no_new_reports"}
+    assert r.final.calls == []
+
+
+def test_follow_check_without_new_reports_beside_evidence_of_this_turn_is_synthesized(turn, monkeypatch):
+    _follows(monkeypatch)
+
+    r = turn([_calls(("c1", "check_follows", {}), ("c2", "search_news", {"query": "Genie 4"})), DONE], [ANSWERED],
+             user_key="tg:1")
+
+    assert r.answer.status == "answered"
+    assert r.trace.output["route"] == {"decision": "synthesize", "tools_called": True, "citable": 1}
+    assert ("\n\nEvidence brief:\nFollows without new reports: Genie 4 (since 2026-11-10), 具身智能 (last 14 days)\n\n"
+            "[E1] Title: ") in r.final.calls[0][-1].content
+
+
+def test_a_turn_without_check_follows_reads_no_follows(turn, monkeypatch):
+    monkeypatch.setattr(follows.memory, "list_follows", lambda *_a: pytest.fail("follows read without check_follows"))
 
     r = turn([_search("Genie 4"), DONE], [ANSWERED], user_key="tg:1")
 
-    assert r.answer.status == "answered"
-    assert r.gather.calls[0][0] == SystemMessage(prompt_text.render(
-        "gather.system", clock=prompts.gather_clock(_turn_now(r.trace)), corpus=CORPUS, follows=""))
-    assert _spans(r.trace, "context")[0].warnings == ["follows_unavailable"]
-
-
-def test_turn_without_user_key_skips_memory(turn, monkeypatch):
-    monkeypatch.setattr(nodes.memory, "list_follows", lambda *_a: pytest.fail("memory read without user_key"))
-
-    r = turn([_search("Genie 4"), DONE], [ANSWERED])
-
     assert r.answer == _answered(tool_calls=("search_news",), process=SEARCH_ONLY)
+    assert "follows" not in _spans(r.trace, "context")[0].output

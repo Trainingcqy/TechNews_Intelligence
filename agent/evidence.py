@@ -29,6 +29,10 @@ class EvidenceRegistry:
         self._eid_by_key: dict[str, str] = {}
         # url_key to the day of the latest past answer that cites it; empty unless a tool read the past answers.
         self.told: dict[str, date] = {}
+        # Written by check_follows: the follow and window of each story lead it found, by evidence id, and the follows
+        # it checked without finding new reports.
+        self.follows: dict[str, str] = {}
+        self.follows_without_news: list[str] = []
 
     def add_article(self, article: Article, level: str, stats: StoryStats | None = None, *,
                     history: bool = False) -> Evidence:
@@ -77,7 +81,8 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[st
     """The evidence brief, and the ids left out of it: a whole history item, or the body of a read.
 
     This turn's evidence comes first. Over max_chars, history items go first, last registered first, then the bodies
-    of this turn's reads, last read first.
+    of this turn's reads, last read first. The line of the follows checked without new reports leads the brief outside
+    max_chars.
     """
     citable = [evidence for evidence in registry.items() if evidence.level != "listed"]
     current = [e for e in citable if not e.history]
@@ -87,10 +92,13 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[st
     kept = list(history)
     while True:
         shown = set(with_body)
-        text = "\n\n".join(_render(e, e.eid in shown, registry.told.get(url_key(e.article.url)))
+        text = "\n\n".join(_render(e, e.eid in shown, registry.told.get(url_key(e.article.url)),
+                                   registry.follows.get(e.eid))
                            for e in current + kept)
         if len(text) <= max_chars or not (kept or with_body):
             left_out = [e.eid for e in history[len(kept):]]
+            if registry.follows_without_news:
+                text = f"Follows without new reports: {', '.join(registry.follows_without_news)}\n\n{text}"
             return text, left_out + [eid for eid in fulltext if eid not in shown]
         if kept:
             kept.pop()
@@ -98,8 +106,8 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[st
             with_body.pop()
 
 
-def _render(evidence: Evidence, with_body: bool, told_on: date | None) -> str:
-    lines = _render_article(evidence, told_on)
+def _render(evidence: Evidence, with_body: bool, told_on: date | None, follow: str | None) -> str:
+    lines = _render_article(evidence, told_on, follow)
     if with_body:
         text = evidence.fulltext or ""
         if evidence.truncated:
@@ -110,7 +118,7 @@ def _render(evidence: Evidence, with_body: bool, told_on: date | None) -> str:
     return "\n".join(lines)
 
 
-def _render_article(evidence: Evidence, told_on: date | None) -> list[str]:
+def _render_article(evidence: Evidence, told_on: date | None, follow: str | None) -> list[str]:
     article = evidence.article
     lines = [f"[{evidence.eid}] Title: {article.title}"]
     if article.title_zh:
@@ -126,6 +134,8 @@ def _render_article(evidence: Evidence, told_on: date | None) -> list[str]:
     lines.append(" | ".join(meta))
     if evidence.stats is not None:
         lines.append(_render_stats(evidence.stats))
+    if follow is not None:
+        lines.append(f"Follow: {follow}")
     if told_on is not None:
         lines.append(f"Cited in the answer on {told_on}")
     lines.append(f"Summary: {article.summary}")

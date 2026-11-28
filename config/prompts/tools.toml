@@ -48,11 +48,4 @@ limit = 'Number of answers to return.'
 
 [check_follows]
 description = '''
-Check the user's follows: search each follow for stories since it was last checked, ranked by the number of publishers, and return the stories grouped by follow. Use it ONLY when the user asks about the follows themselves.'''
-
-[check_follows.fields]
-queries = 'The English search terms of each follow. A follow left out is searched with its own words.'
-
-[check_follows.query_fields]
-follow = 'The follow, which MUST be copied exactly as written in <follows>.'
-query = 'Search terms for the follow, which MUST be in English.'
+Check the user's follows. It takes no parameters: it reads the user's follows itself and returns the new reports of each follow since its last check, grouped by follow, stating so for a follow without new reports. Reports that earlier answers already gave the user are not returned again. Use it ONLY when the user asks for new developments across all of their follows.'''

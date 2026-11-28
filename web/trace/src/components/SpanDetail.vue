@@ -106,16 +106,6 @@ function filterText(input) {
         </ul>
         <p v-else class="muted">无</p>
       </section>
-      <section class="block">
-        <h4>关注项</h4>
-        <ul v-if="output.follows?.length" class="plain-list">
-          <li v-for="follow in output.follows" :key="follow.query">
-            {{ follow.query }}
-            <span class="muted">{{ follow.last_checked_at ? `上次查看 ${formatDate(follow.last_checked_at)}` : "尚未查看" }}</span>
-          </li>
-        </ul>
-        <p v-else class="muted">无</p>
-      </section>
     </template>
 
     <template v-else-if="node.kind === 'step'">

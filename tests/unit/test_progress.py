@@ -76,26 +76,25 @@ def test_step_merges_the_calls_of_a_step():
     # E9 is not registered: the read is counted but has no title to show.
     read = PreparedCall(2, "c2", "read_articles", ReadArticlesArgs(ids=["E1", "E9"], urls=["https://www.cnbc.com/x"]))
 
-    assert progress.step([*searches, read], registry, [], TODAY) == Progress(
+    assert progress.step([*searches, read], registry, TODAY) == Progress(
         "正在检索并阅读 3 篇报道", "Huawei verdict、China reaction")
-    assert progress.step([read], registry, [], TODAY) == Progress("正在阅读 3 篇报道", "U.S. jury convicts Huawei、cnbc.com")
+    assert progress.step([read], registry, TODAY) == Progress("正在阅读 3 篇报道", "U.S. jury convicts Huawei、cnbc.com")
 
 
-def test_step_names_the_follows_and_what_it_searches():
+def test_step_of_a_follow_check_names_no_follows_and_what_it_searches():
     check = PreparedCall(0, "c0", "check_follows", CheckFollowsArgs())
     search = PreparedCall(1, "c1", "search_news", SearchNewsArgs(query="Nvidia"))
     browse = PreparedCall(2, "c2", "browse_news", BrowseNewsArgs(start_date="2026-11-27"))
     read = PreparedCall(3, "c3", "read_articles", ReadArticlesArgs(ids=["E1"]))
 
-    assert progress.step([check], EvidenceRegistry(), ["谷歌", "OpenAI"], TODAY) == Progress(
-        "正在查看 2 个关注项", "谷歌、OpenAI")
+    assert progress.step([check], EvidenceRegistry(), TODAY) == Progress("正在查看关注项")
     # A browse carries its window in its subject.
-    assert progress.step([check, search, browse, read], EvidenceRegistry(), ["谷歌"], TODAY) == Progress(
-        "正在查看 1 个关注项、检索并阅读 1 篇报道", "Nvidia、今天的要闻")
-    assert progress.step([browse], EvidenceRegistry(), [], TODAY) == Progress("正在检索", "今天的要闻")
+    assert progress.step([check, search, browse, read], EvidenceRegistry(), TODAY) == Progress(
+        "正在查看关注项、检索并阅读 1 篇报道", "Nvidia、今天的要闻")
+    assert progress.step([browse], EvidenceRegistry(), TODAY) == Progress("正在检索", "今天的要闻")
 
 
-def test_step_of_read_history_names_its_keywords_after_search_subjects_and_before_follows():
+def test_step_of_read_history_names_its_keywords_after_search_subjects():
     recall = PreparedCall(0, "c0", "read_history", ReadHistoryArgs(keywords=["Megaspeed", "兆速"]))
     recent = PreparedCall(1, "c1", "read_history", ReadHistoryArgs())
     check = PreparedCall(2, "c2", "check_follows", CheckFollowsArgs())
@@ -104,15 +103,13 @@ def test_step_of_read_history_names_its_keywords_after_search_subjects_and_befor
     registry = EvidenceRegistry()
     registry.add_article(ARTICLE, "summary")
 
-    assert progress.step([recall], registry, [], TODAY) == Progress("正在查看之前的回答", "Megaspeed、兆速")
-    assert progress.step([recent], registry, [], TODAY) == Progress("正在查看之前的回答")
-    assert progress.step([recall, search], registry, [], TODAY) == Progress("正在查看之前的回答并检索", "Nvidia")
-    assert progress.step([recent, read], registry, [], TODAY) == Progress(
+    assert progress.step([recall], registry, TODAY) == Progress("正在查看之前的回答", "Megaspeed、兆速")
+    assert progress.step([recent], registry, TODAY) == Progress("正在查看之前的回答")
+    assert progress.step([recall, search], registry, TODAY) == Progress("正在查看之前的回答并检索", "Nvidia")
+    assert progress.step([recent, read], registry, TODAY) == Progress(
         "正在查看之前的回答并阅读 1 篇报道", "U.S. jury convicts Huawei")
-    assert progress.step([check, recall], registry, ["谷歌", "OpenAI"], TODAY) == Progress(
-        "正在查看 2 个关注项、之前的回答", "Megaspeed、兆速")
-    assert progress.step([check, recent], registry, ["谷歌"], TODAY) == Progress("正在查看 1 个关注项、之前的回答", "谷歌")
-    assert progress.step([check, recent], registry, [], TODAY) == Progress("正在查看关注项、之前的回答")
+    assert progress.step([check, recall], registry, TODAY) == Progress("正在查看关注项、之前的回答", "Megaspeed、兆速")
+    assert progress.step([check, recent], registry, TODAY) == Progress("正在查看关注项、之前的回答")
 
 
 def _history(count: int) -> HistoryResult:
@@ -196,19 +193,26 @@ def test_record_lists_filters_failures_and_each_article_once():
     assert progress.record(read, TODAY, read_ids) == []
 
 
-def test_record_of_a_follow_check_names_the_follow_and_what_it_found():
+def test_record_of_a_follow_check_names_the_follow_and_what_it_found_since_its_last_check():
+    # 17:00 UTC on 11-24 is 11-25 in Beijing.
+    checked = datetime(2026, 11, 24, 17, 0, tzinfo=timezone.utc)
+    found, nothing = SearchResult(hits=[_hit(1), _hit(2), _hit(3)], weak_match=False), SearchResult([], False)
     checks = FollowsResult([
-        FollowCheck(Follow(1, "谷歌", None), "Google", 3, SearchResult(hits=[_hit(1)], weak_match=False), None),
-        FollowCheck(Follow(2, "OpenAI", None), "openai", 14, None, "TimeoutError"),
-        FollowCheck(Follow(3, "具身智能", None), "embodied AI", 5, None, "TimeoutError"),
-        FollowCheck(Follow(4, "Anthropic", None), "Anthropic", 5, SearchResult(hits=[], weak_match=False), None),
-    ])
+        FollowCheck(Follow(1, "谷歌", checked, "Google"), "Google", 30, found, None),
+        FollowCheck(Follow(2, "Anthropic", checked, None), "Anthropic", 30, nothing, None),
+        FollowCheck(Follow(3, "具身智能", None, "embodied AI"), "embodied AI", 14, found, None),
+        FollowCheck(Follow(4, "OpenAI", None, None), "OpenAI", 14, nothing, None),
+        FollowCheck(Follow(5, "英伟达", checked, "NVIDIA"), "NVIDIA", 30, None, "TimeoutError"),
+        FollowCheck(Follow(6, "Meta", None, None), "Meta", 14, None, "TimeoutError"),
+    ], {})
 
     assert progress.record(_payload("check_follows", CheckFollowsArgs(), checks), TODAY, set()) == [
-        ProcessItem("查看", "谷歌的新动态", "最近 3 天内找到 1 条新闻"),
-        ProcessItem("查看", "OpenAI 的新动态", "检索失败"),
-        ProcessItem("查看", "具身智能的新动态", "检索失败"),
-        ProcessItem("查看", "Anthropic 的新动态", "最近 5 天内没有找到"),
+        ProcessItem("查看", "谷歌的新动态", "2026-11-25 以来找到 3 条新闻"),
+        ProcessItem("查看", "Anthropic 的新动态", "2026-11-25 以来没有找到"),
+        ProcessItem("查看", "具身智能的新动态", "最近 14 天内找到 3 条新闻"),
+        ProcessItem("查看", "OpenAI 的新动态", "最近 14 天内没有找到"),
+        ProcessItem("查看", "英伟达的新动态", "检索失败"),
+        ProcessItem("查看", "Meta 的新动态", "检索失败"),
     ]
 
 

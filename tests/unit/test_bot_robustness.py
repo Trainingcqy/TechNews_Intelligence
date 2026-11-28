@@ -296,7 +296,7 @@ def _command(bot_mod, handler, text: str):  # noqa: ANN001
 def _follow(follow_id: int, query: str):
     from agent.memory import Follow
 
-    return Follow(follow_id=follow_id, query=query, last_checked_at=None)
+    return Follow(follow_id=follow_id, query=query, last_checked_at=None, search_query=query)
 
 
 def test_follow_command_adds_follow_for_chat(bot_mod) -> None:  # noqa: ANN001

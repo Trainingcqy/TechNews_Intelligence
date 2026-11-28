@@ -42,7 +42,7 @@ def test_usage_follows_otel_semantics() -> None:
 def test_request_trace_builds_the_tree_usage_and_warnings(stored) -> None:
     with request_trace(question="q", channel="web", thread_id="t1", request_id="r1") as trace:
         with trace_span("context"):
-            warn("follows_unavailable")
+            warn("history_sources_unavailable")
         step = start_span("step", attributes={"step": 1})
         with within(step):
             with trace_span("llm", "gather", attributes={"model": "flash"}) as gather:
@@ -63,7 +63,7 @@ def test_request_trace_builds_the_tree_usage_and_warnings(stored) -> None:
     assert [span.parent_id for span in trace.spans] == [None, None, step.span_id, step.span_id, None]
     assert all(span.status == "ok" for span in trace.spans)
     assert trace.token_usage == {**_usage(150, 15), "by_model": {"flash": _usage(100, 10), "pro": _usage(50, 5)}}
-    assert trace.all_warnings() == ["evidence_truncated", "follows_unavailable", "low_relevance"]
+    assert trace.all_warnings() == ["evidence_truncated", "history_sources_unavailable", "low_relevance"]
 
 
 def test_unfinished_spans_are_aborted_and_errors_keep_the_traceback(stored) -> None:

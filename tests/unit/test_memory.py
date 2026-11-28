@@ -1,4 +1,4 @@
-"""User memory: follows and their cap, render_follows, record_turn, failures treated as no memory, and past answers."""
+"""User memory: follows and their cap, record_turn, failures treated as no memory, and past answers."""
 
 from __future__ import annotations
 
@@ -61,12 +61,13 @@ def broken_db(monkeypatch):
 
 
 def test_list_follows_returns_active_follows_of_user(db):
-    db.results = [[(1, "Anthropic 上市", CHECKED), (2, "具身智能", None)]]
+    db.results = [[(1, "Anthropic 上市", CHECKED, "Anthropic IPO"), (2, "具身智能", None, None)]]
 
     follows = memory.list_follows(USER, 10)
 
-    assert follows == [Follow(1, "Anthropic 上市", CHECKED), Follow(2, "具身智能", None)]
+    assert follows == [Follow(1, "Anthropic 上市", CHECKED, "Anthropic IPO"), Follow(2, "具身智能", None, None)]
     ((sql, params),) = db.executed
+    assert "SELECT follow_id, query, last_checked_at, search_query FROM public.user_follow" in sql
     assert "WHERE user_key = %s AND active" in sql
     assert params == (USER, 10)
 
@@ -92,17 +93,18 @@ def follow_model(monkeypatch):
 
 
 def test_add_follow_inserts_or_revives_stripped_query(db, follow_model):
-    db.results = [(19,), (4, "Anthropic 上市", None)]
+    db.results = [(19,), (4, "Anthropic 上市", None, "Anthropic IPO")]
     follow_model.reply = "  Anthropic IPO \n"
 
     follow = memory.add_follow(USER, "  Anthropic 上市 ")
 
-    assert follow == Follow(4, "Anthropic 上市", None)
+    assert follow == Follow(4, "Anthropic 上市", None, "Anthropic IPO")
     (count_sql, count_params), (insert_sql, insert_params) = db.executed
     assert "active AND LOWER(query) <> LOWER(%s)" in count_sql
     assert count_params == (USER, "Anthropic 上市")
     assert "ON CONFLICT (user_key, LOWER(query)) DO UPDATE SET active = TRUE, search_query = EXCLUDED.search_query" in insert_sql
     assert "INSERT INTO public.user_follow (user_key, query, search_query)" in insert_sql
+    assert insert_sql.endswith("RETURNING follow_id, query, last_checked_at, search_query")
     assert insert_params == (USER, "Anthropic 上市", "Anthropic IPO")
     (messages,) = follow_model.calls
     assert [(type(message).__name__, message.content) for message in messages] == [
@@ -110,7 +112,7 @@ def test_add_follow_inserts_or_revives_stripped_query(db, follow_model):
 
 
 def test_add_follow_uses_an_ascii_query_as_its_search_query_without_a_model_call(db, follow_model):
-    db.results = [(0,), (4, "OpenAI GPT-5", None)]
+    db.results = [(0,), (4, "OpenAI GPT-5", None, "OpenAI GPT-5")]
 
     memory.add_follow(USER, " OpenAI GPT-5 ")
 
@@ -155,7 +157,7 @@ def test_add_follow_calls_the_model_before_opening_the_transaction(monkeypatch, 
     @contextmanager
     def _transaction(**_kwargs):
         events.append("transaction")
-        yield None, FakeCursor([(0,), (1, "谷歌", None)])
+        yield None, FakeCursor([(0,), (1, "谷歌", None, "Google")])
 
     follow_model.reply = "Google"
     monkeypatch.setattr(memory, "build_role_model", lambda role: events.append("model") or ModelHandle(
@@ -221,7 +223,7 @@ def test_record_turn_without_followed_queries_does_not_open_a_transaction(monkey
 
 def test_record_turn_failure_is_swallowed_but_list_follows_raises(broken_db):
     memory.record_turn(USER, Answer(status="answered", text="t", followed_queries=("x",)))
-    # The follows page must show the failure; the turn catches it in prepare.
+    # The follows page must show the failure; in a turn, check_follows fails with it.
     with pytest.raises(RuntimeError):
         memory.list_follows(USER, 10)
 
@@ -280,10 +282,3 @@ def test_told_dates_give_each_source_the_day_of_the_latest_answer_citing_it():
         "a.com/1": date(2026, 11, 23), "b.com/2": date(2026, 11, 20)}
     assert memory.told_dates([]) == {}
 
-
-def test_render_follows():
-    follows = [Follow(1, "Anthropic 上市", CHECKED), Follow(2, "具身智能", None)]
-
-    assert memory.render_follows(follows, date(2026, 11, 17)) == prompt_text.render(
-        "gather.follows", items="- Anthropic 上市: last checked 2026-11-10, 7 days ago\n- 具身智能: never checked")
-    assert memory.render_follows([], date(2026, 11, 17)) == ""

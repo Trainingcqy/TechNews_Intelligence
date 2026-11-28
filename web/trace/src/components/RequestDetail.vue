@@ -33,6 +33,8 @@ function articleMeta(articleId) {
 const routeBasis = computed(() => {
   if (!route.value) return "";
   if (route.value.decision === "direct") return "没有调用工具";
+  if (route.value.reply === "no_follows") return "用户没有关注项";
+  if (route.value.reply === "no_new_reports") return "关注项都没有新报道";
   if (route.value.decision === "not_found") return "调用过工具，没有可引用的证据";
   return `可引用的证据 ${route.value.citable} 条`;
 });

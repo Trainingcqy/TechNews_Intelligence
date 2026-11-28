@@ -5,6 +5,7 @@ export const STATUS = {
   not_found: "未找到",
   blocked: "已拦截",
   error: "出错",
+  stopped: "已停止",
   running: "未完成"
 };
 

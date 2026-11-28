@@ -36,19 +36,8 @@ if (session.token) showChat();
 </script>
 
 <template>
-  <nav class="topbar">
-    <a class="logo-area" href="https://trainingcqy.com/">
-      Trainingcqy
-    </a>
-    <a class="nav-item" href="https://trainingcqy.com/">
-      首页
-    </a>
-    <a class="nav-item" href="https://trainingcqy.com/gallery.html">
-      摄影
-    </a>
-  </nav>
-
   <button
+    v-if="authActive"
     id="theme-toggle"
     class="theme-toggle"
     type="button"
@@ -60,19 +49,6 @@ if (session.token) showChat();
     <span class="material-symbols-outlined">{{ isDark ? "light_mode" : "dark_mode" }}</span>
   </button>
 
-  <nav class="bottom-nav">
-    <a class="bottom-nav-item" href="https://trainingcqy.com/">
-      <div class="icon-container">
-        <span class="material-symbols-outlined">home</span>
-      </div>首页
-    </a>
-    <a class="bottom-nav-item" href="https://trainingcqy.com/gallery.html">
-      <div class="icon-container">
-        <span class="material-symbols-outlined">photo_library</span>
-      </div>摄影
-    </a>
-  </nav>
-
   <AuthView :active="authActive" />
-  <ChatView :active="chatActive" />
+  <ChatView :active="chatActive" :is-dark="isDark" :theme-label="themeLabel" @toggle-theme="toggleTheme" />
 </template>

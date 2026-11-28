@@ -21,8 +21,7 @@ const evidence = computed(() =>
   (output.value.evidence || []).map((row) => ({
     ...row,
     title: articleTitle(props.trace, row.article_id),
-    meta: articleMeta(row.article_id),
-    seen: row.story_id !== undefined ? output.value.seen_dates?.[String(row.story_id)] : null
+    meta: articleMeta(row.article_id)
   }))
 );
 
@@ -144,7 +143,6 @@ function upgradeLabel(row) {
               <td>
                 <div>{{ row.title }}</div>
                 <div v-if="row.meta" class="muted small">{{ row.meta }}</div>
-                <div v-if="row.seen" class="muted small">{{ row.seen }} 的回答中已提及</div>
               </td>
               <td>{{ LEVEL[row.level] || row.level }}</td>
               <td>{{ location(row.registered) }}</td>

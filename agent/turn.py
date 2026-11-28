@@ -90,7 +90,6 @@ def _request_output(runtime: TurnRuntime, answer: Answer) -> dict:
         },
         "answer": {"text": answer.text, "sources": [asdict(source) for source in answer.sources]},
         "evidence": _evidence_table(runtime),
-        "seen_dates": {str(story_id): seen.isoformat() for story_id, seen in runtime.registry.seen_dates.items()},
     }
 
 

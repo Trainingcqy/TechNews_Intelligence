@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -81,7 +81,7 @@ def _search(*queries) -> AIMessage:
 
 
 def _answered(**fields) -> Answer:
-    return Answer(status="answered", text="Genie 4 新增了音频 [1]。", sources=(SOURCE,), story_ids=(5,),
+    return Answer(status="answered", text="Genie 4 新增了音频 [1]。", sources=(SOURCE,),
                   request_id="r1", **fields)
 
 
@@ -154,7 +154,6 @@ def test_turn_runs_in_the_user_zone(turn, monkeypatch):
     hit = StoryHit(lead=ARTICLE, stats=STATS, related=(related,), match_score=0.9)
     monkeypatch.setattr(registry, "run_search_news", lambda args: SearchResult(hits=[hit], weak_match=False))
     monkeypatch.setattr(nodes.memory, "list_follows", lambda user_key, limit: FOLLOWS)
-    monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda user_key, ids: {})
 
     r = turn([_search("Genie 4"), _calls(("c2", "read_articles", {"ids": ["E1"]})), DONE], [ANSWERED],
              user_key="tg:1", zone=ZoneInfo("America/New_York"))
@@ -435,8 +434,6 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
     lookups: list[tuple] = []
     monkeypatch.setattr(nodes.memory, "list_follows",
                         lambda user_key, limit: lookups.append(("list", user_key, limit)) or FOLLOWS)
-    monkeypatch.setattr(nodes.memory, "seen_story_dates",
-                        lambda user_key, ids: lookups.append(("seen", user_key, ids)) or {5: date(2026, 11, 10)})
 
     searched: list[tuple] = []
 
@@ -469,7 +466,6 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
         ("Genie 4 world model", memory.check_window(FOLLOWS[0], now.date()), "importance", follows.STORY_LIMIT),
         ("embodied AI", 14, "importance", follows.STORY_LIMIT)]
     assert answer.followed_queries == ("Genie 4",)
-    assert answer.story_ids == (5,)
     days = memory.check_window(FOLLOWS[0], now.date())
     assert answer.process == Process("查看 2 个关注项，检索 1 次，阅读 1 篇报道", (
         ProcessItem("查看", "Genie 4 的新动态", f"最近 {days} 天内找到 1 条新闻"),
@@ -477,25 +473,22 @@ def test_followed_turn_reads_memory(turn, monkeypatch):
         ProcessItem("检索", "具身智能", "最近 14 天内没有找到"),
         READ,
     ))
-    assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS), ("seen", "tg:1", [5]), ("seen", "tg:1", [])]
+    assert lookups == [("list", "tg:1", memory.MAX_FOLLOWS)]
     assert _spans(trace, "context")[0].output["follows"] == [
         {"query": "Genie 4", "last_checked_at": "2026-11-09T17:00:00+00:00"},
         {"query": "具身智能", "last_checked_at": None}]
     check = next(span for span in _spans(trace, "tool") if span.name == "check_follows")
     assert [(item["follow"], item["error"]) for item in check.output["follows"]] == [
         ("Genie 4", None), ("具身智能", "RuntimeError")]
-    assert trace.output["seen_dates"] == {"5": "2026-11-10"}
     system = gather.calls[0][0]
     assert system == SystemMessage(prompt_text.render(
         "gather.system", clock=prompts.gather_clock(now), corpus=CORPUS, follows=memory.render_follows(FOLLOWS, now.date())))
     assert "- Genie 4: last checked 2026-11-10, " in system.content
     first_result = next(m for m in gather.calls[1] if isinstance(m, ToolMessage))
-    assert " | Coverage: 1 report, 1 publisher; already mentioned in the answer on 11-10\n" in first_result.content
+    assert " | Coverage: 1 report, 1 publisher\n" in first_result.content
     assert 'Follow "具身智能", query="embodied AI", last 14 days: search failed: RuntimeError.' in first_result.content
-    assert '"already mentioned in the answer on MM-DD"' in final.calls[0][0].content
     brief = final.calls[0][-1].content
-    assert ("Coverage: 1 report, 1 publisher, first 2026-11-12, latest 2026-11-12; "
-            "already mentioned in the answer on 11-10\n") in brief
+    assert "Coverage: 1 report, 1 publisher, first 2026-11-12, latest 2026-11-12\n" in brief
 
 
 def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
@@ -503,7 +496,6 @@ def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
         raise RuntimeError("database unavailable")
 
     monkeypatch.setattr(nodes.memory, "list_follows", broken)
-    monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda user_key, ids: {})
 
     r = turn([_search("Genie 4"), DONE], [ANSWERED], user_key="tg:1")
 
@@ -515,9 +507,7 @@ def test_follow_lookup_failure_runs_the_turn_without_follows(turn, monkeypatch):
 
 def test_turn_without_user_key_skips_memory(turn, monkeypatch):
     monkeypatch.setattr(nodes.memory, "list_follows", lambda *_a: pytest.fail("memory read without user_key"))
-    monkeypatch.setattr(nodes.memory, "seen_story_dates", lambda *_a: pytest.fail("memory read without user_key"))
 
     r = turn([_search("Genie 4"), DONE], [ANSWERED])
 
     assert r.answer == _answered(tool_calls=("search_news",), process=SEARCH_ONLY)
-    assert "already mentioned" not in r.final.calls[0][-1].content

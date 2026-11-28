@@ -14,7 +14,6 @@ export const CHANNEL = { web: "Web", telegram: "Telegram", cli: "CLI", eval: "�
 export const WARNING = {
   step_budget_exhausted: "达到步数上限",
   calls_rejected: "有调用被拒绝",
-  seen_dates_unavailable: "阅读记录查询失败",
   history_sources_unavailable: "历史来源查询失败",
   follows_unavailable: "关注项查询失败",
   corpus_unavailable: "新闻库概况查询失败",
@@ -30,7 +29,6 @@ export const WARNING = {
 export const WARNING_DETAIL = {
   step_budget_exhausted: "取证模型在最后一步仍提出了调用，取证因达到步数上限而停止；这一步的结果没有再经取证模型判断，直接进入综合。",
   calls_rejected: "部分调用没有执行，原因见调用表；取证模型收到的是拒绝说明。",
-  seen_dates_unavailable: "查询这些故事此前是否在回答中提及过时出错，检索结果和证据块里没有此前已提及的标注。",
   history_sources_unavailable: "查询历史回答所引文章时出错，这些文章没有登记为证据。",
   follows_unavailable: "查询用户的关注项时出错，本轮没有带入关注项。",
   corpus_unavailable: "查询新闻库概况时出错，取证模型的系统提示里这一段只说明暂时无法获取。",

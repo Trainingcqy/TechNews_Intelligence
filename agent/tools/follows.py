@@ -87,7 +87,7 @@ def commit_check_follows(args: CheckFollowsArgs, result: FollowsResult, *, regis
         for hit in check.result.hits:
             lead = registry.add_article(hit.lead, "summary", hit.stats)
             related = [registry.add_article(article, "listed") for article in hit.related]
-            lines.extend(render_hit(hit, lead.eid, [e.eid for e in related], registry.seen_dates.get(hit.stats.story_id)))
+            lines.extend(render_hit(hit, lead.eid, [e.eid for e in related]))
     text = "\n".join(lines)
     ok = any(check.error is None for check in result.checks)
     return ToolOutcome(index=0, call_id="", name="check_follows", ok=ok, gather_text=text,

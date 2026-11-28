@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
-
 from agent.config import user_zone
 from agent.types import Article, Evidence, StoryStats
 from common.urls import url_key
@@ -27,7 +25,6 @@ class EvidenceRegistry:
     def __init__(self) -> None:
         self._items: dict[str, Evidence] = {}
         self._eid_by_key: dict[str, str] = {}
-        self.seen_dates: dict[int, date] = {}  # 故事编号到用户此前看到它的日期，collect 写入
 
     def add_article(self, article: Article, level: str, stats: StoryStats | None = None, *,
                     history: bool = False) -> Evidence:
@@ -86,7 +83,7 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[st
     kept = list(history)
     while True:
         shown = set(with_body)
-        text = "\n\n".join(_render(e, e.eid in shown, registry.seen_dates) for e in current + kept)
+        text = "\n\n".join(_render(e, e.eid in shown) for e in current + kept)
         if len(text) <= max_chars or not (kept or with_body):
             left_out = [e.eid for e in history[len(kept):]]
             return text, left_out + [eid for eid in fulltext if eid not in shown]
@@ -96,8 +93,8 @@ def render_for_synthesis(registry: EvidenceRegistry, max_chars: int) -> tuple[st
             with_body.pop()
 
 
-def _render(evidence: Evidence, with_body: bool, seen_dates: dict[int, date]) -> str:
-    lines = _render_article(evidence, seen_dates)
+def _render(evidence: Evidence, with_body: bool) -> str:
+    lines = _render_article(evidence)
     if with_body:
         text = evidence.fulltext or ""
         if evidence.truncated:
@@ -108,7 +105,7 @@ def _render(evidence: Evidence, with_body: bool, seen_dates: dict[int, date]) ->
     return "\n".join(lines)
 
 
-def _render_article(evidence: Evidence, seen_dates: dict[int, date]) -> list[str]:
+def _render_article(evidence: Evidence) -> list[str]:
     article = evidence.article
     lines = [f"[{evidence.eid}] Title: {article.title}"]
     if article.title_zh:
@@ -123,7 +120,7 @@ def _render_article(evidence: Evidence, seen_dates: dict[int, date]) -> list[str
         meta.append(f"Type: {article.kind}")
     lines.append(" | ".join(meta))
     if evidence.stats is not None:
-        lines.append(_render_stats(evidence.stats) + seen_note(seen_dates.get(evidence.stats.story_id)))
+        lines.append(_render_stats(evidence.stats))
     lines.append(f"Summary: {article.summary}")
     if article.body_level != "full":
         lines.append("No full text stored: the summary is based only on the title and an excerpt.")
@@ -137,7 +134,3 @@ def _render_stats(stats: StoryStats) -> str:
     parts.append(f"first {stats.first_at.astimezone(user_zone()):%Y-%m-%d}")
     parts.append(f"latest {stats.last_at.astimezone(user_zone()):%Y-%m-%d}")
     return "Coverage: " + ", ".join(parts)
-
-
-def seen_note(seen: date | None) -> str:
-    return f"; already mentioned in the answer on {seen:%m-%d}" if seen else ""

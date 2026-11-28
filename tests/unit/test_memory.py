@@ -8,10 +8,9 @@ from datetime import date, datetime, timezone
 import pytest
 from langchain_core.messages import AIMessage
 
-from agent import memory, trace_store
+from agent import memory
 from agent.llm import ModelHandle
 from agent.memory import Follow, FollowLimitError, FollowQueryError
-from agent.trace import request_trace
 from agent.types import Answer
 from common import model_settings, prompt_text
 
@@ -203,45 +202,23 @@ def test_remove_follow_deactivates_own_follow(db, rowcount, expected):
     assert params == (USER, 7)
 
 
-def test_seen_story_dates_in_beijing_time(db):
-    db.results = [[(5, CHECKED), (6, datetime(2026, 11, 10, 3, 0, tzinfo=timezone.utc))]]
+def test_record_turn_updates_check_time_of_followed_queries(db):
+    memory.record_turn(USER, Answer(status="answered", text="t", followed_queries=("Anthropic 上市", "OpenAI")))
 
-    assert memory.seen_story_dates(USER, [5, 6, 7]) == {5: date(2026, 11, 10), 6: date(2026, 11, 10)}
-    ((sql, params),) = db.executed
-    assert "story_id = ANY(%s)" in sql
-    assert params == (USER, [5, 6, 7])
-
-
-def test_seen_story_dates_without_stories_does_not_query(db):
-    assert memory.seen_story_dates(USER, []) == {}
-    assert db.executed == []
-
-
-def test_record_turn_writes_seen_stories_and_check_time(db):
-    answer = Answer(status="answered", text="t", story_ids=(5, 9), followed_queries=("Anthropic 上市", "OpenAI"))
-
-    memory.record_turn(USER, answer)
-
-    (seen5, params5), (seen9, params9), (update_sql, update_params) = db.executed
-    assert seen5 == seen9
-    assert "ON CONFLICT (user_key, story_id) DO UPDATE SET last_seen_at = NOW()" in seen5
-    assert (params5, params9) == ((USER, 5), (USER, 9))
-    assert "SET last_checked_at = NOW() WHERE user_key = %s AND active AND LOWER(query) = ANY(%s)" in update_sql
+    ((update_sql, update_params),) = db.executed
+    assert ("UPDATE public.user_follow SET last_checked_at = NOW() "
+            "WHERE user_key = %s AND active AND LOWER(query) = ANY(%s)") in update_sql
     assert update_params == (USER, ["anthropic 上市", "openai"])
 
 
-def test_record_turn_without_followed_queries_leaves_follows_alone(db):
-    memory.record_turn(USER, Answer(status="answered", text="t", story_ids=(5,)))
+def test_record_turn_without_followed_queries_does_not_open_a_transaction(monkeypatch):
+    monkeypatch.setattr(memory, "db_transaction", lambda **_kwargs: pytest.fail("transaction opened"))
 
-    assert [sql.split()[0] for sql, _ in db.executed] == ["INSERT"]
+    memory.record_turn(USER, Answer(status="answered", text="t"))
 
 
-def test_turn_lookups_count_failures_as_no_memory_but_list_follows_raises(broken_db, monkeypatch):
-    monkeypatch.setattr(trace_store, "insert_running", lambda trace: None)
-    with request_trace(question="q", channel="web") as trace:
-        assert memory.seen_story_dates(USER, [5]) == {}
-    assert trace.warnings == ["seen_dates_unavailable"]
-    memory.record_turn(USER, Answer(status="answered", text="t", story_ids=(5,), followed_queries=("x",)))
+def test_record_turn_failure_is_swallowed_but_list_follows_raises(broken_db):
+    memory.record_turn(USER, Answer(status="answered", text="t", followed_queries=("x",)))
     # The follows page must show the failure; the turn catches it in prepare.
     with pytest.raises(RuntimeError):
         memory.list_follows(USER, 10)

@@ -300,6 +300,15 @@ def test_search_and_browse_texts_name_their_tool():
         "browse_news results, topic=ai, last 7 days, by importance: 1 story\n[E1] Genie 4 adds audio\n")
 
 
+def test_hit_line_shows_the_story_coverage():
+    stats = replace(STATS, report_count=3, publisher_count=2, publisher_kinds=("official", "media"))
+    text = _commit("search_news", SearchNewsArgs(query="Genie 4"),
+                   [StoryHit(lead=ARTICLE, stats=stats, related=(), match_score=None)]).gather_text
+
+    assert ("     TechCrunch · media · 2026-11-12 · ai · release | "
+            "Coverage: 3 reports, 2 publishers, including an official publisher\n") in text
+
+
 def test_search_and_browse_each_have_their_no_result_text():
     nothing = _commit("search_news", SearchNewsArgs(query="Genie 4"), [])
     assert (nothing.name, nothing.ok, nothing.gather_text) == (

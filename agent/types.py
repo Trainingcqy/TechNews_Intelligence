@@ -87,7 +87,6 @@ class Answer:
     text: str  # 正文，引用形如 [1]
     sources: tuple[Source, ...] = ()
     tool_calls: tuple[str, ...] = ()
-    story_ids: tuple[int, ...] = ()  # 被引用来源所属的故事，供阅读记录使用
     followed_queries: tuple[str, ...] = ()  # 本轮检索命中的关注项，供更新查看时间使用
     process: Process | None = None  # None when no tool call was executed
     request_id: str = ""

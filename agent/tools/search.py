@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import TYPE_CHECKING
 
 from agent.config import user_zone
-from agent.evidence import PUBLISHER_KIND_LABELS, counted, seen_note
+from agent.evidence import PUBLISHER_KIND_LABELS, counted
 from agent.retrieval.search import SearchResult, search_stories
 from agent.types import StoryHit, StoryStats
 from common import prompt_text
@@ -70,7 +69,7 @@ def _commit(name: str, scope: str, args: SearchNewsArgs | BrowseNewsArgs, result
     for hit in result.hits:
         lead = registry.add_article(hit.lead, "summary", hit.stats)
         related = [registry.add_article(article, "listed") for article in hit.related]
-        lines.extend(render_hit(hit, lead.eid, [e.eid for e in related], registry.seen_dates.get(hit.stats.story_id)))
+        lines.extend(render_hit(hit, lead.eid, [e.eid for e in related]))
     if result.weak_match:
         lines.append("Note: the top result is a weak match and may be off topic.")
     return ToolOutcome(index=0, call_id="", name=name, ok=True, gather_text="\n".join(lines))
@@ -91,7 +90,7 @@ def _scope(args: SearchNewsArgs | BrowseNewsArgs) -> str:
     return ", ".join(parts)
 
 
-def render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], seen: date | None) -> list[str]:
+def render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str]) -> list[str]:
     lead = hit.lead
     lines = [f"[{lead_eid}] {lead.title}"]
     if lead.title_zh:
@@ -102,7 +101,7 @@ def render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str], seen: date
         meta.append(", ".join(lead.topics))
     if lead.kind:
         meta.append(lead.kind)
-    lines.append(INDENT + " · ".join(meta) + " | " + _render_stats(hit.stats) + seen_note(seen))
+    lines.append(INDENT + " · ".join(meta) + " | " + _render_stats(hit.stats))
     lines.append(f"{INDENT}Summary: {lead.summary}")
     if hit.related:
         others = [

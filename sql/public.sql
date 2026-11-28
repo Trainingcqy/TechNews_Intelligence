@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS public.conversation_messages (
         ON DELETE CASCADE
 );
 
--- 4. User memory: follows and seen stories
+-- 4. User memory: follows
 CREATE TABLE IF NOT EXISTS public.user_follow (
     follow_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_key        TEXT NOT NULL,
@@ -62,14 +62,6 @@ ALTER TABLE public.user_follow ADD COLUMN IF NOT EXISTS search_query TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_user_follow_query
     ON public.user_follow (user_key, LOWER(query));
-
-CREATE TABLE IF NOT EXISTS public.user_story_seen (
-    user_key      TEXT NOT NULL,
-    story_id      BIGINT NOT NULL,
-    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_key, story_id)
-);
 
 -- 5. Agent request traces
 CREATE TABLE IF NOT EXISTS public.agent_runs (

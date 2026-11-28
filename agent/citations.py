@@ -105,9 +105,7 @@ def split_status(raw: str) -> tuple[str | None, str]:
     return None, raw
 
 
-def resolve_citations(
-    body: str, registry: EvidenceRegistry
-) -> tuple[str, tuple[Source, ...], tuple[int, ...], CitationCheck]:
+def resolve_citations(body: str, registry: EvidenceRegistry) -> tuple[str, tuple[Source, ...], CitationCheck]:
     text, removed_numeric = _NUMERIC_CITATION_RE.subn(_DELETED, body)
     text = _EID_LIST_RE.sub(lambda m: "".join(f"[{eid.strip()}]" for eid in re.split(r"[,，、]", m.group(1))), text)
     text, removed_urls = _URL_RE.subn(_DELETED, text)
@@ -130,15 +128,12 @@ def resolve_citations(
     text = _DELETED_RUN_RE.sub(_close_gap, text)
 
     sources = []
-    story_ids: list[int] = []
     for eid, n in numbers.items():
         evidence = registry.get(eid)
         sources.append(_source(n, evidence))
-        if evidence.article.story_id not in story_ids:
-            story_ids.append(evidence.article.story_id)
     check = CitationCheck(cited=tuple(numbers.items()), removed_eids=tuple(removed),
                           removed_urls=removed_urls, removed_numeric=removed_numeric)
-    return text, tuple(sources), tuple(story_ids), check
+    return text, tuple(sources), check
 
 
 def finalize_answer(raw: str, registry: EvidenceRegistry, question: str) -> tuple[Answer, CitationCheck]:
@@ -146,14 +141,14 @@ def finalize_answer(raw: str, registry: EvidenceRegistry, question: str) -> tupl
     if not raw.strip():
         return Answer(status="error", text=ERROR_TEXT[lang], error_code="empty_synthesis"), CitationCheck()
     status, body = split_status(raw)
-    text, sources, story_ids, check = resolve_citations(strip_emoji(body), registry)
+    text, sources, check = resolve_citations(strip_emoji(body), registry)
     check = replace(check, status_line=status)
     text = text.strip()
     if status == "insufficient":
         return Answer(status="insufficient", text=text, sources=sources), check
     if not sources:
         return Answer(status="blocked", text=BLOCKED_TEXT[lang], error_code="no_valid_citation"), check
-    return Answer(status="answered", text=text, sources=sources, story_ids=story_ids), check
+    return Answer(status="answered", text=text, sources=sources), check
 
 
 def clean_direct_reply(text: str, question: str) -> str:

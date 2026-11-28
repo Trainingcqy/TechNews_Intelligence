@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -109,13 +109,11 @@ def test_the_synthesis_prompt_and_the_evidence_block_use_the_same_wording():
                       first_seen_at=published, body_level="excerpt", story_id=1)
     registry = EvidenceRegistry()
     registry.add_article(article, "summary", StoryStats(1, 1, 1, ("official",), published, published))
-    registry.seen_dates[1] = date(2026, 11, 10)
     block, _ = render_for_synthesis(registry, 60000)
     # What the prompt quotes, and what the block shows for it.
     for quoted, shown in [
         ('"Coverage:"', "Coverage: "),
         ('"No full text stored"', "No full text stored"),
-        ('"already mentioned in the answer on MM-DD"', "already mentioned in the answer on 11-10"),
         ('publisher role is "official"', ", official |"),
     ]:
         assert quoted in FINAL_SYSTEM_PROMPT

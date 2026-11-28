@@ -22,7 +22,6 @@ from agent.tools.registry import (
     prepare_call,
     reject,
     run_call,
-    story_hits,
     tool_schemas,
 )
 from agent.trace import start_span, trace_span, warn, within
@@ -145,9 +144,6 @@ def collect(state, config) -> dict:
     current = [payload for (payload_step, _), payload in state.get("payloads", {}).items() if payload_step == step]
     messages = list(state["messages"])
     with within(runtime.step_span):
-        if runtime.user_key:
-            story_ids = [hit.stats.story_id for payload in current if payload.ok for hit in story_hits(payload)]
-            runtime.registry.seen_dates.update(memory.seen_story_dates(runtime.user_key, story_ids))
         for item in sorted([*current, *state["rejected"]], key=lambda item: item.index):
             span = None
             if isinstance(item, ToolPayload):

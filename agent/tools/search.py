@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .registry import BrowseNewsArgs, SearchNewsArgs, ToolOutcome
 
 INDENT = "     "
+NO_FULL_TEXT = "no full text"
 SORT_LABELS = {"relevance": "by relevance", "importance": "by importance", "time": "by time"}
 
 
@@ -101,14 +102,18 @@ def render_hit(hit: StoryHit, lead_eid: str, related_eids: list[str]) -> list[st
         meta.append(", ".join(lead.topics))
     if lead.kind:
         meta.append(lead.kind)
+    if lead.body_level != "full":
+        meta.append(NO_FULL_TEXT)
     lines.append(INDENT + " · ".join(meta) + " | " + _render_stats(hit.stats))
     lines.append(f"{INDENT}Summary: {lead.summary}")
     if hit.related:
-        others = [
-            f"[{eid}] {a.publisher} · {PUBLISHER_KIND_LABELS[a.publisher_kind]} · "
-            f'{a.published_at.astimezone(user_zone()):%m-%d} "{a.title}"'
-            for eid, a in zip(related_eids, hit.related)
-        ]
+        others = []
+        for eid, a in zip(related_eids, hit.related):
+            head = [a.publisher, PUBLISHER_KIND_LABELS[a.publisher_kind],
+                    f"{a.published_at.astimezone(user_zone()):%m-%d}"]
+            if a.body_level != "full":
+                head.append(NO_FULL_TEXT)
+            others.append(f'[{eid}] {" · ".join(head)} "{a.title}"')
         lines.append(f"{INDENT}Other reports in the story: " + "; ".join(others))
     return lines
 

@@ -101,7 +101,7 @@ def test_call_tool_reads_library_url_without_user_provided_check(monkeypatch, fa
     assert result == {
         "status": "ok",
         "text": ('read_articles results:\n[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 4 characters in full; '
-                 'added to the evidence'),
+                 'added to the evidence\n文章正文'),
         "evidence": [{"eid": "E1", "url": ARTICLE.url, "title": "Genie 4 adds audio",
                       "source": "TechCrunch", "published_at": "2026-11-12"}],
     }

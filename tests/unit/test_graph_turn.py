@@ -346,6 +346,19 @@ def test_each_step_result_ends_with_the_remaining_budget(turn):
     assert read_span.output["text"] == after_second
 
 
+def test_failed_reads_are_refunded_in_the_budget_after_the_step(turn):
+    r = turn([_search("Genie 4"),
+              _calls(("c2", "read_articles", {"ids": ["E1", "E9"]}), ("c3", "read_articles", {"ids": ["E2"]})), DONE],
+             [ANSWERED], config=AgentConfig(max_steps=3, max_read_articles=2))
+
+    after_second = r.gather.calls[2][-1].content
+    # c3 is prepared while c2 still holds both reads, so it is rejected; the note counts the refund of E9.
+    assert after_second.startswith("The read limit of this request has been reached.\n\n")
+    assert after_second.endswith(prompt_text.render(
+        "gather.budget", step="2", max_steps="3", steps_left="1 step", max_calls="5", reads_left="1 read")
+        + " " + prompt_text.text("gather.last_step"))
+
+
 def test_model_call_failure(turn):
     r = turn([_search("Genie 4"), DONE], [TimeoutError("slow")])
 

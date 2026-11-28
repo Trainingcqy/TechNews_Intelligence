@@ -114,6 +114,7 @@ def commit_read_articles(args: ReadArticlesArgs, result: ReadResult, *, registry
         if truncated:
             size += f", first {len(item.text)} read"
         lines.append(f"{head} | {size}; added to the evidence")
+        lines.append(item.text)
     text = "\n".join(lines)
     ok = bool(read)
     return ToolOutcome(index=0, call_id="", name="read_articles", ok=ok, gather_text=text,

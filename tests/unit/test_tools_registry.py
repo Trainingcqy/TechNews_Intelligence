@@ -12,7 +12,8 @@ from agent.config import AgentConfig
 from agent.trace import request_trace
 from agent.evidence import EvidenceRegistry
 from agent.retrieval.search import SearchResult
-from agent.tools import registry, search
+from agent.tools import read, registry, search
+from agent.tools.read import OVER_QUOTA, ReadItem, ReadResult
 from agent.tools.registry import (
     BrowseNewsArgs,
     PreparedCall,
@@ -320,3 +321,90 @@ def test_search_and_browse_each_have_their_no_result_text():
         "browse_news", True,
         "browse_news found no results, 2026-11-01 to 2026-11-02. "
         "You can widen the time window or remove filters, and try again.")
+
+
+@pytest.mark.parametrize("level, flag", [("full", ""), ("excerpt", " · no full text"), ("none", " · no full text")])
+def test_hit_marks_reports_without_full_text(level, flag):
+    related = replace(ARTICLE, article_id=31, url="https://a.com/a", title="Other report", publisher="Example",
+                      body_level=level)
+    stats = replace(STATS, report_count=2, publisher_count=2)
+    lead = replace(ARTICLE, body_level=level)
+    text = _commit("search_news", SearchNewsArgs(query="Genie 4"),
+                   [StoryHit(lead=lead, stats=stats, related=(related,), match_score=None)]).gather_text
+
+    assert (f"     TechCrunch · media · 2026-11-12 · ai · release{flag} | "
+            "Coverage: 2 reports, 2 publishers\n") in text
+    assert f'Other reports in the story: [E2] Example · media · 11-12{flag} "Other report"' in text
+
+
+def test_hit_marks_only_the_reports_without_full_text():
+    mixed = [replace(ARTICLE, article_id=31, url="https://a.com/a", title="A", body_level="excerpt"),
+             replace(ARTICLE, article_id=32, url="https://a.com/b", title="B", body_level="full")]
+    stats = replace(STATS, report_count=3, publisher_count=1)
+    text = _commit("browse_news", BrowseNewsArgs(),
+                   [StoryHit(lead=ARTICLE, stats=stats, related=tuple(mixed), match_score=None)]).gather_text
+
+    assert "release | Coverage" in text
+    assert ('Other reports in the story: [E2] TechCrunch · media · 11-12 · no full text "A"; '
+            '[E3] TechCrunch · media · 11-12 "B"') in text
+
+
+def _read_payload(args: ReadArticlesArgs, items=None, ok=True) -> ToolPayload:
+    data = ReadResult(items=items) if ok else None
+    return ToolPayload(index=0, call_id="c0", name="read_articles", args=args, ok=ok, data=data,
+                       error=None if ok else "Tool failed: RuntimeError")
+
+
+def _item(target: str, error: str | None) -> ReadItem:
+    article = None if error in ("unknown id", OVER_QUOTA) else ARTICLE
+    text = None if error else "text"
+    return ReadItem(target, article, text, 0 if error else 4, error)
+
+
+def _commit_read(payload: ToolPayload, read_count: int) -> TurnState:
+    registry = EvidenceRegistry()
+    registry.add_article(ARTICLE, "summary")
+    state = TurnState(user_urls=set(), read_count=read_count)
+    commit_call(payload, registry=registry, state=state, config=AgentConfig())
+    return state
+
+
+def test_commit_refunds_one_read_for_each_failed_target():
+    items = [_item("E1", None), _item("E9", "unknown id"), _item("E2", "no full text stored"),
+             _item("https://a.com/1", "the link was not provided by the user"),
+             _item("https://a.com/2", "the link is not in the news database"),
+             _item("https://a.com/3", None)]
+    args = ReadArticlesArgs(ids=["E1", "E9", "E2"], urls=["https://a.com/1", "https://a.com/2", "https://a.com/3"])
+    assert _commit_read(_read_payload(args, items), read_count=6).read_count == 2
+
+
+def test_commit_does_not_refund_targets_cut_off_by_the_quota():
+    items = [_item("E1", None), _item("E9", "unknown id"), _item("E2", OVER_QUOTA), _item("E3", OVER_QUOTA)]
+    assert _commit_read(_read_payload(ReadArticlesArgs(ids=["E1", "E9"]), items), read_count=8).read_count == 7
+
+
+def test_commit_refunds_every_reserved_read_of_a_call_that_failed_to_run():
+    args = ReadArticlesArgs(ids=["E1", "E2"], urls=["https://a.com/1"])
+    assert _commit_read(_read_payload(args, ok=False), read_count=5).read_count == 2
+
+
+def test_failed_read_call_gives_its_reads_back_through_all_three_stages(monkeypatch):
+    def broken():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(read, "get_conn", broken)
+    state = TurnState(user_urls=set())
+    prepared = prepare_call(0, _call("read_articles", {"ids": ["E1", "E2"]}), state=state, config=AgentConfig())
+    assert state.read_count == 2
+    payload = run_call(prepared, registry=EvidenceRegistry(), state=state)
+    assert payload.ok is False
+    commit_call(payload, registry=EvidenceRegistry(), state=state, config=AgentConfig())
+    assert state.read_count == 0
+
+
+def test_commit_of_other_tools_leaves_the_read_count():
+    payload = ToolPayload(index=0, call_id="c0", name="search_news", args=SearchNewsArgs(query="x"), ok=False,
+                          data=None, error="Tool failed: RuntimeError")
+    state = TurnState(user_urls=set(), read_count=3)
+    commit_call(payload, registry=EvidenceRegistry(), state=state, config=AgentConfig())
+    assert state.read_count == 3

@@ -134,6 +134,30 @@ def test_truncation_and_result_text(monkeypatch):
         "read_articles results:",
         '[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 1500 characters in full, first 1000 read; added to the '
         'evidence',
+        body[:1000],
         "[E5] read failed: unknown id.",
     ]
     assert outcome.ok is True
+
+
+def test_result_text_follows_each_read_title_and_failures_add_nothing(monkeypatch):
+    second = replace(ARTICLE, article_id=31, url="https://www.theverge.com/genie-4", title="Genie 4 hands-on")
+    third = replace(ARTICLE, article_id=32, url="https://example.com/c", title="No body", body_level="excerpt")
+    _fake_db(monkeypatch, bodies={30: "first\ntext", 31: "second"})
+    registry = EvidenceRegistry()
+    for article in (ARTICLE, second, third):
+        registry.add_article(article, "listed")
+
+    _, outcome = _read(registry, ids=["E1", "E9", "E3", "E2"])
+
+    assert outcome.gather_text.splitlines() == [
+        "read_articles results:",
+        '[E1] "Genie 4 adds audio" TechCrunch · 2026-11-12 | 10 characters in full; added to the evidence',
+        "first",
+        "text",
+        "[E9] read failed: unknown id.",
+        "[E3] read failed: no full text stored.",
+        '[E2] "Genie 4 hands-on" TechCrunch · 2026-11-12 | 6 characters in full; added to the evidence',
+        "second",
+    ]
+    assert registry.get("E1").fulltext == "first\ntext"

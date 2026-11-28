@@ -30,7 +30,7 @@ sort = 'importance ranks by the number of publishers that reported the story. ti
 limit = 'Number of stories to return.'
 
 [read_articles]
-description = 'Read the full text of reports. Returns the title, publisher, date and text length of each report; the full text is added to the evidence for the model that writes the answer.'
+description = 'Read the full text of reports. Returns the title, publisher, date and text length of each report, followed by the text read; the text is also added to the evidence for the model that writes the answer.'
 
 [read_articles.fields]
 ids = 'Evidence ids from search results, such as E3.'

@@ -19,7 +19,7 @@ from common import prompt_text
 from common.taxonomy import KINDS, TOPICS
 
 from .follows import FollowsResult, commit_check_follows, follows_trace_output, run_check_follows
-from .read import ReadResult, commit_read_articles, read_trace_output, run_read_articles
+from .read import OVER_QUOTA, ReadResult, commit_read_articles, read_trace_output, run_read_articles
 from .search import (
     commit_browse_news,
     commit_search_news,
@@ -282,10 +282,21 @@ def run_call(prepared: PreparedCall, *, registry: EvidenceRegistry, state: TurnS
 
 def commit_call(payload: ToolPayload, *, registry: EvidenceRegistry, state: TurnState,
                 config: AgentConfig) -> ToolOutcome:
+    if payload.name == "read_articles":
+        _refund_reads(payload, state)
     if not payload.ok:
         return reject(payload.index, payload.call_id, payload.name, payload.error)
     outcome = _SPECS[payload.name].commit(payload.args, payload.data, registry=registry)
     return replace(outcome, index=payload.index, call_id=payload.call_id)
+
+
+def _refund_reads(payload: ToolPayload, state: TurnState) -> None:
+    """Give back the read quota that prepare_call reserved for targets that were not read."""
+    if payload.ok:
+        # Targets cut off by the quota (OVER_QUOTA) were never reserved.
+        state.read_count -= sum(1 for item in payload.data.items if item.error not in (None, OVER_QUOTA))
+    else:
+        state.read_count -= len(payload.args.ids) + len(payload.args.urls)
 
 
 def story_hits(payload: ToolPayload) -> list[StoryHit]:

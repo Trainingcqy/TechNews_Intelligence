@@ -31,8 +31,8 @@
     --bg-glow-2: rgba(66, 133, 244, 0.12);
     --bg-glow-3: rgba(11, 87, 208, 0.09);
     --bg-grid: rgba(11, 87, 208, 0.03);
-    --side-nav-width: 280px;
-    --side-nav-rail: 72px;
+    --side-nav-width: 300px;
+    --side-nav-rail: 56px;
     --follow-panel-width: 280px;
     --scrollbar-size: 10px;
     --fade-size: 48px;
@@ -513,14 +513,14 @@ body {
     }
 }
 
+/* The conversation spans the main area, so its scrollbar sits at the right edge of the window and its column stays
+   centered as the sidebar and the follow panel change the width. */
 .chat-container {
     position: relative;
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 100%;
-    max-width: 860px;
-    margin: 0 auto;
 }
 
 .chat-container.chat-empty {
@@ -591,7 +591,7 @@ body {
 }
 
 /* ===== Side Navigation ===== */
-/* A row keeps its icon in a 40px box 16px from the edge, so the icons stay put while the width changes. */
+/* A row keeps its icon in a 36px box 10px from the edge, so the icons stay put while the width changes. */
 .side-nav {
     position: relative;
     z-index: 31;
@@ -601,7 +601,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 12px 16px 16px;
+    padding: 12px 10px 16px;
     overflow: hidden;
     background: var(--surface-color);
     box-shadow: inset -1px 0 0 var(--border-color);
@@ -616,13 +616,20 @@ body {
 
 .side-nav-toggle {
     flex: none;
+    width: 36px;
+    height: 36px;
     margin-bottom: 8px;
+}
+
+.side-nav-toggle .material-symbols-outlined {
+    font-size: 20px;
+    font-variation-settings: "FILL" 0, "wght" 540, "GRAD" 0, "opsz" 20;
 }
 
 .nav-row {
     flex: none;
     width: 100%;
-    height: 40px;
+    height: 36px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -642,11 +649,11 @@ body {
 
 .nav-row .material-symbols-outlined {
     flex: none;
-    width: 40px;
+    width: 36px;
     text-align: center;
-    font-size: 22px;
+    font-size: 20px;
     color: var(--text-secondary);
-    font-variation-settings: "FILL" 0, "wght" 540, "GRAD" 0, "opsz" 22;
+    font-variation-settings: "FILL" 0, "wght" 540, "GRAD" 0, "opsz" 20;
 }
 
 .nav-label {
@@ -676,9 +683,9 @@ body {
     cursor: default;
 }
 
-/* Collapsed rows are icon buttons: a 40px row with a 20px radius is a circle. */
+/* Collapsed rows are icon buttons: a 36px row with an 18px radius is a circle. */
 .side-nav.collapsed .nav-row {
-    border-radius: 20px;
+    border-radius: 18px;
 }
 
 .side-nav.collapsed .nav-label {
@@ -719,8 +726,8 @@ body {
     --scroll-edge: 8px;
     flex: 1;
     min-height: 0;
-    margin-right: -16px;
-    padding: var(--scroll-edge) 6px var(--scroll-edge) 0;
+    margin-right: -10px;
+    padding: var(--scroll-edge) 0;
     overflow-y: auto;
     scrollbar-gutter: stable;
     list-style: none;
@@ -729,7 +736,7 @@ body {
 .thread-item {
     display: flex;
     align-items: center;
-    height: 40px;
+    height: 36px;
     border-radius: 12px;
     transition: background-color var(--transition-smooth);
 }
@@ -1012,7 +1019,6 @@ body {
 
 /* Message Bubbles */
 .msg {
-    max-width: 85%;
     animation: msgSlideIn 0.35s var(--transition-spring);
 }
 
@@ -1040,29 +1046,26 @@ body {
     }
 }
 
+/* A question spans the width of an answer, so its bubble ends where the answers end; the editor fills that width. */
 .msg.user {
-    align-self: flex-end;
+    align-self: center;
+    width: min(100%, 760px);
     display: flex;
     flex-direction: column;
     align-items: flex-end;
 }
 
-/* The editor takes the width of an answer. */
 .msg.user.editing {
-    align-self: center;
     align-items: stretch;
-    width: min(100%, 760px);
-    max-width: 100%;
 }
 
 .msg.agent {
     align-self: center;
     width: min(100%, 760px);
-    max-width: 100%;
 }
 
 .msg-content {
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1.7;
     user-select: text;
     word-break: break-word;
@@ -1074,6 +1077,7 @@ body {
 }
 
 .msg.user .msg-content {
+    max-width: 85%;
     padding: 10px 18px;
     border-radius: 24px;
     background: var(--user-bubble);
@@ -1083,7 +1087,7 @@ body {
 .msg-content h1,
 .msg-content h2,
 .msg-content h3 {
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 700;
     margin: 12px 0 6px;
     color: var(--primary-blue);
@@ -1117,7 +1121,7 @@ body {
     background: var(--hover-color);
     padding: 2px 6px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 15px;
 }
 
 .msg-content pre {
@@ -1193,7 +1197,7 @@ body {
     background: transparent;
     color: var(--text-primary);
     font-family: inherit;
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1.7;
     resize: none;
     outline: none;
@@ -1308,10 +1312,6 @@ body {
     border: none;
     background: transparent;
     border-radius: 0;
-}
-
-.typing-msg {
-    max-width: 100%;
 }
 
 .typing-label {
@@ -1462,7 +1462,7 @@ body {
     border: none;
     background: transparent;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 16px;
     font-family: inherit;
     line-height: 1.5;
     resize: none;
@@ -1473,12 +1473,6 @@ body {
 
 #chat-input::placeholder {
     color: var(--text-tertiary);
-}
-
-@media (min-width: 769px) {
-    #chat-input {
-        font-size: 16px;
-    }
 }
 
 .send-btn {
@@ -1595,7 +1589,7 @@ body {
         left: 0;
         z-index: 1006;
         width: min(86vw, 320px);
-        padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+        padding: calc(12px + env(safe-area-inset-top)) 10px calc(16px + env(safe-area-inset-bottom));
         visibility: hidden;
         transform: translateX(-100%);
         transition: transform var(--transition-smooth), visibility var(--transition-smooth);
@@ -1648,7 +1642,6 @@ body {
         flex-direction: column;
         height: 100%;
         min-height: 0;
-        max-width: 100%;
         padding-top: calc(56px + env(safe-area-inset-top));
     }
 
@@ -1674,7 +1667,7 @@ body {
         -webkit-backdrop-filter: blur(18px);
     }
 
-    .msg {
+    .msg.user .msg-content {
         max-width: 92%;
     }
 

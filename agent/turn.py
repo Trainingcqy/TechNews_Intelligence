@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import asdict, replace
 from datetime import datetime, tzinfo
 from typing import Callable
@@ -11,7 +12,7 @@ from agent.citations import ERROR_TEXT, contains_cjk
 from agent.config import DEFAULT_ZONE, AgentConfig, load_config, using_zone
 from agent.evidence import EvidenceRegistry
 from agent.graph import build_turn_graph
-from agent.graph.state import TurnRuntime
+from agent.graph.state import TurnRuntime, TurnStopped
 from agent.llm import ModelCallError, ModelHandle, build_models
 from agent.tools.registry import TurnState
 from agent.trace import request_trace
@@ -28,18 +29,20 @@ def run_turn(
     user_key: str | None = None,
     zone: tzinfo | None = None,
     on_event: Callable[[Progress], None] | None = None,
+    stop: threading.Event | None = None,
     config: AgentConfig | None = None,
     models: tuple[ModelHandle, ModelHandle] | None = None,
 ) -> Answer:
     """channel is web, telegram, cli or eval and only labels the trace. zone is the user's clock zone, DEFAULT_ZONE when
-    not given."""
+    not given. stop, set from another thread, ends the turn with status stopped before its next model call; a call
+    already running finishes and its result is dropped."""
     config = config or load_config()
     zone = zone or DEFAULT_ZONE
     emit = _safe_emit(on_event)
     runtime = TurnRuntime(
         registry=EvidenceRegistry(), tool_state=TurnState(user_urls=set()), config=config,
         models=models, emit=emit, user_key=user_key,
-        follows=[], tool_names=[], followed_queries=[], now=datetime.now(zone),
+        follows=[], tool_names=[], followed_queries=[], now=datetime.now(zone), stop=stop,
     )
     with using_zone(zone), request_trace(question=question, channel=channel, thread_id=thread_id,
                                          request_id=request_id) as trace:
@@ -52,6 +55,8 @@ def run_turn(
                         "recursion_limit": 8 + 3 * config.max_steps},
             )
             answer = final_state["answer"]
+        except TurnStopped:
+            answer = Answer(status="stopped", text="")
         except ModelCallError as exc:
             # The failing llm span already holds the exception.
             answer = Answer(status="error", text=_error_text(question), error_code=exc.code)
@@ -60,6 +65,9 @@ def run_turn(
             answer = Answer(status="error", text=_error_text(question),
                             error_code=f"runtime_{type(exc).__name__.lower()}")
             trace.fail(exc)
+        # A stop during the last model call drops the answer that call produced.
+        if stop is not None and stop.is_set() and answer.status != "error":
+            answer = Answer(status="stopped", text="")
         answer = replace(answer, request_id=trace.request_id,
                          tool_calls=tuple(runtime.tool_names),
                          followed_queries=tuple(runtime.followed_queries),

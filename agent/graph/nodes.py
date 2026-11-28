@@ -84,6 +84,7 @@ def prepare(state, config) -> dict:
 
 def gather(state, config) -> dict:
     runtime = _runtime(config)
+    runtime.check_stop()
     limits = runtime.config
     if state["step"] >= limits.max_steps:
         warn("step_budget_exhausted")
@@ -196,6 +197,7 @@ def after_route(state) -> str:
 
 def synthesize(state, config) -> dict:
     runtime = _runtime(config)
+    runtime.check_stop()
     registry = runtime.registry
     user, runtime.left_out = prompts.render_final_user(
         state["question"], registry, runtime.config.synthesis_evidence_chars, runtime.now)

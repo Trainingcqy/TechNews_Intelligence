@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated, Any, Callable, TypedDict
@@ -36,6 +37,10 @@ class TurnGraphState(TypedDict, total=False):
     answer: Answer
 
 
+class TurnStopped(Exception):
+    """The turn's stop event was set before a model call."""
+
+
 @dataclass
 class TurnRuntime:
     registry: EvidenceRegistry
@@ -57,3 +62,8 @@ class TurnRuntime:
     route: dict | None = None
     left_out: list[str] = field(default_factory=list)  # ids whose body, or for a history item the whole entry, is not in the brief
     citations: CitationCheck | None = None
+    stop: threading.Event | None = None  # set from another thread when the page stops the turn
+
+    def check_stop(self) -> None:
+        if self.stop is not None and self.stop.is_set():
+            raise TurnStopped

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -342,6 +343,71 @@ def test_model_call_failure(turn):
     final = _spans(r.trace, "llm")[-1]
     assert (final.name, final.status, final.error_code) == ("final", "error", "model_timeouterror")
     assert r.trace.output["route"]["decision"] == "synthesize" and r.trace.output["citations"] is None
+
+
+class StoppingChat(FakeChat):
+    """Sets the turn's stop event on its call number `at`, as a stop that arrives while that model call runs."""
+
+    def __init__(self, replies, stop, at=1):
+        super().__init__(replies)
+        self.stop = stop
+        self.at = at
+
+    def invoke(self, messages):
+        if len(self.calls) + 1 == self.at:
+            self.stop.set()
+        return super().invoke(messages)
+
+
+def _run_stoppable(turn, gather, final, stop):
+    answer = run_turn(QUESTION, channel="web", request_id="r1", stop=stop, config=AgentConfig(),
+                      models=(ModelHandle("gather", "fake", "g", gather), ModelHandle("final", "fake", "f", final)))
+    return answer, turn.persisted[-1]
+
+
+def test_stop_before_the_turn_calls_no_model(turn):
+    stop = threading.Event()
+    stop.set()
+    gather, final = FakeChat([DONE]), FakeChat([ANSWERED])
+
+    answer, trace = _run_stoppable(turn, gather, final, stop)
+
+    assert answer == Answer(status="stopped", text="", request_id="r1")
+    assert (gather.calls, final.calls) == ([], [])
+    assert trace.status == "stopped"
+
+
+def test_stop_during_a_step_skips_the_next_model_call(turn):
+    stop = threading.Event()
+    gather, final = StoppingChat([_search("Genie 4")], stop), FakeChat([ANSWERED])
+
+    answer, trace = _run_stoppable(turn, gather, final, stop)
+
+    assert answer == Answer(status="stopped", text="", tool_calls=("search_news",), process=SEARCH_ONLY,
+                            request_id="r1")
+    assert (len(gather.calls), final.calls) == (1, [])
+    assert trace.status == "stopped"
+
+
+def test_stop_during_the_last_step_skips_synthesis(turn):
+    stop = threading.Event()
+    gather, final = StoppingChat([_search("Genie 4"), DONE], stop, at=2), FakeChat([ANSWERED])
+
+    answer, trace = _run_stoppable(turn, gather, final, stop)
+
+    assert (answer.status, len(gather.calls), final.calls) == ("stopped", 2, [])
+    assert trace.status == "stopped"
+
+
+def test_stop_during_synthesis_drops_its_answer(turn):
+    stop = threading.Event()
+    gather, final = FakeChat([_search("Genie 4"), DONE]), StoppingChat([ANSWERED], stop)
+
+    answer, trace = _run_stoppable(turn, gather, final, stop)
+
+    assert (answer.status, answer.text, answer.sources) == ("stopped", "", ())
+    assert len(final.calls) == 1
+    assert trace.status == "stopped"
 
 
 FOLLOWS = [

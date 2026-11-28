@@ -77,7 +77,7 @@ class Process:
     items: tuple[ProcessItem, ...]
 
 
-AnswerStatus = Literal["answered", "insufficient", "direct", "not_found", "blocked", "error"]
+AnswerStatus = Literal["answered", "insufficient", "direct", "not_found", "blocked", "error", "stopped"]
 
 
 @dataclass(frozen=True)
